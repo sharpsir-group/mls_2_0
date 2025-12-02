@@ -435,4 +435,4 @@ databricks runs get --run-id <RUN_ID> 2>&1 | grep -v "^WARN:" | grep -E '"result
 - [x] Map Qobrix fields to RESO standard names (hybrid approach)
 - [x] Add Silver layer for all resources (agent, contact, media, viewing)
 - [ ] Implement CDC (incremental updates)
-- [ ] Scale to full data load (13,000+ properties)
+- [ ] Scale to full data load
