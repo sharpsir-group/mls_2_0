@@ -140,7 +140,6 @@ cd mls_2_0
 
 ```
 mls_2_0/
-├── .env                        # Credentials (git-ignored)
 ├── .env.example                # Template for .env
 ├── docs/
 │   ├── qobrix_openapi.yaml     # Qobrix API OpenAPI spec (68k lines)
@@ -167,7 +166,7 @@ mls_2_0/
 
 ## Configuration
 
-All credentials are in `mls_2_0/.env` (git-ignored):
+All credentials are stored in `.env` (copy from `.env.example`):
 
 ```
 QOBRIX_API_USER=<your-api-user-uuid>
