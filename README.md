@@ -423,3 +423,9 @@ databricks runs get --run-id <RUN_ID> 2>&1 | grep -v "^WARN:" | grep -E '"result
 - [x] Add Silver layer for all resources (agent, contact, media, viewing)
 - [ ] Implement CDC (incremental updates)
 - [ ] Scale to full data load
+
+---
+
+## Disclaimer
+
+This project and all associated notebooks, workflows, and examples are designed to run on Databricks Free Edition and are provided solely for personal learning, academic coursework, and other not‑for‑profit, non‑commercial use cases that comply with the Databricks Free Edition terms. It must not be used for any production, commercial, revenue‑generating, or SLA‑backed workloads, including processing live MLS/CRM data for customers or operating customer‑facing applications. To use this project in any commercial or production context, you must migrate it to a paid Databricks workspace (or another appropriately licensed environment) and ensure that your usage complies with all applicable Databricks, cloud provider, and data source terms and conditions.
