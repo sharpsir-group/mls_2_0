@@ -380,16 +380,6 @@ max_properties = 10  # Change to 100, 1000, or None for all
 - Bidirectional coverage (API ↔ RESO)
 - Test mode awareness (only reports critical issues)
 
-## Key Files for LLM Context
-
-When starting a new session, read these files to understand the project:
-
-1. `README.md` - This file (overview)
-2. `.env` - Credentials (if needed)
-3. `notebooks/00_full_refresh_qobrix_bronze.py` - Bronze ingestion
-4. `notebooks/03_gold_reso_property_etl.py` - RESO Property with extensions
-5. `scripts/verify_data_integrity.sh` - Local integrity test
-
 ## Common Commands
 
 ```bash
