@@ -2,3 +2,7 @@
 2025-12-03 07:09:06 +00:00: INFO:     Waiting for application startup.
 2025-12-03 07:09:06 +00:00: INFO:     Application startup complete.
 2025-12-03 07:09:06 +00:00: INFO:     Uvicorn running on http://0.0.0.0:3900 (Press CTRL+C to quit)
+2025-12-03 07:14:10 +00:00: INFO:     Shutting down
+2025-12-03 07:14:10 +00:00: INFO:     Waiting for application shutdown.
+2025-12-03 07:14:10 +00:00: INFO:     Application shutdown complete.
+2025-12-03 07:14:10 +00:00: INFO:     Finished server process [822043]

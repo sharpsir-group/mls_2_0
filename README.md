@@ -429,6 +429,7 @@ $filter=ListPrice gt 1000000&$orderby=ListPrice desc
 ```
 mls_2_0/
 ├── .env.example                # Template for .env
+├── ecosystem.config.js         # PM2 config for RESO Web API
 ├── api/                        # RESO Web API (FastAPI)
 │   ├── main.py                 # FastAPI application
 │   ├── config.py               # Configuration (loads from parent .env)
