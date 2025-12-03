@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     
     # CORS settings
     cors_origins: list = ["*"]
+    
+    # Qobrix API base URL for media files
+    qobrix_api_base_url: str = ""
 
 
 @lru_cache()

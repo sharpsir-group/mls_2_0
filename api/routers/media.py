@@ -4,6 +4,10 @@ RESO Media Resource Router
 from typing import Optional, Any
 from fastapi import APIRouter, Query, Request
 from .base import execute_odata_query, get_entity_by_key
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import get_settings
 
 
 router = APIRouter(prefix="/odata", tags=["Media"])
@@ -11,6 +15,38 @@ router = APIRouter(prefix="/odata", tags=["Media"])
 TABLE_NAME = "media"
 RESOURCE_NAME = "Media"
 KEY_COLUMN = "MediaKey"
+
+
+def transform_media_urls(data: dict[str, Any]) -> dict[str, Any]:
+    """Transform relative MediaURL paths to full URLs."""
+    settings = get_settings()
+    
+    # Extract base domain from QOBRIX_API_BASE_URL
+    # e.g., https://sothebys6113.eu1.qobrix.com/api/v2 -> https://sothebys6113.eu1.qobrix.com
+    base_url = settings.qobrix_api_base_url
+    if base_url:
+        # Remove trailing path to get just the domain
+        if "/api/" in base_url:
+            base_url = base_url.split("/api/")[0]
+        elif base_url.endswith("/"):
+            base_url = base_url.rstrip("/")
+    
+    if not base_url:
+        return data
+    
+    # Transform URLs in the response
+    if "value" in data:
+        for item in data["value"]:
+            if "MediaURL" in item and item["MediaURL"]:
+                url = item["MediaURL"]
+                if url.startswith("/"):
+                    item["MediaURL"] = base_url + url
+    elif "MediaURL" in data and data["MediaURL"]:
+        url = data["MediaURL"]
+        if url.startswith("/"):
+            data["MediaURL"] = base_url + url
+    
+    return data
 
 
 @router.get("/Media")
@@ -37,7 +73,7 @@ async def list_media(
     - `$filter=MediaCategory eq 'Photo'` - Get only photos
     """
     base_url = str(request.base_url).rstrip("/")
-    return await execute_odata_query(
+    result = await execute_odata_query(
         table_name=TABLE_NAME,
         resource_name=RESOURCE_NAME,
         filter=filter,
@@ -48,6 +84,7 @@ async def list_media(
         count=count,
         base_url=base_url
     )
+    return transform_media_urls(result)
 
 
 @router.get("/Media('{media_key}')")
@@ -57,11 +94,11 @@ async def get_media(
 ) -> dict[str, Any]:
     """Get a single Media by MediaKey."""
     base_url = str(request.base_url).rstrip("/")
-    return await get_entity_by_key(
+    result = await get_entity_by_key(
         table_name=TABLE_NAME,
         resource_name=RESOURCE_NAME,
         key_column=KEY_COLUMN,
         key_value=media_key,
         base_url=base_url
     )
-
+    return transform_media_urls(result)
