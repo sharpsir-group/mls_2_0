@@ -8,6 +8,10 @@ Endpoints:
 from typing import Optional, Any
 from fastapi import APIRouter, Query, Request
 from .base import execute_odata_query, get_entity_by_key
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import get_settings
 
 
 router = APIRouter(prefix="/odata", tags=["Property"])
@@ -15,6 +19,26 @@ router = APIRouter(prefix="/odata", tags=["Property"])
 TABLE_NAME = "property"
 RESOURCE_NAME = "Property"
 KEY_COLUMN = "ListingKey"
+
+
+def add_currency_code(data: dict[str, Any]) -> dict[str, Any]:
+    """Add ListPriceCurrencyCode to property responses."""
+    settings = get_settings()
+    currency = settings.qobrix_default_currency
+    
+    if not currency:
+        return data
+    
+    # Add to list response
+    if "value" in data:
+        for item in data["value"]:
+            if "ListPrice" in item:
+                item["ListPriceCurrencyCode"] = currency
+    # Add to single entity response
+    elif "ListPrice" in data:
+        data["ListPriceCurrencyCode"] = currency
+    
+    return data
 
 
 @router.get("/Property")
@@ -52,7 +76,7 @@ async def list_properties(
     X_QobrixId, X_Reference, X_Status, X_ShortDescription, X_LongDescription, etc.
     """
     base_url = str(request.base_url).rstrip("/")
-    return await execute_odata_query(
+    result = await execute_odata_query(
         table_name=TABLE_NAME,
         resource_name=RESOURCE_NAME,
         filter=filter,
@@ -63,6 +87,7 @@ async def list_properties(
         count=count,
         base_url=base_url
     )
+    return add_currency_code(result)
 
 
 @router.get("/Property('{listing_key}')")
@@ -78,11 +103,11 @@ async def get_property(
     `GET /odata/Property('ABC123')`
     """
     base_url = str(request.base_url).rstrip("/")
-    return await get_entity_by_key(
+    result = await get_entity_by_key(
         table_name=TABLE_NAME,
         resource_name=RESOURCE_NAME,
         key_column=KEY_COLUMN,
         key_value=listing_key,
         base_url=base_url
     )
-
+    return add_currency_code(result)
