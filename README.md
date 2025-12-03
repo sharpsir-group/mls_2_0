@@ -621,7 +621,7 @@ CDC detects trashed properties via `GET /properties?trashed=true` and updates th
 - [x] Map Qobrix fields to RESO standard names (hybrid approach)
 - [x] Add Silver layer for all resources (agent, contact, media, viewing)
 - [x] Implement CDC (incremental updates) ✅ Tested
-- [ ] Scale to full data load
+- [x] Scale to full data load
 
 ---
 
