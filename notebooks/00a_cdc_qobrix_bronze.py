@@ -322,7 +322,7 @@ else:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## CDC: Agents (Hourly)
+# MAGIC ## CDC: Agents
 
 # COMMAND ----------
 
@@ -334,30 +334,23 @@ started_at = datetime.utcnow()
 last_sync = get_last_sync("agents")
 print(f"\n🕐 Last sync: {last_sync}")
 
-# Check if we should sync agents (hourly is enough)
-# Handle both formats: 'YYYY-MM-DD HH:MM:SS' and 'YYYY-MM-DDTHH:MM:SS'
-last_sync_str = last_sync[:19].replace('T', ' ')
-last_sync_dt = datetime.strptime(last_sync_str, '%Y-%m-%d %H:%M:%S')
-hours_since_sync = (datetime.utcnow() - last_sync_dt).total_seconds() / 3600
+print(f"\n1️⃣  Fetching agents modified since {last_sync}...")
+modified_agents = fetch_modified_records("/agents", last_sync)
+print(f"   Found: {len(modified_agents)} modified agents")
 
-if hours_since_sync >= 1:  # Only sync if 1+ hour since last sync
-    print(f"\n1️⃣  Fetching agents modified since {last_sync}...")
-    modified_agents = fetch_modified_records("/agents", last_sync)
-    print(f"   Found: {len(modified_agents)} modified agents")
-    
-    if modified_agents:
-        max_modified = max(a.get("modified", "") for a in modified_agents)
-        merged_count = merge_to_bronze(modified_agents, "agents", "id")
-        update_sync_metadata("agents", merged_count, max_modified, "SUCCESS", started_at)
-    else:
-        update_sync_metadata("agents", 0, last_sync, "SUCCESS", started_at)
+if modified_agents:
+    max_modified = max(a.get("modified", "") for a in modified_agents)
+    merged_count = merge_to_bronze(modified_agents, "agents", "id")
+    update_sync_metadata("agents", merged_count, max_modified, "SUCCESS", started_at)
+    print(f"\n✅ Agents CDC complete: {merged_count} records updated")
 else:
-    print(f"   ⏭️  Skipping agents (last sync was {hours_since_sync:.1f}h ago, threshold: 1h)")
+    print("\n✅ No agent changes since last sync")
+    update_sync_metadata("agents", 0, last_sync, "SUCCESS", started_at)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## CDC: Contacts (Hourly)
+# MAGIC ## CDC: Contacts
 
 # COMMAND ----------
 
@@ -369,24 +362,18 @@ started_at = datetime.utcnow()
 last_sync = get_last_sync("contacts")
 print(f"\n🕐 Last sync: {last_sync}")
 
-# Handle both formats: 'YYYY-MM-DD HH:MM:SS' and 'YYYY-MM-DDTHH:MM:SS'
-last_sync_str = last_sync[:19].replace('T', ' ')
-last_sync_dt = datetime.strptime(last_sync_str, '%Y-%m-%d %H:%M:%S')
-hours_since_sync = (datetime.utcnow() - last_sync_dt).total_seconds() / 3600
+print(f"\n1️⃣  Fetching contacts modified since {last_sync}...")
+modified_contacts = fetch_modified_records("/contacts", last_sync)
+print(f"   Found: {len(modified_contacts)} modified contacts")
 
-if hours_since_sync >= 1:
-    print(f"\n1️⃣  Fetching contacts modified since {last_sync}...")
-    modified_contacts = fetch_modified_records("/contacts", last_sync)
-    print(f"   Found: {len(modified_contacts)} modified contacts")
-    
-    if modified_contacts:
-        max_modified = max(c.get("modified", "") for c in modified_contacts)
-        merged_count = merge_to_bronze(modified_contacts, "contacts", "id")
-        update_sync_metadata("contacts", merged_count, max_modified, "SUCCESS", started_at)
-    else:
-        update_sync_metadata("contacts", 0, last_sync, "SUCCESS", started_at)
+if modified_contacts:
+    max_modified = max(c.get("modified", "") for c in modified_contacts)
+    merged_count = merge_to_bronze(modified_contacts, "contacts", "id")
+    update_sync_metadata("contacts", merged_count, max_modified, "SUCCESS", started_at)
+    print(f"\n✅ Contacts CDC complete: {merged_count} records updated")
 else:
-    print(f"   ⏭️  Skipping contacts (last sync was {hours_since_sync:.1f}h ago, threshold: 1h)")
+    print("\n✅ No contact changes since last sync")
+    update_sync_metadata("contacts", 0, last_sync, "SUCCESS", started_at)
 
 # COMMAND ----------
 
