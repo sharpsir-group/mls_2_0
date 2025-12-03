@@ -46,8 +46,8 @@ class Settings(BaseSettings):
     # Qobrix API base URL for media files
     qobrix_api_base_url: str = ""
     
-    # Qobrix default currency (ISO 4217 code)
-    qobrix_default_currency: str = "EUR"
+    # Qobrix default currency (ISO 4217 code) - set in .env
+    qobrix_default_currency: str = ""
 
 
 @lru_cache()
