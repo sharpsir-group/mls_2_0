@@ -118,7 +118,7 @@ SELECT
 
     TRY_CAST(s.bedrooms AS INT)                   AS BedroomsTotal,
     TRY_CAST(s.bathrooms AS INT)                  AS BathroomsTotalInteger,
-    TRY_CAST(b.wc_bathrooms AS INT)               AS BathroomsHalf,
+    TRY_CAST(TRY_CAST(b.wc_bathrooms AS DOUBLE) AS INT) AS BathroomsHalf,
     TRY_CAST(s.internal_area_amount AS DECIMAL(18,2)) AS LivingArea,
     'SquareMeters'                                AS LivingAreaUnits,
     TRY_CAST(s.plot_area_amount AS DECIMAL(18,2)) AS LotSizeSquareFeet,
@@ -245,7 +245,7 @@ SELECT
     TRY_CAST(b.living_rooms AS INT)               AS X_LivingRooms,
     TRY_CAST(b.kitchens AS INT)                   AS X_Kitchens,
     b.kitchen_type                                AS X_KitchenType,
-    TRY_CAST(b.wc_bathrooms AS INT)               AS X_WCBathrooms,
+    TRY_CAST(TRY_CAST(b.wc_bathrooms AS DOUBLE) AS INT) AS X_WCBathrooms,
     TRY_CAST(b.office_spaces AS INT)              AS X_OfficeSpaces,
     TRY_CAST(b.verandas AS INT)                   AS X_VerandasCount,
     TRY_CAST(b.covered_area_amount AS DECIMAL(18,2))     AS X_CoveredArea,

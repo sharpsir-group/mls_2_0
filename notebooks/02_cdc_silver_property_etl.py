@@ -115,8 +115,8 @@ SELECT
     {col_or_null('construction_stage')},
 
     -- Bedrooms / bathrooms
-    TRY_CAST(p.bedrooms AS INT)         AS bedrooms,
-    TRY_CAST(p.bathrooms AS INT)        AS bathrooms,
+    TRY_CAST(TRY_CAST(p.bedrooms AS DOUBLE) AS INT)   AS bedrooms,
+    TRY_CAST(TRY_CAST(p.bathrooms AS DOUBLE) AS INT)  AS bathrooms,
 
     -- Location
     {col_or_null('country')},

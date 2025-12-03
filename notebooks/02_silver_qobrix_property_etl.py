@@ -82,9 +82,9 @@ SELECT
     {col_or_null('property_subtype', 'property_subtype_id')},
     {col_or_null('construction_stage')},
 
-    -- Bedrooms / bathrooms
-    TRY_CAST(p.bedrooms AS INT)         AS bedrooms,
-    TRY_CAST(p.bathrooms AS INT)        AS bathrooms,
+    -- Bedrooms / bathrooms (cast via DOUBLE since bronze stores as "2.0" string)
+    TRY_CAST(TRY_CAST(p.bedrooms AS DOUBLE) AS INT)   AS bedrooms,
+    TRY_CAST(TRY_CAST(p.bathrooms AS DOUBLE) AS INT)  AS bathrooms,
 
     -- Location
     {col_or_null('country')},

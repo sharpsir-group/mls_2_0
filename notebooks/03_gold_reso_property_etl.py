@@ -132,7 +132,7 @@ SELECT
     -- Beds / baths (RESO standard)
     TRY_CAST(s.bedrooms AS INT)                   AS BedroomsTotal,
     TRY_CAST(s.bathrooms AS INT)                  AS BathroomsTotalInteger,
-    TRY_CAST(b.wc_bathrooms AS INT)               AS BathroomsHalf,
+    TRY_CAST(TRY_CAST(b.wc_bathrooms AS DOUBLE) AS INT) AS BathroomsHalf,
 
     -- Size / area (RESO standard)
     TRY_CAST(s.internal_area_amount AS DECIMAL(18,2)) AS LivingArea,
