@@ -137,12 +137,103 @@ cd mls_2_0
 ./scripts/verify_data_integrity.sh
 ```
 
+## RESO Web API
+
+A FastAPI-based RESO Data Dictionary 2.0 compliant OData API that queries Databricks directly.
+
+### Start the API Server
+
+```bash
+# Start on default port 8000
+./scripts/run_api.sh
+
+# Start on custom port
+./scripts/run_api.sh 8080
+
+# Development mode with auto-reload
+./scripts/run_api.sh --dev
+```
+
+### API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /` | API info and available endpoints |
+| `GET /health` | Health check with Databricks connection status |
+| `GET /docs` | Interactive Swagger UI documentation |
+| `GET /odata` | OData service document |
+| `GET /odata/$metadata` | OData metadata (XML) |
+| `GET /odata/Property` | RESO Property resource |
+| `GET /odata/Member` | RESO Member resource |
+| `GET /odata/Office` | RESO Office resource |
+| `GET /odata/Media` | RESO Media resource |
+| `GET /odata/Contacts` | RESO Contacts resource |
+| `GET /odata/ShowingAppointment` | RESO ShowingAppointment resource |
+
+### OData Query Examples
+
+```bash
+# Get 10 active properties
+curl "http://localhost:8000/odata/Property?\$filter=StandardStatus eq 'Active'&\$top=10"
+
+# Select specific fields
+curl "http://localhost:8000/odata/Property?\$select=ListingKey,ListPrice,City,BedroomsTotal"
+
+# Filter by price range
+curl "http://localhost:8000/odata/Property?\$filter=ListPrice gt 500000 and ListPrice lt 1000000"
+
+# Sort by price descending
+curl "http://localhost:8000/odata/Property?\$orderby=ListPrice desc&\$top=5"
+
+# Pagination
+curl "http://localhost:8000/odata/Property?\$top=100&\$skip=200"
+
+# Count total records
+curl "http://localhost:8000/odata/Property?\$count=true&\$top=1"
+
+# Get single property by key
+curl "http://localhost:8000/odata/Property('QOBRIX_abc123')"
+
+# Get media for a property
+curl "http://localhost:8000/odata/Media?\$filter=ResourceRecordKey eq 'QOBRIX_abc123'"
+```
+
+### Environment Variables
+
+The API reads from `.env` in the `mls_2_0` directory:
+
+| Variable | Description |
+|----------|-------------|
+| `DATABRICKS_HOST` | Databricks workspace URL |
+| `DATABRICKS_TOKEN` | Personal access token |
+| `DATABRICKS_WAREHOUSE_ID` | SQL Warehouse ID |
+| `DATABRICKS_CATALOG` | Catalog name (default: `mls2`) |
+| `DATABRICKS_SCHEMA` | Schema name (default: `reso_gold`) |
+
 ## Directory Structure
 
 ```
 mls_2_0/
 ├── .env.example                # Template for .env
+├── api/                        # RESO Web API (FastAPI)
+│   ├── main.py                 # FastAPI application
+│   ├── config.py               # Configuration (loads from parent .env)
+│   ├── requirements.txt        # Python dependencies
+│   ├── routers/                # API route handlers
+│   │   ├── property.py         # /odata/Property
+│   │   ├── member.py           # /odata/Member
+│   │   ├── office.py           # /odata/Office
+│   │   ├── media.py            # /odata/Media
+│   │   ├── contacts.py         # /odata/Contacts
+│   │   ├── showing.py          # /odata/ShowingAppointment
+│   │   └── metadata.py         # /odata/$metadata
+│   ├── services/               # Business logic
+│   │   ├── databricks.py       # Databricks SQL HTTP connector
+│   │   └── odata_parser.py     # OData query to SQL translator
+│   └── models/                 # Pydantic models
+│       └── reso.py             # RESO resource schemas
 ├── docs/
+│   ├── mapping.md              # Complete Qobrix → RESO field mapping
 │   ├── qobrix_openapi.yaml     # Qobrix API OpenAPI spec (68k lines)
 │   └── qobrix_api_docs.html    # API docs viewer
 ├── notebooks/
@@ -164,6 +255,7 @@ mls_2_0/
 │   └── 10_verify_data_integrity_qobrix_vs_reso.py  # Integrity test
 ├── scripts/
 │   ├── import_notebooks.sh     # Import notebooks to Databricks
+│   ├── run_api.sh              # Start RESO Web API server
 │   ├── run_pipeline.sh         # Run ETL pipeline via CLI
 │   └── verify_data_integrity.sh # Local integrity test
 ```
