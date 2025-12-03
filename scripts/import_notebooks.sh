@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright 2025 SharpSir Group
+# Licensed under the Apache License, Version 2.0
+# See LICENSE file for details.
 # Import MLS 2.0 notebooks to Databricks workspace
 # Usage: ./scripts/import_notebooks.sh
 # Run from: mls_2_0/ directory

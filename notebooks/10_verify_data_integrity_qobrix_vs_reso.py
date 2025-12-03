@@ -1,4 +1,7 @@
 # Databricks notebook source
+# Copyright 2025 SharpSir Group
+# Licensed under the Apache License, Version 2.0
+# See LICENSE file for details.
 # MAGIC %md
 # MAGIC # MLS 2.0 – Comprehensive Data Integrity Verification
 # MAGIC 

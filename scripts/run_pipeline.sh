@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright 2025 SharpSir Group
+# Licensed under the Apache License, Version 2.0
+# See LICENSE file for details.
 # MLS 2.0 Pipeline Runner
 # Usage: ./scripts/run_pipeline.sh [bronze|silver|gold|integrity|all]
 # Run from: mls_2_0/ directory
