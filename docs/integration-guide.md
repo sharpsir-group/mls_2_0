@@ -1,0 +1,229 @@
+# Integration Guide
+
+Connect your real estate website to the RESO Web API.
+
+## API Base URL
+
+```
+https://your-server.com:3900
+```
+
+## Available Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /odata/Property` | Property listings |
+| `GET /odata/Property('{key}')` | Single property |
+| `GET /odata/Media` | Property photos |
+| `GET /odata/Member` | Agents |
+| `GET /odata/Office` | Offices/agencies |
+
+## Quick Start
+
+### Fetch Properties
+
+```javascript
+const API_URL = 'https://your-server.com:3900';
+
+// Get active listings
+const response = await fetch(`${API_URL}/odata/Property?$filter=StandardStatus eq 'Active'&$top=20`);
+const data = await response.json();
+
+console.log(data.value); // Array of properties
+```
+
+### Response Format
+
+```json
+{
+  "@odata.context": "...",
+  "@odata.count": 14034,
+  "value": [
+    {
+      "ListingKey": "QOBRIX_abc123",
+      "ListPrice": 750000,
+      "City": "Miami",
+      "StandardStatus": "Active",
+      "BedroomsTotal": 3,
+      "BathroomsTotalInteger": 2,
+      "LivingArea": 1500,
+      "Latitude": 25.7617,
+      "Longitude": -80.1918
+    }
+  ],
+  "@odata.nextLink": "...?$skip=20&$top=20"
+}
+```
+
+## OData Query Parameters
+
+| Parameter | Example | Description |
+|-----------|---------|-------------|
+| `$filter` | `StandardStatus eq 'Active'` | Filter results |
+| `$select` | `ListingKey,ListPrice,City` | Select fields |
+| `$orderby` | `ListPrice desc` | Sort results |
+| `$top` | `20` | Limit results |
+| `$skip` | `40` | Pagination offset |
+| `$count` | `true` | Include total count |
+
+## Common Queries
+
+```bash
+# Active properties
+$filter=StandardStatus eq 'Active'
+
+# Price range
+$filter=ListPrice ge 500000 and ListPrice lt 1000000
+
+# Bedrooms
+$filter=BedroomsTotal ge 3
+
+# City search
+$filter=contains(City,'Miami')
+
+# Combined filters
+$filter=StandardStatus eq 'Active' and ListPrice lt 500000 and BedroomsTotal ge 2
+
+# Sort by price
+$orderby=ListPrice desc
+
+# Pagination (page 3, 20 per page)
+$top=20&$skip=40
+```
+
+## Property Fields
+
+### Core Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ListingKey` | string | Unique ID |
+| `ListPrice` | number | Listing price |
+| `StandardStatus` | string | Active, Pending, Closed, Withdrawn |
+| `PropertyType` | string | Apartment, House, Land, etc. |
+| `City` | string | City name |
+| `BedroomsTotal` | number | Number of bedrooms |
+| `BathroomsTotalInteger` | number | Number of bathrooms |
+| `LivingArea` | number | Interior area (sqm) |
+| `Latitude` | number | GPS latitude |
+| `Longitude` | number | GPS longitude |
+
+### Extension Fields (X_)
+
+| Field | Description |
+|-------|-------------|
+| `X_MainPhoto` | Main photo URL |
+| `X_SeaView` | Has sea view |
+| `X_PrivateSwimmingPool` | Has private pool |
+| `X_ShortDescription` | Marketing description |
+
+## Get Property Photos
+
+```javascript
+// Get photos for a property
+const listingKey = 'QOBRIX_abc123';
+const response = await fetch(
+  `${API_URL}/odata/Media?$filter=ResourceRecordKey eq '${listingKey}'&$orderby=Order`
+);
+const data = await response.json();
+
+data.value.forEach(media => {
+  console.log(media.MediaURL);  // Photo URL
+  console.log(media.Order);     // Display order
+});
+```
+
+## TypeScript Types
+
+```typescript
+interface Property {
+  ListingKey: string;
+  ListPrice: number;
+  StandardStatus: 'Active' | 'Pending' | 'Closed' | 'Withdrawn';
+  PropertyType: string;
+  City: string;
+  BedroomsTotal: number;
+  BathroomsTotalInteger: number;
+  LivingArea: number;
+  Latitude: number;
+  Longitude: number;
+  X_MainPhoto?: string;
+}
+
+interface ODataResponse<T> {
+  '@odata.context': string;
+  '@odata.count'?: number;
+  '@odata.nextLink'?: string;
+  value: T[];
+}
+```
+
+## React Example
+
+```tsx
+import { useState, useEffect } from 'react';
+
+const API_URL = 'https://your-server.com:3900';
+
+function PropertyList() {
+  const [properties, setProperties] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${API_URL}/odata/Property?$filter=StandardStatus eq 'Active'&$top=20`)
+      .then(res => res.json())
+      .then(data => {
+        setProperties(data.value);
+        setLoading(false);
+      });
+  }, []);
+
+  if (loading) return <div>Loading...</div>;
+
+  return (
+    <div className="grid grid-cols-3 gap-4">
+      {properties.map(property => (
+        <div key={property.ListingKey} className="border rounded p-4">
+          <img src={property.X_MainPhoto} alt="" className="w-full h-48 object-cover" />
+          <h3>${property.ListPrice?.toLocaleString()}</h3>
+          <p>{property.City}</p>
+          <p>{property.BedroomsTotal} bed | {property.BathroomsTotalInteger} bath</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+## Environment Variables
+
+In your frontend project:
+
+```env
+VITE_RESO_API_URL=https://your-server.com:3900
+```
+
+Then use:
+
+```javascript
+const API_URL = import.meta.env.VITE_RESO_API_URL;
+```
+
+## CORS
+
+The API allows all origins by default. For production, configure allowed origins in `api/config.py`.
+
+## Error Handling
+
+```javascript
+try {
+  const response = await fetch(`${API_URL}/odata/Property`);
+  if (!response.ok) {
+    const error = await response.json();
+    console.error(error.error.message);
+  }
+  const data = await response.json();
+} catch (e) {
+  console.error('Network error:', e);
+}
+```

@@ -241,11 +241,7 @@ The API reads from `.env` in the `mls_2_0` directory:
 
 ### Frontend Integration
 
-See **[Integration Guide](docs/INTEGRATION_GUIDE.md)** for:
-- Lovable/React integration with TypeScript
-- React Query hooks for property data
-- Example components
-- OData query examples
+See **[Integration Guide](docs/integration-guide.md)** for connecting your real estate site to this API.
 
 ## Directory Structure
 
@@ -271,7 +267,7 @@ mls_2_0/
 │   └── models/                 # Pydantic models
 │       └── reso.py             # RESO resource schemas
 ├── docs/
-│   ├── INTEGRATION_GUIDE.md    # Frontend integration (Lovable, React)
+│   ├── integration-guide.md    # Connect your real estate site to this API
 │   ├── mapping.md              # Complete Qobrix → RESO field mapping
 │   ├── qobrix_openapi.yaml     # Qobrix API OpenAPI spec (68k lines)
 │   └── qobrix_api_docs.html    # API docs viewer
