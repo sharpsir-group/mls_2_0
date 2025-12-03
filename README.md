@@ -1,6 +1,6 @@
 # MLS 2.0 Datamart - Qobrix → RESO
 
-**Status**: ✅ Working (test mode with 10 properties)
+**Status**: ✅ Working (test mode with 10 properties) | ✅ CDC Implemented
 
 ## Databricks Free Edition Setup
 
@@ -104,6 +104,9 @@ DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/<warehouse-id>
 - **Interactive Docs**: `${QOBRIX_API_BASE_URL}/../docs` (see your `.env`)
 - **OpenAPI Spec**: [`docs/qobrix_openapi.yaml`](docs/qobrix_openapi.yaml) (local copy)
 
+### Data Mapping
+- **Full Mapping Reference**: [`docs/mapping.md`](docs/mapping.md) - Complete Qobrix → RESO field mapping
+
 ## Quick Start
 
 ```bash
@@ -145,13 +148,16 @@ mls_2_0/
 │   ├── qobrix_openapi.yaml     # Qobrix API OpenAPI spec (68k lines)
 │   └── qobrix_api_docs.html    # API docs viewer
 ├── notebooks/
-│   ├── 00_full_refresh_qobrix_bronze.py       # Bronze: All Qobrix data + lookups
-│   ├── 02_silver_qobrix_property_etl.py       # Silver: Normalize properties
+│   ├── 00_full_refresh_qobrix_bronze.py       # Bronze: Full refresh all Qobrix data
+│   ├── 00a_cdc_qobrix_bronze.py               # Bronze: CDC incremental sync
+│   ├── 02_silver_qobrix_property_etl.py       # Silver: Full refresh properties
+│   ├── 02_cdc_silver_property_etl.py          # Silver: CDC incremental properties
 │   ├── 02a_silver_qobrix_agent_etl.py         # Silver: Normalize agents + users
 │   ├── 02b_silver_qobrix_contact_etl.py       # Silver: Normalize contacts
 │   ├── 02c_silver_qobrix_media_etl.py         # Silver: Normalize media
 │   ├── 02d_silver_qobrix_viewing_etl.py       # Silver: Normalize viewings
-│   ├── 03_gold_reso_property_etl.py           # Gold: RESO Property + extensions
+│   ├── 03_gold_reso_property_etl.py           # Gold: Full refresh RESO Property
+│   ├── 03_cdc_gold_reso_property_etl.py       # Gold: CDC incremental RESO Property
 │   ├── 03a_gold_reso_member_etl.py            # Gold: RESO Member (from silver.agent)
 │   ├── 03b_gold_reso_office_etl.py            # Gold: RESO Office (from silver.agent)
 │   ├── 03c_gold_reso_media_etl.py             # Gold: RESO Media (from silver.media)
@@ -185,7 +191,7 @@ Catalog: `mls2`
 
 ```
 mls2 (catalog)
-├── qobrix_bronze (schema) - 17 tables
+├── qobrix_bronze (schema) - 18 tables
 │   ├── properties          # Raw Qobrix properties (241 fields)
 │   ├── agents              # Real estate agents
 │   ├── property_types      # Property type lookups
@@ -202,7 +208,8 @@ mls2 (catalog)
 │   ├── bazaraki_locations  # Bazaraki portal location mappings
 │   ├── spitogatos_locations # Spitogatos portal location mappings
 │   ├── property_finder_ae_locations # Property Finder AE mappings
-│   └── property_media      # Photos/documents/floorplans
+│   ├── property_media      # Photos/documents/floorplans
+│   └── cdc_metadata        # CDC sync tracking (timestamps, counts)
 ├── qobrix_silver (schema) - 5 tables
 │   ├── property            # Normalized properties
 │   ├── agent               # Normalized agents + users
@@ -210,7 +217,7 @@ mls2 (catalog)
 │   ├── media               # Normalized property media
 │   └── viewing             # Normalized property viewings
 └── reso_gold (schema) - 6 RESO resources
-    ├── property            # RESO Property + 70+ Qobrix extension fields
+    ├── property            # RESO Property (48 standard + 129 extension fields)
     ├── member              # RESO Member (agents + users)
     ├── office              # RESO Office (agencies)
     ├── media               # RESO Media (photos, documents, floorplans)
@@ -304,26 +311,47 @@ These Qobrix fields are mapped to official RESO Data Dictionary field names for 
 | `StoriesTotal` | `floors_building` | INT (total floors in building) |
 | `Stories` | `floor_number` | INT (unit's floor) |
 
-**Total: 34 RESO Standard Fields** mapped from Qobrix data.
+**Additional RESO Standard Fields:**
+| RESO Field | Qobrix Source | Transformation |
+|------------|---------------|----------------|
+| `BathroomsHalf` | `wc_bathrooms` | INT (WC = half bath) |
+| `LotSizeAcres` | `plot_area_amount` | `plot_area * 0.000247105` (m² → acres) |
+| `LeaseAmountFrequency` | `rent_frequency` | monthly→Monthly, weekly→Weekly, etc. |
+| `ListOfficeKey` | `agent` | `CONCAT('QOBRIX_OFFICE_', agent)` |
+| `Flooring` | `flooring` | Direct mapping |
+| `Fencing` | `fencing` | Direct mapping |
+| `FireplaceFeatures` | `fireplace_features` | Direct mapping |
+| `WaterfrontFeatures` | `waterfront_features` | Direct mapping |
+| `PatioAndPorchFeatures` | `patio_porch` | Direct mapping |
+| `OtherStructures` | `other_structures` | Direct mapping |
+| `AssociationAmenities` | `association_amenities` | Direct mapping |
 
-### Extension Fields (X_ prefix)
+**Total: 48 RESO Standard Fields** mapped from Qobrix data (92% RESO coverage).
+
+### Extension Fields (X_ prefix) - 129 Fields
 
 Per RESO convention, vendor-specific fields use the `X_` prefix. These are Qobrix-specific attributes that don't have RESO equivalents:
 
 | Category | Extension Fields |
 |----------|-----------------|
-| **Views (Regional)** | `X_SeaView`, `X_MountainView`, `X_BeachFront` (boolean flags) |
+| **Views (Regional)** | `X_SeaView`, `X_MountainView`, `X_BeachFront`, `X_AbutsGreenArea`, `X_ElevatedArea` |
 | **Pool Details** | `X_PrivateSwimmingPool`, `X_CommonSwimmingPool` |
-| **Property Features** | `X_Elevator`, `X_AirCondition`, `X_Alarm`, `X_SmartHome`, `X_SolarWaterHeater` |
-| **Building Details** | `X_ConstructionType`, `X_ConstructionStage`, `X_FloorType`, `X_NewBuild` |
-| **Energy Details** | `X_EnergyEfficiencyGrade`, `X_HeatingType`, `X_HeatingMedium`, `X_CoolingType` |
-| **Distances** | `X_DistanceFromBeach`, `X_DistanceFromAirport`, `X_DistanceFromCentre`, `X_DistanceFromSchool` |
-| **Room Details** | `X_LivingRooms`, `X_Kitchens`, `X_KitchenType`, `X_WCBathrooms`, `X_OfficeSpaces` |
-| **Area Details** | `X_CoveredArea`, `X_UncoveredArea`, `X_TotalArea`, `X_GardenArea`, `X_RoofGardenArea` |
-| **Land Details** | `X_BuildingDensity`, `X_Coverage`, `X_CornerPlot`, `X_TownPlanningZone` |
-| **Commercial** | `X_IdealFor`, `X_LicensedFor`, `X_BusinessTransferOrSale` |
-| **Marketing** | `X_Featured`, `X_PropertyOfTheMonth`, `X_VideoLink`, `X_VirtualTourLink` |
-| **Qobrix Metadata** | `X_QobrixId`, `X_QobrixRef`, `X_QobrixSource`, `X_QobrixCreated`, `X_QobrixModified` |
+| **Property Features** | `X_Elevator`, `X_AirCondition`, `X_Alarm`, `X_SmartHome`, `X_SolarWaterHeater`, `X_ConciergeReception`, `X_SecureDoor`, `X_Kitchenette`, `X_HomeOffice`, `X_SeparateLaundryRoom` |
+| **Building Details** | `X_ConstructionType`, `X_ConstructionStage`, `X_FloorType`, `X_NewBuild`, `X_Height`, `X_MaxFloor`, `X_UnitNumber` |
+| **Energy Details** | `X_EnergyEfficiencyGrade`, `X_HeatingType`, `X_HeatingMedium`, `X_CoolingType`, `X_EnergyConsumptionRating`, `X_EnergyEmissionRating` |
+| **Distances** | `X_DistanceFromBeach`, `X_DistanceFromAirport`, `X_DistanceFromCentre`, `X_DistanceFromSchool`, `X_DistanceFromRailStation`, `X_DistanceFromTubeStation` |
+| **Room Details** | `X_LivingRooms`, `X_Kitchens`, `X_KitchenType`, `X_OfficeSpaces`, `X_VerandasCount`, `X_Reception`, `X_StoreRoom` |
+| **Area Details** | `X_CoveredArea`, `X_UncoveredArea`, `X_TotalArea`, `X_GardenArea`, `X_RoofGardenArea`, `X_Frontage`, `X_MezzanineArea`, `X_StorageArea` |
+| **Land Details** | `X_BuildingDensity`, `X_Coverage`, `X_CornerPlot`, `X_TownPlanningZone`, `X_LandLocked`, `X_CadastralReference` |
+| **Commercial** | `X_IdealFor`, `X_LicensedFor`, `X_BusinessTransferOrSale`, `X_BusinessActivity`, `X_ConferenceRoom`, `X_ServerRoom`, `X_EnclosedOffice`, `X_OfficeLayout` |
+| **Pricing Details** | `X_PricePerSquare`, `X_PriceQualifier`, `X_PlusVAT`, `X_MinimumTenancy`, `X_TenancyType`, `X_Occupancy` |
+| **Price History** | `X_PreviousListPrice`, `X_PreviousLeasePrice`, `X_ListPriceModified`, `X_LeasePriceModified` |
+| **Auction** | `X_AuctionStartDate`, `X_AuctionEndDate`, `X_ReservePrice`, `X_StartingBid` |
+| **Property Subtypes** | `X_ApartmentType`, `X_HouseType`, `X_LandType`, `X_OfficeType`, `X_RetailType`, `X_IndustrialType`, `X_HotelType`, `X_BuildingType`, `X_InvestmentType` |
+| **Marketing** | `X_Featured`, `X_PropertyOfTheMonth`, `X_VideoLink`, `X_VirtualTourLink`, `X_ShortDescription`, `X_PropertyName` |
+| **Qobrix Metadata** | `X_QobrixId`, `X_QobrixRef`, `X_QobrixSource`, `X_QobrixCreated`, `X_QobrixModified`, `X_QobrixLegacyId`, `X_QobrixSellerId` |
+
+**Total Gold Property Fields: 179** (48 RESO Standard + 129 Extensions + 2 ETL metadata)
 
 ## Pipeline Flow
 
@@ -395,6 +423,7 @@ databricks runs get --run-id <RUN_ID> 2>&1 | grep -v "^WARN:" | grep -E '"result
 
 ## Databricks Job Names
 
+### Full Refresh Jobs
 | Job | Name |
 |-----|------|
 | Bronze | `MLS 2.0 - Qobrix Bronze Full Refresh` |
@@ -411,6 +440,86 @@ databricks runs get --run-id <RUN_ID> 2>&1 | grep -v "^WARN:" | grep -E '"result
 | Gold Showing | `MLS 2.0 - RESO Gold ShowingAppointment ETL` |
 | Integrity | `MLS 2.0 - Qobrix vs RESO Integrity Test` |
 
+### CDC Jobs (Incremental)
+| Job | Name |
+|-----|------|
+| CDC Bronze | `MLS 2.0 - Qobrix CDC Bronze` |
+| CDC Silver | `MLS 2.0 - Qobrix CDC Silver Property` |
+| CDC Gold | `MLS 2.0 - RESO CDC Gold Property` |
+
+## CDC (Change Data Capture)
+
+### Overview
+
+CDC enables incremental data sync instead of full refresh:
+
+| Mode | When to Use | Time | API Calls |
+|------|-------------|------|-----------|
+| **Full Refresh** | Initial load, recovery, weekly | 10-15 min | 50+ |
+| **CDC** | Regular sync (every 15-30 min) | 15-60 sec | 5-10 |
+
+### CDC Commands
+
+```bash
+# Full CDC pipeline (bronze → silver → gold)
+./scripts/run_pipeline.sh cdc
+
+# Individual CDC stages
+./scripts/run_pipeline.sh cdc-bronze   # Fetch changed records from API
+./scripts/run_pipeline.sh cdc-silver   # Transform changed records
+./scripts/run_pipeline.sh cdc-gold     # RESO transform changed records
+```
+
+### How It Works
+
+1. **CDC Metadata Table** (`qobrix_bronze.cdc_metadata`)
+   - Tracks last sync timestamp per entity
+   - Records processed count and status
+   - Enables reliable incremental sync
+
+2. **Timestamp-Based Filtering**
+   - Queries API: `GET /properties?search=modified>='2025-12-02 10:00:00'`
+   - Only fetches records modified since last sync
+
+3. **DELETE + INSERT Operations**
+   - Uses DELETE + INSERT to handle schema evolution
+   - Avoids schema mismatch issues with nested API fields
+   - Preserves data integrity
+
+### CDC Notebooks
+
+| Notebook | Purpose |
+|----------|---------|
+| `00a_cdc_qobrix_bronze.py` | Incremental API fetch → bronze MERGE |
+| `02_cdc_silver_property_etl.py` | Incremental silver transform |
+| `03_cdc_gold_reso_property_etl.py` | Incremental gold RESO transform |
+
+### Entity Sync Frequency
+
+| Entity | CDC Frequency | Reason |
+|--------|---------------|--------|
+| Properties | Every run | High change volume |
+| Property Media | Every run | Tied to property changes |
+| Agents | Hourly | Low change volume |
+| Contacts | Hourly | Low change volume |
+| Viewings | Every run | Tied to property activity |
+| Lookups | Daily (full refresh) | Rarely change |
+
+### Soft Delete Handling
+
+CDC detects trashed properties via `GET /properties?trashed=true` and updates their status in bronze.
+
+### Recommended Schedule
+
+```
+# Cron examples
+*/15 * * * *  ./scripts/run_pipeline.sh cdc         # Every 15 min
+0 * * * *     ./scripts/run_pipeline.sh cdc-bronze  # Hourly (agents, contacts)
+0 0 * * 0     ./scripts/run_pipeline.sh all         # Weekly full refresh
+```
+
+---
+
 ## Next Steps
 
 - [x] Add RESO Member resource (agents/users)
@@ -421,7 +530,7 @@ databricks runs get --run-id <RUN_ID> 2>&1 | grep -v "^WARN:" | grep -E '"result
 - [x] Add Qobrix extension fields (X_ prefix) to Property
 - [x] Map Qobrix fields to RESO standard names (hybrid approach)
 - [x] Add Silver layer for all resources (agent, contact, media, viewing)
-- [ ] Implement CDC (incremental updates)
+- [x] Implement CDC (incremental updates) ✅ Tested
 - [ ] Scale to full data load
 
 ---

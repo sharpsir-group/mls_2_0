@@ -271,6 +271,67 @@ echo "==========================================================================
 
 echo ""
 echo "================================================================================"
+echo "📊 GOLD PROPERTY FIELD COVERAGE VERIFICATION"
+echo "================================================================================"
+
+# Get column count
+cols_result=$(execute_sql "DESCRIBE mls2.reso_gold.property" 2>/dev/null)
+total_cols=$(echo "$cols_result" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('result',{}).get('data_array',[])))" 2>/dev/null || echo "0")
+
+# Get extension column count
+ext_cols=$(echo "$cols_result" | python3 -c "import sys,json; d=json.load(sys.stdin); print(sum(1 for r in d.get('result',{}).get('data_array',[]) if r and r[0].startswith('X_')))" 2>/dev/null || echo "0")
+
+# Get standard column count (not X_ and not etl_)
+std_cols=$(echo "$cols_result" | python3 -c "import sys,json; d=json.load(sys.stdin); print(sum(1 for r in d.get('result',{}).get('data_array',[]) if r and not r[0].startswith('X_') and not r[0].startswith('etl_')))" 2>/dev/null || echo "0")
+
+echo ""
+echo "📋 Gold Property Table Schema:"
+echo "   Total columns: $total_cols"
+echo "   RESO Standard Fields: $std_cols"
+echo "   Extension Fields (X_): $ext_cols"
+
+# Expected minimums (based on mapping.md)
+expected_standard=48
+expected_extension=120
+
+if [ "$std_cols" -ge "$expected_standard" ]; then
+    echo "   ✅ RESO Standard Fields: $std_cols >= $expected_standard expected"
+    std_passed=true
+else
+    echo "   ⚠️ RESO Standard Fields: $std_cols < $expected_standard expected"
+    std_passed=false
+fi
+
+if [ "$ext_cols" -ge "$expected_extension" ]; then
+    echo "   ✅ Extension Fields: $ext_cols >= $expected_extension expected"
+    ext_passed=true
+else
+    echo "   ⚠️ Extension Fields: $ext_cols < $expected_extension expected"
+    ext_passed=false
+fi
+
+# Check for key new fields by checking if columns exist
+key_fields_found=0
+# New RESO standard fields + key extension fields
+key_fields_list="BathroomsHalf LotSizeAcres LeaseAmountFrequency ListOfficeKey Flooring X_UnitNumber X_ShortDescription X_AuctionStartDate X_PreviousListPrice X_ApartmentType"
+all_cols=$(echo "$cols_result" | python3 -c "import sys,json; d=json.load(sys.stdin); [print(r[0]) for r in d.get('result',{}).get('data_array',[]) if r]" 2>/dev/null)
+
+for field in $key_fields_list; do
+    if echo "$all_cols" | grep -q "^${field}$"; then
+        ((key_fields_found++)) || true
+    fi
+done
+
+if [ "$key_fields_found" -ge 10 ]; then
+    echo "   ✅ All $key_fields_found key new fields present"
+    key_fields_passed=true
+else
+    echo "   ⚠️ Some key new fields missing ($key_fields_found/10 found)"
+    key_fields_passed=false
+fi
+
+echo ""
+echo "================================================================================"
 echo "📊 ALL RESO RESOURCES - RECORD COUNT VERIFICATION"
 echo "================================================================================"
 
@@ -316,10 +377,27 @@ echo ""
 echo "================================================================================"
 
 # Final result
-if [ "$reso_passed" = true ] && [ "$coverage_passed" = true ] && [ "$all_resources_ok" = true ]; then
+field_coverage_passed=true
+if [ "$std_passed" != true ] || [ "$ext_passed" != true ] || [ "$key_fields_passed" != true ]; then
+    field_coverage_passed=false
+fi
+
+echo ""
+echo "📋 Field Coverage: ${field_coverage_passed}"
+if [ "$field_coverage_passed" = true ]; then
+    echo "   ✅ Gold property has $total_cols fields ($std_cols RESO + $ext_cols extensions)"
+else
+    echo "   ⚠️ Gold property may be missing some fields"
+fi
+
+echo ""
+echo "================================================================================"
+
+if [ "$reso_passed" = true ] && [ "$coverage_passed" = true ] && [ "$all_resources_ok" = true ] && [ "$field_coverage_passed" = true ]; then
     echo "✅ COMPREHENSIVE DATA INTEGRITY TEST PASSED"
     echo "================================================================================"
     echo "✓ All 6 RESO resources verified"
+    echo "✓ Gold property table has $total_cols fields ($std_cols RESO + $ext_cols extensions)"
     echo "✓ All data matches between Qobrix API and MLS 2.0 RESO"
     echo "✓ RESO compliance verified (100% compliant)"
     echo "✓ Complete verification successful"
@@ -328,7 +406,8 @@ elif [ "$reso_passed" = true ] && [ "$coverage_passed" = true ]; then
     echo "⚠️ COMPREHENSIVE DATA INTEGRITY TEST PASSED WITH WARNINGS"
     echo "================================================================================"
     echo "✓ Property data verified"
-    echo "⚠️ Some resources may be empty or missing"
+    echo "✓ Gold property table has $total_cols fields"
+    echo "⚠️ Some resources may be empty or have fewer fields than expected"
     exit 0
 else
     echo "❌ COMPREHENSIVE DATA INTEGRITY TEST FAILED"

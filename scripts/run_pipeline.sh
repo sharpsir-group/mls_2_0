@@ -34,23 +34,38 @@ try:
     d = json.load(sys.stdin)
     tasks = d.get('tasks', [])
     for t in tasks:
-        if t.get('state', {}).get('result_state') != 'SUCCESS':
-            print(t.get('run_id', ''))
-            break
-except: pass
+        state = t.get('state', {}).get('result_state', '')
+        if state and state != 'SUCCESS':
+            rid = t.get('run_id', '')
+            if rid:
+                print(rid)
+                break
+except Exception as e:
+    pass
 " 2>/dev/null)
     
     if [ -n "$task_run_ids" ]; then
-        # Get error from task run
-        local error=$(databricks runs get-output --run-id "$task_run_ids" 2>&1 | grep -v "^WARN:" | python3 -c "
+        # Get error from task run using runs get-output
+        local output_json=$(databricks runs get-output --run-id "$task_run_ids" 2>&1 | grep -v "^WARN:")
+        local error=$(echo "$output_json" | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
     err = d.get('error', '')
+    trace = d.get('error_trace', '')
     if err:
-        # Truncate long errors
-        print(err[:500] + ('...' if len(err) > 500 else ''))
-except: pass
+        # Show error message
+        msg = err
+        # Extract key part of traceback if available
+        if trace:
+            # Get last meaningful line from traceback
+            lines = [l.strip() for l in trace.split('\n') if l.strip() and not l.startswith('[0;')]
+            if lines:
+                last_line = lines[-1] if len(lines[-1]) < 200 else lines[-1][:200] + '...'
+                msg = err + '\n' + last_line
+        print(msg[:800])
+except Exception as e:
+    print(f'Parse error: {e}')
 " 2>/dev/null)
         if [ -n "$error" ]; then
             echo "$error"
@@ -158,6 +173,9 @@ run_notebook() {
 }
 
 case "${1:-all}" in
+    # ═══════════════════════════════════════════════════════════════════════════
+    # FULL REFRESH COMMANDS (initial load, recovery)
+    # ═══════════════════════════════════════════════════════════════════════════
     bronze)
         run_notebook "MLS 2.0 - Qobrix Bronze Full Refresh" "/Shared/mls_2_0/00_full_refresh_qobrix_bronze" "true"
         ;;
@@ -216,6 +234,40 @@ case "${1:-all}" in
     integrity)
         run_notebook "MLS 2.0 - Qobrix vs RESO Integrity Test" "/Shared/mls_2_0/10_verify_data_integrity_qobrix_vs_reso" "true"
         ;;
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CDC COMMANDS (incremental sync - every 15-30 min)
+    # ═══════════════════════════════════════════════════════════════════════════
+    cdc-bronze)
+        echo "🔄 CDC Mode: Incremental bronze sync"
+        run_notebook "MLS 2.0 - Qobrix CDC Bronze" "/Shared/mls_2_0/00a_cdc_qobrix_bronze" "true"
+        ;;
+    cdc-silver)
+        echo "🔄 CDC Mode: Incremental silver sync"
+        run_notebook "MLS 2.0 - Qobrix CDC Silver Property" "/Shared/mls_2_0/02_cdc_silver_property_etl" "false"
+        ;;
+    cdc-gold)
+        echo "🔄 CDC Mode: Incremental gold sync"
+        run_notebook "MLS 2.0 - RESO CDC Gold Property" "/Shared/mls_2_0/03_cdc_gold_reso_property_etl" "false"
+        ;;
+    cdc)
+        echo "🔄 CDC Mode: Full incremental pipeline"
+        echo ""
+        echo "📦 Stage 1: CDC Bronze (incremental data from API)"
+        run_notebook "MLS 2.0 - Qobrix CDC Bronze" "/Shared/mls_2_0/00a_cdc_qobrix_bronze" "true"
+        echo ""
+        echo "🔄 Stage 2: CDC Silver (incremental transform)"
+        run_notebook "MLS 2.0 - Qobrix CDC Silver Property" "/Shared/mls_2_0/02_cdc_silver_property_etl" "false"
+        echo ""
+        echo "🏆 Stage 3: CDC Gold (incremental RESO transform)"
+        run_notebook "MLS 2.0 - RESO CDC Gold Property" "/Shared/mls_2_0/03_cdc_gold_reso_property_etl" "false"
+        echo ""
+        echo "🎉 CDC pipeline completed!"
+        ;;
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # FULL PIPELINE
+    # ═══════════════════════════════════════════════════════════════════════════
     all)
         echo "📦 Stage 1: Bronze (raw data ingestion)"
         run_notebook "MLS 2.0 - Qobrix Bronze Full Refresh" "/Shared/mls_2_0/00_full_refresh_qobrix_bronze" "true"
@@ -243,7 +295,9 @@ case "${1:-all}" in
     *)
         echo "Usage: $0 [STAGE]"
         echo ""
-        echo "Stages:"
+        echo "═══════════════════════════════════════════════════════════════════════"
+        echo "FULL REFRESH (initial load, recovery, weekly)"
+        echo "═══════════════════════════════════════════════════════════════════════"
         echo "  bronze              Raw data ingestion from Qobrix API"
         echo "  silver|silver-all   All silver transformations"
         echo "  silver-property     Silver property only"
@@ -260,6 +314,14 @@ case "${1:-all}" in
         echo "  gold-showing        RESO ShowingAppointment only"
         echo "  integrity           Data integrity verification"
         echo "  all                 Full pipeline (bronze → silver → gold → integrity)"
+        echo ""
+        echo "═══════════════════════════════════════════════════════════════════════"
+        echo "CDC - INCREMENTAL SYNC (every 15-30 min)"
+        echo "═══════════════════════════════════════════════════════════════════════"
+        echo "  cdc                 Full CDC pipeline (bronze → silver → gold)"
+        echo "  cdc-bronze          CDC bronze only (fetch changed records from API)"
+        echo "  cdc-silver          CDC silver only (transform changed records)"
+        echo "  cdc-gold            CDC gold only (RESO transform changed records)"
         exit 1
         ;;
 esac

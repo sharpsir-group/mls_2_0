@@ -67,7 +67,7 @@ headers = {
 }
 
 # Test mode settings
-test_mode = True
+test_mode = False  # Set to True to limit records for testing
 max_properties = 10 if test_mode else None
 max_contacts = 500 if test_mode else None
 max_projects = 100 if test_mode else None

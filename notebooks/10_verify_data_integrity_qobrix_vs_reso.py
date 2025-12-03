@@ -550,7 +550,66 @@ else:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 9 – Verify All RESO Resources (Record Counts)
+# MAGIC ## Step 9 – Verify Gold Property Field Coverage
+
+# COMMAND ----------
+
+print("\n" + "=" * 80)
+print("📊 GOLD PROPERTY FIELD COVERAGE VERIFICATION")
+print("=" * 80)
+
+# Get gold property column count
+gold_cols = spark.table("reso_gold.property").columns
+extension_cols = [c for c in gold_cols if c.startswith("X_")]
+standard_cols = [c for c in gold_cols if not c.startswith("X_") and not c.startswith("etl_")]
+etl_cols = [c for c in gold_cols if c.startswith("etl_")]
+
+print(f"\n📋 Gold Property Table Schema:")
+print(f"   Total columns: {len(gold_cols)}")
+print(f"   RESO Standard Fields: {len(standard_cols)}")
+print(f"   Extension Fields (X_): {len(extension_cols)}")
+print(f"   ETL Metadata: {len(etl_cols)}")
+
+# Expected minimums (based on mapping.md)
+expected_standard = 48
+expected_extension = 120
+
+if len(standard_cols) >= expected_standard:
+    print(f"   ✅ RESO Standard Fields: {len(standard_cols)} >= {expected_standard} expected")
+else:
+    print(f"   ⚠️ RESO Standard Fields: {len(standard_cols)} < {expected_standard} expected")
+
+if len(extension_cols) >= expected_extension:
+    print(f"   ✅ Extension Fields: {len(extension_cols)} >= {expected_extension} expected")
+else:
+    print(f"   ⚠️ Extension Fields: {len(extension_cols)} < {expected_extension} expected")
+
+# Check key new fields exist
+key_new_fields = [
+    # New RESO Standard Fields (added to improve compliance to 92%)
+    "BathroomsHalf", "LotSizeAcres", "LeaseAmountFrequency", "ListOfficeKey",
+    "Flooring", "FireplaceFeatures", "WaterfrontFeatures", "PatioAndPorchFeatures",
+    "OtherStructures", "AssociationAmenities", "Fencing",
+    # Key Extension Fields
+    "X_AbutsGreenArea", "X_ElevatedArea", "X_ConciergeReception", "X_SecureDoor",
+    "X_UnitNumber", "X_Height", "X_MaxFloor", "X_ShortDescription",
+    "X_DistanceFromRailStation", "X_DistanceFromTubeStation",
+    "X_PreviousListPrice", "X_AuctionStartDate", "X_TenancyType",
+    "X_ApartmentType", "X_HouseType", "X_LandType"
+]
+
+missing_fields = [f for f in key_new_fields if f not in gold_cols]
+if missing_fields:
+    print(f"\n   ⚠️ Missing expected fields: {', '.join(missing_fields[:10])}")
+    if len(missing_fields) > 10:
+        print(f"      ... and {len(missing_fields) - 10} more")
+else:
+    print(f"\n   ✅ All {len(key_new_fields)} key fields present")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Step 10 – Verify All RESO Resources (Record Counts)
 
 # COMMAND ----------
 
@@ -629,7 +688,7 @@ for res in resources:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 10 – Foreign Key Integrity
+# MAGIC ## Step 11 – Foreign Key Integrity
 
 # COMMAND ----------
 
@@ -702,7 +761,7 @@ except Exception as e:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 11 – Final Comprehensive Summary
+# MAGIC ## Step 12 – Final Comprehensive Summary
 
 # COMMAND ----------
 
@@ -713,6 +772,9 @@ print("=" * 80)
 # Count passed resources
 resources_passed = sum(1 for r in resource_checks if r["passed"])
 resources_total = len(resource_checks)
+
+# Field coverage check
+field_coverage_passed = len(standard_cols) >= expected_standard and len(extension_cols) >= expected_extension and len(missing_fields) == 0
 
 # Summary
 print(f"\n📋 RESO Resources: {resources_passed}/{resources_total} verified")
@@ -727,18 +789,20 @@ for issue in fk_issues:
 print(f"\n✅ Property RESO Compliance: {'PASSED' if reso_passed else 'FAILED'}")
 print(f"✅ Property Coverage: {'PASSED' if coverage_passed else 'FAILED'}")
 print(f"{'✅' if integrity_passed else '⚠️'} Property Data Integrity: {'PASSED' if integrity_passed else f'{field_mismatch_count} mismatches'}")
+print(f"{'✅' if field_coverage_passed else '⚠️'} Field Coverage: {'PASSED' if field_coverage_passed else 'CHECK NEEDED'} ({len(gold_cols)} total fields)")
 
 # Overall result
 print("\n" + "=" * 80)
 all_resources_passed = all(r["passed"] for r in resource_checks)
 fk_passed = len(fk_issues) == 0
 
-comprehensive_passed = all_passed and all_resources_passed
+comprehensive_passed = all_passed and all_resources_passed and field_coverage_passed
 
 if comprehensive_passed and fk_passed:
     print("✅ COMPREHENSIVE DATA INTEGRITY TEST PASSED")
     print("=" * 80)
     print(f"✓ All {resources_total} RESO resources verified")
+    print(f"✓ Gold property table has {len(gold_cols)} fields ({len(standard_cols)} RESO + {len(extension_cols)} extensions)")
     print("✓ All foreign key relationships valid")
     print("✓ Property RESO compliance verified")
     print("✓ Complete verification successful")
