@@ -44,7 +44,8 @@ def create_app() -> FastAPI:
         description=settings.api_description,
         docs_url="/docs",
         redoc_url="/redoc",
-        openapi_url="/openapi.json"
+        openapi_url="/openapi.json",
+        root_path="/reso"  # For reverse proxy at /reso
     )
     
     # CORS middleware

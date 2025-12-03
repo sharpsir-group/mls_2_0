@@ -141,47 +141,11 @@ cd mls_2_0
 
 A FastAPI-based RESO Data Dictionary 2.0 compliant OData API that queries Databricks directly.
 
-### Start the API Server
+### Production URL
 
-```bash
-# Start on default port 8000
-./scripts/run_api.sh
-
-# Start on custom port
-./scripts/run_api.sh 8080
-
-# Development mode with auto-reload
-./scripts/run_api.sh --dev
 ```
-
-### Run with PM2 (Production)
-
-PM2 keeps the API running and auto-restarts on crashes/reboots:
-
-```bash
-# Start with PM2
-pm2 start ecosystem.config.js
-
-# Save for auto-start on reboot
-pm2 save
-
-# Enable startup on boot (run once)
-pm2 startup
-
-# View status
-pm2 status reso-web-api
-
-# View logs
-pm2 logs reso-web-api
-
-# Restart
-pm2 restart reso-web-api
-
-# Stop
-pm2 stop reso-web-api
+https://humaticai.com/reso
 ```
-
-Default port: **3900** (configured in `ecosystem.config.js`)
 
 ### API Endpoints
 
@@ -203,28 +167,28 @@ Default port: **3900** (configured in `ecosystem.config.js`)
 
 ```bash
 # Get 10 active properties
-curl "http://localhost:8000/odata/Property?\$filter=StandardStatus eq 'Active'&\$top=10"
+curl "https://humaticai.com/reso/odata/Property?\$filter=StandardStatus eq 'Active'&\$top=10"
 
 # Select specific fields
-curl "http://localhost:8000/odata/Property?\$select=ListingKey,ListPrice,City,BedroomsTotal"
+curl "https://humaticai.com/reso/odata/Property?\$select=ListingKey,ListPrice,City,BedroomsTotal"
 
 # Filter by price range
-curl "http://localhost:8000/odata/Property?\$filter=ListPrice gt 500000 and ListPrice lt 1000000"
+curl "https://humaticai.com/reso/odata/Property?\$filter=ListPrice gt 500000 and ListPrice lt 1000000"
 
 # Sort by price descending
-curl "http://localhost:8000/odata/Property?\$orderby=ListPrice desc&\$top=5"
+curl "https://humaticai.com/reso/odata/Property?\$orderby=ListPrice desc&\$top=5"
 
 # Pagination
-curl "http://localhost:8000/odata/Property?\$top=100&\$skip=200"
+curl "https://humaticai.com/reso/odata/Property?\$top=100&\$skip=200"
 
 # Count total records
-curl "http://localhost:8000/odata/Property?\$count=true&\$top=1"
+curl "https://humaticai.com/reso/odata/Property?\$count=true&\$top=1"
 
 # Get single property by key
-curl "http://localhost:8000/odata/Property('QOBRIX_abc123')"
+curl "https://humaticai.com/reso/odata/Property('QOBRIX_abc123')"
 
 # Get media for a property
-curl "http://localhost:8000/odata/Media?\$filter=ResourceRecordKey eq 'QOBRIX_abc123'"
+curl "https://humaticai.com/reso/odata/Media?\$filter=ResourceRecordKey eq 'QOBRIX_abc123'"
 ```
 
 ### Environment Variables

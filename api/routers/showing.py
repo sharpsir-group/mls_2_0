@@ -8,7 +8,7 @@ from .base import execute_odata_query, get_entity_by_key
 
 router = APIRouter(prefix="/odata", tags=["ShowingAppointment"])
 
-TABLE_NAME = "showingappointment"
+TABLE_NAME = "showing_appointment"
 RESOURCE_NAME = "ShowingAppointment"
 KEY_COLUMN = "ShowingAppointmentKey"
 

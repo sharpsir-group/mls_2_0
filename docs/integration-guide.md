@@ -5,7 +5,7 @@ Connect your real estate website to the RESO Web API.
 ## API Base URL
 
 ```
-https://your-server.com:3900
+https://humaticai.com/reso
 ```
 
 ## Available Endpoints
@@ -17,13 +17,16 @@ https://your-server.com:3900
 | `GET /odata/Media` | Property photos |
 | `GET /odata/Member` | Agents |
 | `GET /odata/Office` | Offices/agencies |
+| `GET /odata/Contacts` | Contacts |
+| `GET /odata/ShowingAppointment` | Showing appointments |
+| `GET /docs` | Swagger UI |
 
 ## Quick Start
 
 ### Fetch Properties
 
 ```javascript
-const API_URL = 'https://your-server.com:3900';
+const API_URL = 'https://humaticai.com/reso';
 
 // Get active listings
 const response = await fetch(`${API_URL}/odata/Property?$filter=StandardStatus eq 'Active'&$top=20`);
@@ -36,7 +39,7 @@ console.log(data.value); // Array of properties
 
 ```json
 {
-  "@odata.context": "...",
+  "@odata.context": "https://humaticai.com/reso/$metadata#Property",
   "@odata.count": 14034,
   "value": [
     {
@@ -51,7 +54,7 @@ console.log(data.value); // Array of properties
       "Longitude": -80.1918
     }
   ],
-  "@odata.nextLink": "...?$skip=20&$top=20"
+  "@odata.nextLink": "https://humaticai.com/reso/odata/Property?$skip=20&$top=20"
 }
 ```
 
@@ -123,7 +126,7 @@ $top=20&$skip=40
 // Get photos for a property
 const listingKey = 'QOBRIX_abc123';
 const response = await fetch(
-  `${API_URL}/odata/Media?$filter=ResourceRecordKey eq '${listingKey}'&$orderby=Order`
+  `https://humaticai.com/reso/odata/Media?$filter=ResourceRecordKey eq '${listingKey}'&$orderby=Order`
 );
 const data = await response.json();
 
@@ -163,7 +166,7 @@ interface ODataResponse<T> {
 ```tsx
 import { useState, useEffect } from 'react';
 
-const API_URL = 'https://your-server.com:3900';
+const API_URL = 'https://humaticai.com/reso';
 
 function PropertyList() {
   const [properties, setProperties] = useState([]);
@@ -200,7 +203,7 @@ function PropertyList() {
 In your frontend project:
 
 ```env
-VITE_RESO_API_URL=https://your-server.com:3900
+VITE_RESO_API_URL=https://humaticai.com/reso
 ```
 
 Then use:
@@ -208,10 +211,6 @@ Then use:
 ```javascript
 const API_URL = import.meta.env.VITE_RESO_API_URL;
 ```
-
-## CORS
-
-The API allows all origins by default. For production, configure allowed origins in `api/config.py`.
 
 ## Error Handling
 
