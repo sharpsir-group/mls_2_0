@@ -22,13 +22,13 @@ fi
 # Suppress CLI warning
 export DATABRICKS_CLI_DO_NOT_SHOW_UPGRADE_MESSAGE=1
 
-# Get error message from a failed run
-get_error_message() {
+# Get detailed error from a failed run
+get_error_details() {
     local run_id="$1"
     local status_json="$2"
     
-    # Try to get task run IDs (multi-task jobs)
-    local task_run_ids=$(echo "$status_json" | python3 -c "
+    # For multi-task jobs, get the failed task run ID
+    local task_run_id=$(echo "$status_json" | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
@@ -40,52 +40,58 @@ try:
             if rid:
                 print(rid)
                 break
-except Exception as e:
-    pass
-" 2>/dev/null)
-    
-    if [ -n "$task_run_ids" ]; then
-        # Get error from task run using runs get-output
-        local output_json=$(databricks runs get-output --run-id "$task_run_ids" 2>&1 | grep -v "^WARN:")
-        local error=$(echo "$output_json" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    err = d.get('error', '')
-    trace = d.get('error_trace', '')
-    if err:
-        # Show error message
-        msg = err
-        # Extract key part of traceback if available
-        if trace:
-            # Get last meaningful line from traceback
-            lines = [l.strip() for l in trace.split('\n') if l.strip() and not l.startswith('[0;')]
-            if lines:
-                last_line = lines[-1] if len(lines[-1]) < 200 else lines[-1][:200] + '...'
-                msg = err + '\n' + last_line
-        print(msg[:800])
-except Exception as e:
-    print(f'Parse error: {e}')
-" 2>/dev/null)
-        if [ -n "$error" ]; then
-            echo "$error"
-            return
-        fi
-    fi
-    
-    # Fallback: get state_message from parent run
-    local state_msg=$(echo "$status_json" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    msg = d.get('state', {}).get('state_message', '')
-    print(msg[:500] if msg else '')
 except: pass
 " 2>/dev/null)
     
-    if [ -n "$state_msg" ]; then
-        echo "$state_msg"
-    fi
+    # Use task run ID if available, otherwise use main run ID
+    local target_run_id="${task_run_id:-$run_id}"
+    
+    # Get full output from runs get-output
+    local output_json=$(databricks runs get-output --run-id "$target_run_id" 2>&1 | grep -v "^WARN:")
+    
+    # Parse and display detailed error info
+    echo "$output_json" | python3 -c "
+import sys, json, re
+
+try:
+    d = json.load(sys.stdin)
+    
+    # Extract metadata
+    meta = d.get('metadata', {})
+    task = meta.get('task', {}).get('notebook_task', {})
+    
+    # Print notebook info
+    notebook_path = task.get('notebook_path', 'N/A')
+    run_url = meta.get('run_page_url', '')
+    
+    print(f'Notebook: {notebook_path}')
+    if run_url:
+        print(f'Run URL:  {run_url}')
+    print('')
+    
+    # Print error
+    error = d.get('error', '')
+    if error:
+        print(f'Error: {error}')
+        print('')
+    
+    # Print stack trace (cleaned up)
+    trace = d.get('error_trace', '')
+    if trace:
+        # Remove ANSI color codes
+        trace = re.sub(r'\x1b\[[0-9;]*m', '', trace)
+        # Get last N lines of traceback for readability
+        lines = [l for l in trace.split('\n') if l.strip()]
+        # Show last 15 lines or full trace if shorter
+        relevant_lines = lines[-15:] if len(lines) > 15 else lines
+        print('Stack Trace:')
+        for line in relevant_lines:
+            print(f'  {line}')
+
+except Exception as e:
+    # If parsing fails, show raw output
+    print(f'(Could not parse error: {e})')
+" 2>/dev/null
 }
 
 run_notebook() {
@@ -155,16 +161,14 @@ run_notebook() {
                 return 0
             else
                 echo "   ❌ $name failed: $result_state"
-                
-                # Get and display error message
-                local error_msg=$(get_error_message "$run_id" "$status_json")
-                if [ -n "$error_msg" ]; then
-                    echo ""
-                    echo "   ┌─ Error Details ─────────────────────────────────────────"
-                    echo "$error_msg" | sed 's/^/   │ /'
-                    echo "   └──────────────────────────────────────────────────────────"
-                    echo ""
-                fi
+                echo ""
+                echo "   ┌─────────────────────────────────────────────────────────────────"
+                echo "   │ ERROR DETAILS"
+                echo "   ├─────────────────────────────────────────────────────────────────"
+                # Get and display detailed error
+                get_error_details "$run_id" "$status_json" | sed 's/^/   │ /'
+                echo "   └─────────────────────────────────────────────────────────────────"
+                echo ""
                 return 1
             fi
         fi
