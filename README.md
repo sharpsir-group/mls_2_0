@@ -1,7 +1,5 @@
 # MLS 2.0 Datamart - Qobrix → RESO
 
-**Status**: ✅ Working (test mode with 10 properties) | ✅ CDC Implemented
-
 ## Databricks Free Edition Setup
 
 ### 1. Create Databricks Account
