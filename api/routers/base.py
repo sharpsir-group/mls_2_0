@@ -10,6 +10,44 @@ from services.odata_parser import get_odata_parser
 from config import get_settings
 
 
+# Fields that should be returned as numbers per RESO Data Dictionary
+NUMERIC_FIELDS = {
+    # Price fields
+    'ListPrice', 'OriginalListPrice', 'ClosePrice', 'ListPriceLow', 'PreviousListPrice',
+    'LeaseAmount', 'AssociationFee', 'AssociationFee2', 'TaxAnnualAmount',
+    # Area/Size fields
+    'LivingArea', 'LotSizeSquareFeet', 'LotSizeAcres', 'BuildingAreaTotal',
+    'GarageSpaces', 'CarportSpaces', 'OpenParkingSpaces',
+    # Room counts
+    'BedroomsTotal', 'BathroomsTotalInteger', 'BathroomsFull', 'BathroomsHalf',
+    'RoomsTotal', 'StoriesTotal', 'Flooring',
+    # Location
+    'Latitude', 'Longitude',
+    # Year fields
+    'YearBuilt', 'YearBuiltEffective',
+    # Days on market
+    'DaysOnMarket', 'CumulativeDaysOnMarket',
+    # Media
+    'Order', 'ImageWidth', 'ImageHeight', 'ImageSizeBytes',
+}
+
+
+def convert_numeric_fields(record: dict[str, Any]) -> dict[str, Any]:
+    """Convert string numeric values to actual numbers per RESO spec."""
+    for key, value in record.items():
+        if key in NUMERIC_FIELDS and value is not None:
+            try:
+                # Try to convert to number
+                if isinstance(value, str):
+                    if '.' in value:
+                        record[key] = float(value)
+                    else:
+                        record[key] = int(value)
+            except (ValueError, TypeError):
+                pass  # Keep original value if conversion fails
+    return record
+
+
 async def execute_odata_query(
     table_name: str,
     resource_name: str,
@@ -54,6 +92,8 @@ async def execute_odata_query(
                 if value == "":
                     value = None
                 record[col] = value
+            # Convert numeric fields per RESO spec
+            record = convert_numeric_fields(record)
             values.append(record)
         
         # Build response
@@ -141,6 +181,8 @@ async def get_entity_by_key(
                 value = None
             record[col] = value
         
+        # Convert numeric fields per RESO spec
+        record = convert_numeric_fields(record)
         record["@odata.context"] = f"{base_url}/$metadata#{resource_name}/$entity"
         
         return record
