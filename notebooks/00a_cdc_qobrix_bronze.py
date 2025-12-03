@@ -335,7 +335,9 @@ last_sync = get_last_sync("agents")
 print(f"\n🕐 Last sync: {last_sync}")
 
 # Check if we should sync agents (hourly is enough)
-last_sync_dt = datetime.strptime(last_sync[:19], '%Y-%m-%d %H:%M:%S')
+# Handle both formats: 'YYYY-MM-DD HH:MM:SS' and 'YYYY-MM-DDTHH:MM:SS'
+last_sync_str = last_sync[:19].replace('T', ' ')
+last_sync_dt = datetime.strptime(last_sync_str, '%Y-%m-%d %H:%M:%S')
 hours_since_sync = (datetime.utcnow() - last_sync_dt).total_seconds() / 3600
 
 if hours_since_sync >= 1:  # Only sync if 1+ hour since last sync
@@ -367,7 +369,9 @@ started_at = datetime.utcnow()
 last_sync = get_last_sync("contacts")
 print(f"\n🕐 Last sync: {last_sync}")
 
-last_sync_dt = datetime.strptime(last_sync[:19], '%Y-%m-%d %H:%M:%S')
+# Handle both formats: 'YYYY-MM-DD HH:MM:SS' and 'YYYY-MM-DDTHH:MM:SS'
+last_sync_str = last_sync[:19].replace('T', ' ')
+last_sync_dt = datetime.strptime(last_sync_str, '%Y-%m-%d %H:%M:%S')
 hours_since_sync = (datetime.utcnow() - last_sync_dt).total_seconds() / 3600
 
 if hours_since_sync >= 1:

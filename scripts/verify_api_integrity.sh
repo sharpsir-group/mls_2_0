@@ -170,20 +170,26 @@ print("=" * 60)
 print("TEST 4: Agent/Member Verification")
 print("=" * 60)
 
-# Get agents from Qobrix
-qobrix_agents = qobrix_get('/users', {'limit': 1, 'page': 1})
+# RESO Member = Qobrix /agents + /users (combined in Silver ETL)
+qobrix_agents = qobrix_get('/agents', {'limit': 1, 'page': 1})
 q_agent_count = qobrix_agents.get('pagination', {}).get('count', 0)
+
+qobrix_users = qobrix_get('/users', {'limit': 1, 'page': 1})
+q_user_count = qobrix_users.get('pagination', {}).get('count', 0)
+
+q_combined = q_agent_count + q_user_count
 
 # Get members from RESO
 reso_members = reso_get('/odata/Member?$count=true&$top=1')
 r_member_count = reso_members.get('@odata.count', 0)
 
-match = "✅" if q_agent_count == r_member_count else "⚠️"
-print(f"  {match} Agents/Members: Qobrix={q_agent_count}, RESO={r_member_count}")
+match = "✅" if q_combined == r_member_count else "⚠️"
+print(f"  {match} Qobrix /agents: {q_agent_count} + /users: {q_user_count} = {q_combined}")
+print(f"  {match} RESO Member: {r_member_count}")
 
 member_issues = []
-if q_agent_count != r_member_count:
-    member_issues.append(f"Count mismatch: Q={q_agent_count}, R={r_member_count}")
+if q_combined != r_member_count:
+    member_issues.append(f"Count mismatch: Q={q_combined}, R={r_member_count}")
 
 print("")
 print("=" * 60)
