@@ -255,18 +255,27 @@ case "${1:-all}" in
         run_notebook "MLS 2.0 - RESO CDC Gold Property" "/Shared/mls_2_0/03_cdc_gold_reso_property_etl" "false"
         ;;
     cdc)
-        echo "🔄 CDC Mode: Full incremental pipeline"
+        echo "🔄 CDC Mode: Full incremental pipeline (ALL entities)"
         echo ""
         echo "📦 Stage 1: CDC Bronze (incremental data from API)"
         run_notebook "MLS 2.0 - Qobrix CDC Bronze" "/Shared/mls_2_0/00a_cdc_qobrix_bronze" "true"
         echo ""
-        echo "🔄 Stage 2: CDC Silver (incremental transform)"
-        run_notebook "MLS 2.0 - Qobrix CDC Silver Property" "/Shared/mls_2_0/02_cdc_silver_property_etl" "false"
+        echo "🔄 Stage 2: Silver (all entities)"
+        run_notebook "MLS 2.0 - Qobrix Silver Property ETL" "/Shared/mls_2_0/02_silver_qobrix_property_etl" "false"
+        run_notebook "MLS 2.0 - Qobrix Silver Agent ETL" "/Shared/mls_2_0/02a_silver_qobrix_agent_etl" "false"
+        run_notebook "MLS 2.0 - Qobrix Silver Contact ETL" "/Shared/mls_2_0/02b_silver_qobrix_contact_etl" "false"
+        run_notebook "MLS 2.0 - Qobrix Silver Media ETL" "/Shared/mls_2_0/02c_silver_qobrix_media_etl" "false"
+        run_notebook "MLS 2.0 - Qobrix Silver Viewing ETL" "/Shared/mls_2_0/02d_silver_qobrix_viewing_etl" "false"
         echo ""
-        echo "🏆 Stage 3: CDC Gold (incremental RESO transform)"
-        run_notebook "MLS 2.0 - RESO CDC Gold Property" "/Shared/mls_2_0/03_cdc_gold_reso_property_etl" "false"
+        echo "🏆 Stage 3: Gold (all RESO entities)"
+        run_notebook "MLS 2.0 - RESO Gold Property ETL" "/Shared/mls_2_0/03_gold_reso_property_etl" "false"
+        run_notebook "MLS 2.0 - RESO Gold Member ETL" "/Shared/mls_2_0/03a_gold_reso_member_etl" "false"
+        run_notebook "MLS 2.0 - RESO Gold Office ETL" "/Shared/mls_2_0/03b_gold_reso_office_etl" "false"
+        run_notebook "MLS 2.0 - RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" "false"
+        run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "/Shared/mls_2_0/03d_gold_reso_contacts_etl" "false"
+        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "false"
         echo ""
-        echo "🎉 CDC pipeline completed!"
+        echo "🎉 CDC pipeline completed! All entities synced."
         ;;
     
     # ═══════════════════════════════════════════════════════════════════════════
@@ -320,12 +329,12 @@ case "${1:-all}" in
         echo "  all                 Full pipeline (bronze → silver → gold → integrity)"
         echo ""
         echo "═══════════════════════════════════════════════════════════════════════"
-        echo "CDC - INCREMENTAL SYNC (every 15-30 min)"
+        echo "CDC - INCREMENTAL SYNC (recommended for regular updates)"
         echo "═══════════════════════════════════════════════════════════════════════"
-        echo "  cdc                 Full CDC pipeline (bronze → silver → gold)"
+        echo "  cdc                 Full CDC sync ALL entities (bronze → silver → gold)"
         echo "  cdc-bronze          CDC bronze only (fetch changed records from API)"
-        echo "  cdc-silver          CDC silver only (transform changed records)"
-        echo "  cdc-gold            CDC gold only (RESO transform changed records)"
+        echo "  cdc-silver          CDC silver property only (incremental transform)"
+        echo "  cdc-gold            CDC gold property only (incremental RESO transform)"
         exit 1
         ;;
 esac
