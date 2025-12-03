@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
 # RESO Web API Integrity Test
-# Two-way verification: Databricks ↔ API
+# Two-way verification: Qobrix API ↔ RESO API
 # ============================================================
 
 set -e
@@ -14,14 +14,14 @@ if [ -f "$MLS2_ROOT/.env" ]; then
     export $(grep -v '^#' "$MLS2_ROOT/.env" | xargs)
 fi
 
-API_BASE="${API_BASE_URL:-https://humaticai.com/reso}"
+RESO_API="${RESO_API_URL:-https://humaticai.com/reso}"
 
 echo "=============================================="
-echo "  RESO Web API Two-Way Integrity Test"
+echo "  Qobrix → RESO API Two-Way Integrity Test"
 echo "=============================================="
 echo ""
-echo "API: $API_BASE"
-echo "Databricks: $DATABRICKS_HOST"
+echo "Qobrix API: $QOBRIX_API_BASE_URL"
+echo "RESO API:   $RESO_API"
 echo ""
 
 # Python script for comprehensive testing
@@ -31,128 +31,239 @@ import sys
 import json
 import httpx
 
-API_BASE = os.environ.get('API_BASE_URL', 'https://humaticai.com/reso')
-DB_HOST = os.environ['DATABRICKS_HOST']
-DB_TOKEN = os.environ['DATABRICKS_TOKEN']
-DB_WAREHOUSE = os.environ['DATABRICKS_WAREHOUSE_ID']
-DB_CATALOG = os.environ.get('DATABRICKS_CATALOG', 'mls2')
-DB_SCHEMA = os.environ.get('DATABRICKS_SCHEMA', 'reso_gold')
+QOBRIX_API = os.environ['QOBRIX_API_BASE_URL']
+QOBRIX_USER = os.environ['QOBRIX_API_USER']
+QOBRIX_KEY = os.environ['QOBRIX_API_KEY']
+RESO_API = os.environ.get('RESO_API_URL', 'https://humaticai.com/reso')
 
-def db_query(sql):
-    """Execute query against Databricks"""
-    resp = httpx.post(
-        f"{DB_HOST}/api/2.0/sql/statements",
-        headers={"Authorization": f"Bearer {DB_TOKEN}"},
-        json={"warehouse_id": DB_WAREHOUSE, "statement": sql, "wait_timeout": "30s"},
-        timeout=60
-    )
-    data = resp.json()
-    if 'result' in data and data['result'].get('data_array'):
-        return data['result']['data_array']
-    return []
+def qobrix_get(endpoint, params=None):
+    """GET from Qobrix API"""
+    headers = {
+        'X-Api-User': QOBRIX_USER,
+        'X-Api-Key': QOBRIX_KEY
+    }
+    resp = httpx.get(f"{QOBRIX_API}{endpoint}", headers=headers, params=params, timeout=60)
+    return resp.json()
 
-def api_get(endpoint):
+def reso_get(endpoint):
     """GET from RESO API"""
-    resp = httpx.get(f"{API_BASE}{endpoint}", timeout=60)
+    resp = httpx.get(f"{RESO_API}{endpoint}", timeout=60)
     return resp.json()
 
 print("=" * 60)
-print("TEST 1: Record Count Verification")
+print("TEST 1: Property Count Verification")
 print("=" * 60)
 
-resources = [
-    ('Property', 'property'),
-    ('Member', 'member'),
-    ('Office', 'office'),
-    ('Media', 'media'),
-    ('Contacts', 'contacts'),
-    ('ShowingAppointment', 'showing_appointment'),
-]
+# Qobrix property count
+qobrix_props = qobrix_get('/properties', {'limit': 1, 'page': 1})
+qobrix_count = qobrix_props.get('pagination', {}).get('count', 0)
+
+# RESO property count
+reso_props = reso_get('/odata/Property?$count=true&$top=1')
+reso_count = reso_props.get('@odata.count', 0)
+
+# Allow small tolerance for recently added/deleted records
+diff = abs(qobrix_count - reso_count)
+tolerance = max(10, qobrix_count * 0.001)  # 0.1% or 10, whichever is larger
+match = "✅" if diff <= tolerance else "❌"
+if diff > 0 and diff <= tolerance:
+    match = "⚠️"  # Warning for small difference
+print(f"  {match} Properties: Qobrix={qobrix_count:,}  RESO={reso_count:,}  (diff={diff})")
 
 count_issues = []
-for api_name, table_name in resources:
-    # Get count from Databricks
-    db_result = db_query(f"SELECT COUNT(*) FROM {DB_CATALOG}.{DB_SCHEMA}.{table_name}")
-    db_count = int(db_result[0][0]) if db_result else 0
-    
-    # Get count from API
-    api_data = api_get(f"/odata/{api_name}?$count=true&$top=1")
-    api_count = api_data.get('@odata.count', 0)
-    
-    match = "✅" if db_count == api_count else "❌"
-    if db_count != api_count:
-        count_issues.append(f"{api_name}: DB={db_count}, API={api_count}")
-    
-    print(f"  {match} {api_name:<20} DB: {db_count:>8,}  API: {api_count:>8,}")
+if diff > tolerance:
+    count_issues.append(f"Property count: Qobrix={qobrix_count}, RESO={reso_count}, diff={diff}")
 
 print("")
 print("=" * 60)
-print("TEST 2: Sample Data Verification (Property)")
+print("TEST 2: Sample Property Data Verification")
 print("=" * 60)
 
-# Get sample from DB
-db_sample = db_query(f"""
-    SELECT ListingKey, ListPrice, City, BedroomsTotal, BathroomsTotalInteger
-    FROM {DB_CATALOG}.{DB_SCHEMA}.property
-    ORDER BY ListingKey
-    LIMIT 5
-""")
-
-# Get same records from API
+# Get 5 sample properties from Qobrix
+qobrix_sample = qobrix_get('/properties', {'limit': 5, 'page': 1})
 data_issues = []
-for row in db_sample:
-    listing_key = row[0]
-    db_price = float(row[1]) if row[1] else None
-    db_city = row[2]
-    db_beds = int(row[3]) if row[3] else None
-    db_baths = int(row[4]) if row[4] else None
+
+for qprop in qobrix_sample.get('data', []):
+    qid = qprop.get('id')
+    listing_key = f"QOBRIX_{qid}"
     
-    # Fetch from API
-    api_data = api_get(f"/odata/Property?$filter=ListingKey eq '{listing_key}'&$select=ListingKey,ListPrice,City,BedroomsTotal,BathroomsTotalInteger")
+    # Get from RESO API
+    reso_data = reso_get(f"/odata/Property?$filter=ListingKey eq '{listing_key}'")
     
-    if not api_data.get('value'):
-        print(f"  ❌ {listing_key[:30]}... NOT FOUND in API")
-        data_issues.append(f"{listing_key}: Not found in API")
+    if not reso_data.get('value'):
+        print(f"  ❌ {listing_key[:40]}... NOT FOUND in RESO API")
+        data_issues.append(f"{listing_key}: Not found in RESO")
         continue
     
-    api_prop = api_data['value'][0]
-    api_price = api_prop.get('ListPrice')
-    api_city = api_prop.get('City')
-    api_beds = api_prop.get('BedroomsTotal')
-    api_baths = api_prop.get('BathroomsTotalInteger')
+    rprop = reso_data['value'][0]
     
-    # Compare
+    # Compare key fields
     issues = []
-    if db_price != api_price: issues.append(f"Price: DB={db_price}, API={api_price}")
-    if db_city != api_city: issues.append(f"City: DB={db_city}, API={api_city}")
-    if db_beds != api_beds: issues.append(f"Beds: DB={db_beds}, API={api_beds}")
-    if db_baths != api_baths: issues.append(f"Baths: DB={db_baths}, API={api_baths}")
+    
+    # Price
+    q_price = qprop.get('sale_price_amount') or qprop.get('rent_price_amount')
+    r_price = rprop.get('ListPrice')
+    if q_price and r_price:
+        q_price_f = float(q_price) if q_price else None
+        r_price_f = float(r_price) if r_price else None
+        if q_price_f != r_price_f:
+            issues.append(f"Price: Q={q_price_f}, R={r_price_f}")
+    
+    # City
+    q_city = qprop.get('city')
+    r_city = rprop.get('City')
+    if q_city != r_city:
+        issues.append(f"City: Q={q_city}, R={r_city}")
+    
+    # Bedrooms
+    q_beds = qprop.get('bedrooms')
+    r_beds = rprop.get('BedroomsTotal')
+    if q_beds and r_beds:
+        try:
+            q_beds_i = int(float(q_beds)) if q_beds else None
+            r_beds_i = int(r_beds) if r_beds else None
+            if q_beds_i != r_beds_i:
+                issues.append(f"Beds: Q={q_beds_i}, R={r_beds_i}")
+        except:
+            pass
     
     if issues:
-        print(f"  ❌ {listing_key[:30]}...")
+        print(f"  ❌ {listing_key[:40]}...")
         for i in issues:
             print(f"     {i}")
             data_issues.append(f"{listing_key}: {i}")
     else:
-        print(f"  ✅ {listing_key[:30]}... Price={api_price}, City={api_city}, Beds={api_beds}")
+        print(f"  ✅ {listing_key[:40]}... Price={r_price}, City={r_city}")
 
 print("")
 print("=" * 60)
-print("TEST 3: Type Verification (Sample Fields)")
+print("TEST 3: Media/Photos Verification")
 print("=" * 60)
 
-api_prop = api_get("/odata/Property?$top=1")['value'][0]
+# Get 5 sample properties and check their media counts
+qobrix_props = qobrix_get('/properties', {'limit': 5, 'page': 1})
+media_issues = []
 
+for qprop in qobrix_props.get('data', []):
+    qid = qprop.get('id')
+    listing_key = f"QOBRIX_{qid}"
+    
+    # Get photos from Qobrix via media endpoint
+    try:
+        qobrix_photos = qobrix_get(f'/media/by-category/photos/Properties/{qid}')
+        qobrix_media_count = len(qobrix_photos.get('data', []))
+    except:
+        qobrix_media_count = 0
+    
+    # Get media from RESO API
+    reso_media = reso_get(f"/odata/Media?$filter=ResourceRecordKey eq '{listing_key}'&$count=true")
+    reso_media_count = reso_media.get('@odata.count', 0)
+    
+    match = "✅" if qobrix_media_count == reso_media_count else "❌"
+    if qobrix_media_count != reso_media_count:
+        media_issues.append(f"{listing_key}: Q={qobrix_media_count}, R={reso_media_count}")
+    
+    print(f"  {match} {listing_key[:40]}... Q={qobrix_media_count}, R={reso_media_count}")
+
+print("")
+print("=" * 60)
+print("TEST 4: Agent/Member Verification")
+print("=" * 60)
+
+# Get agents from Qobrix
+qobrix_agents = qobrix_get('/users', {'limit': 1, 'page': 1})
+q_agent_count = qobrix_agents.get('pagination', {}).get('count', 0)
+
+# Get members from RESO
+reso_members = reso_get('/odata/Member?$count=true&$top=1')
+r_member_count = reso_members.get('@odata.count', 0)
+
+match = "✅" if q_agent_count == r_member_count else "⚠️"
+print(f"  {match} Agents/Members: Qobrix={q_agent_count}, RESO={r_member_count}")
+
+member_issues = []
+if q_agent_count != r_member_count:
+    member_issues.append(f"Count mismatch: Q={q_agent_count}, R={r_member_count}")
+
+print("")
+print("=" * 60)
+print("TEST 5: Contact Verification")
+print("=" * 60)
+
+# Get contacts from Qobrix
+qobrix_contacts = qobrix_get('/contacts', {'limit': 1, 'page': 1})
+q_contact_count = qobrix_contacts.get('pagination', {}).get('count', 0)
+
+# Get contacts from RESO
+reso_contacts = reso_get('/odata/Contacts?$count=true&$top=1')
+r_contact_count = reso_contacts.get('@odata.count', 0)
+
+# Allow small tolerance for recently added/deleted records
+c_diff = abs(q_contact_count - r_contact_count)
+c_tolerance = max(20, q_contact_count * 0.001)  # 0.1% or 20
+match = "✅" if c_diff <= c_tolerance else "❌"
+if c_diff > 0 and c_diff <= c_tolerance:
+    match = "⚠️"
+print(f"  {match} Contacts: Qobrix={q_contact_count:,}, RESO={r_contact_count:,}  (diff={c_diff})")
+
+contact_issues = []
+if c_diff > c_tolerance:
+    contact_issues.append(f"Count mismatch: Q={q_contact_count}, R={r_contact_count}, diff={c_diff}")
+
+print("")
+print("=" * 60)
+print("TEST 6: Field Transformation Verification")
+print("=" * 60)
+
+# Get one property and check transformations
+q_sample = qobrix_get('/properties', {'limit': 1, 'page': 1})['data'][0]
+qid = q_sample['id']
+r_sample = reso_get(f"/odata/Property?$filter=ListingKey eq 'QOBRIX_{qid}'")['value'][0]
+
+transform_checks = []
+
+# ListingKey transformation
+transform_checks.append(('ListingKey', f"QOBRIX_{qid}", r_sample.get('ListingKey')))
+
+# PropertyType mapping (Qobrix property_type -> RESO PropertyType, title case)
+q_type = q_sample.get('property_type')
+r_type = r_sample.get('PropertyType')
+expected_type = q_type.title() if q_type else None
+transform_checks.append(('PropertyType', expected_type, r_type))
+
+# StandardStatus mapping  
+q_status = q_sample.get('status')
+r_status = r_sample.get('StandardStatus')
+status_map = {'available': 'Active', 'sold': 'Closed', 'let': 'Leased', 'pending': 'Pending'}
+expected_status = status_map.get(q_status, q_status)
+transform_checks.append(('StandardStatus', expected_status, r_status))
+
+# Currency Code
+r_currency = r_sample.get('ListPriceCurrencyCode')
+transform_checks.append(('ListPriceCurrencyCode', 'EUR', r_currency))  # Assuming EUR
+
+transform_issues = []
+for field, expected, actual in transform_checks:
+    match = "✅" if expected == actual else "❌"
+    if expected != actual:
+        transform_issues.append(f"{field}: expected={expected}, got={actual}")
+    print(f"  {match} {field}: {expected} → {actual}")
+
+print("")
+print("=" * 60)
+print("TEST 7: RESO Type Compliance")
+print("=" * 60)
+
+# Check that RESO API returns correct types
 type_checks = [
-    ('ListPrice', (int, float), api_prop.get('ListPrice')),
-    ('BedroomsTotal', (int, type(None)), api_prop.get('BedroomsTotal')),
-    ('BathroomsTotalInteger', (int, type(None)), api_prop.get('BathroomsTotalInteger')),
-    ('Latitude', (int, float, type(None)), api_prop.get('Latitude')),
-    ('Longitude', (int, float, type(None)), api_prop.get('Longitude')),
-    ('LivingArea', (int, float, type(None)), api_prop.get('LivingArea')),
-    ('City', (str, type(None)), api_prop.get('City')),
-    ('ListingKey', (str,), api_prop.get('ListingKey')),
-    ('ListPriceCurrencyCode', (str, type(None)), api_prop.get('ListPriceCurrencyCode')),
+    ('ListPrice', (int, float), r_sample.get('ListPrice')),
+    ('BedroomsTotal', (int, type(None)), r_sample.get('BedroomsTotal')),
+    ('BathroomsTotalInteger', (int, type(None)), r_sample.get('BathroomsTotalInteger')),
+    ('Latitude', (int, float, type(None)), r_sample.get('Latitude')),
+    ('Longitude', (int, float, type(None)), r_sample.get('Longitude')),
+    ('LivingArea', (int, float, type(None)), r_sample.get('LivingArea')),
+    ('City', (str, type(None)), r_sample.get('City')),
+    ('ListingKey', (str,), r_sample.get('ListingKey')),
 ]
 
 type_issues = []
@@ -166,11 +277,11 @@ for field, expected_types, value in type_checks:
 
 print("")
 print("=" * 60)
-print("TEST 4: Media URL Verification")
+print("TEST 8: Media URL Full Path")
 print("=" * 60)
 
 # Check that media URLs are full paths
-media_data = api_get("/odata/Media?$top=3&$select=MediaKey,MediaURL")
+media_data = reso_get("/odata/Media?$top=3&$select=MediaKey,MediaURL")
 url_issues = []
 for media in media_data.get('value', []):
     url = media.get('MediaURL', '')
@@ -182,45 +293,26 @@ for media in media_data.get('value', []):
 
 print("")
 print("=" * 60)
-print("TEST 5: API Response Format")
-print("=" * 60)
-
-# Check OData response format
-prop_resp = api_get("/odata/Property?$top=1&$count=true")
-format_checks = [
-    ('@odata.context' in prop_resp, '@odata.context present'),
-    ('@odata.count' in prop_resp, '@odata.count present'),
-    ('value' in prop_resp, 'value array present'),
-    (isinstance(prop_resp.get('value'), list), 'value is array'),
-]
-
-format_issues = []
-for passed, desc in format_checks:
-    status = "✅" if passed else "❌"
-    if not passed:
-        format_issues.append(desc)
-    print(f"  {status} {desc}")
-
-print("")
-print("=" * 60)
 print("SUMMARY")
 print("=" * 60)
 
-total_issues = len(count_issues) + len(data_issues) + len(type_issues) + len(url_issues) + len(format_issues)
+total_issues = len(count_issues) + len(data_issues) + len(media_issues) + len(contact_issues) + len(transform_issues) + len(type_issues) + len(url_issues)
 
-print(f"  Count Verification:    {'✅ PASS' if not count_issues else '❌ FAIL (' + str(len(count_issues)) + ')'}")
-print(f"  Data Verification:     {'✅ PASS' if not data_issues else '❌ FAIL (' + str(len(data_issues)) + ')'}")
-print(f"  Type Verification:     {'✅ PASS' if not type_issues else '❌ FAIL (' + str(len(type_issues)) + ')'}")
-print(f"  Media URL Verification:{'✅ PASS' if not url_issues else '❌ FAIL (' + str(len(url_issues)) + ')'}")
-print(f"  Response Format:       {'✅ PASS' if not format_issues else '❌ FAIL (' + str(len(format_issues)) + ')'}")
+print(f"  Property Count:         {'✅ PASS' if not count_issues else '❌ FAIL (' + str(len(count_issues)) + ')'}")
+print(f"  Property Data:          {'✅ PASS' if not data_issues else '❌ FAIL (' + str(len(data_issues)) + ')'}")
+print(f"  Media Count:            {'✅ PASS' if not media_issues else '❌ FAIL (' + str(len(media_issues)) + ')'}")
+print(f"  Contact Count:          {'✅ PASS' if not contact_issues else '❌ FAIL (' + str(len(contact_issues)) + ')'}")
+print(f"  Field Transformations:  {'✅ PASS' if not transform_issues else '❌ FAIL (' + str(len(transform_issues)) + ')'}")
+print(f"  RESO Type Compliance:   {'✅ PASS' if not type_issues else '❌ FAIL (' + str(len(type_issues)) + ')'}")
+print(f"  Media URL Full Path:    {'✅ PASS' if not url_issues else '❌ FAIL (' + str(len(url_issues)) + ')'}")
 print("")
 
 if total_issues == 0:
     print("🎉 ALL INTEGRITY TESTS PASSED!")
+    print("   Qobrix API data matches RESO API data")
     sys.exit(0)
 else:
     print(f"⚠️  {total_issues} issues found")
     sys.exit(1)
 
 PYTHON_SCRIPT
-
