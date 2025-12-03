@@ -141,11 +141,46 @@ cd mls_2_0
 
 A FastAPI-based RESO Data Dictionary 2.0 compliant OData API that queries Databricks directly.
 
-### Production URL
+### Start the API Server
 
+```bash
+# Start on default port 8000
+./scripts/run_api.sh
+
+# Start on custom port
+./scripts/run_api.sh 3900
+
+# Development mode with auto-reload
+./scripts/run_api.sh --dev
 ```
-https://humaticai.com/reso
+
+### Run with PM2 (Production)
+
+```bash
+pm2 start ecosystem.config.js   # Start
+pm2 save                         # Save for reboot
+pm2 startup                      # Enable auto-start
+pm2 logs reso-web-api           # View logs
+pm2 restart reso-web-api        # Restart
 ```
+
+### Apache Reverse Proxy (HTTPS)
+
+Add to your Apache VirtualHost config for HTTPS access:
+
+```apache
+# RESO Web API - Proxy /reso to FastAPI on port 3900
+RedirectMatch ^/reso$ /reso/
+ProxyPass        /reso/ http://127.0.0.1:3900/
+ProxyPassReverse /reso/ http://127.0.0.1:3900/
+```
+
+Then restart Apache:
+```bash
+sudo apachectl configtest && sudo systemctl restart apache2
+```
+
+API will be available at: `https://your-server.com/reso`
 
 ### API Endpoints
 
@@ -167,28 +202,28 @@ https://humaticai.com/reso
 
 ```bash
 # Get 10 active properties
-curl "https://humaticai.com/reso/odata/Property?\$filter=StandardStatus eq 'Active'&\$top=10"
+curl "https://your-server.com/reso/odata/Property?\$filter=StandardStatus eq 'Active'&\$top=10"
 
 # Select specific fields
-curl "https://humaticai.com/reso/odata/Property?\$select=ListingKey,ListPrice,City,BedroomsTotal"
+curl "https://your-server.com/reso/odata/Property?\$select=ListingKey,ListPrice,City,BedroomsTotal"
 
 # Filter by price range
-curl "https://humaticai.com/reso/odata/Property?\$filter=ListPrice gt 500000 and ListPrice lt 1000000"
+curl "https://your-server.com/reso/odata/Property?\$filter=ListPrice gt 500000 and ListPrice lt 1000000"
 
 # Sort by price descending
-curl "https://humaticai.com/reso/odata/Property?\$orderby=ListPrice desc&\$top=5"
+curl "https://your-server.com/reso/odata/Property?\$orderby=ListPrice desc&\$top=5"
 
 # Pagination
-curl "https://humaticai.com/reso/odata/Property?\$top=100&\$skip=200"
+curl "https://your-server.com/reso/odata/Property?\$top=100&\$skip=200"
 
 # Count total records
-curl "https://humaticai.com/reso/odata/Property?\$count=true&\$top=1"
+curl "https://your-server.com/reso/odata/Property?\$count=true&\$top=1"
 
 # Get single property by key
-curl "https://humaticai.com/reso/odata/Property('QOBRIX_abc123')"
+curl "https://your-server.com/reso/odata/Property('QOBRIX_abc123')"
 
 # Get media for a property
-curl "https://humaticai.com/reso/odata/Media?\$filter=ResourceRecordKey eq 'QOBRIX_abc123'"
+curl "https://your-server.com/reso/odata/Media?\$filter=ResourceRecordKey eq 'QOBRIX_abc123'"
 ```
 
 ### Environment Variables

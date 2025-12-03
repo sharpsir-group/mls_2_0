@@ -5,7 +5,7 @@ Connect your real estate website to the RESO Web API.
 ## API Base URL
 
 ```
-https://humaticai.com/reso
+https://your-server.com/reso
 ```
 
 ## Available Endpoints
@@ -26,7 +26,7 @@ https://humaticai.com/reso
 ### Fetch Properties
 
 ```javascript
-const API_URL = 'https://humaticai.com/reso';
+const API_URL = 'https://your-server.com/reso';
 
 // Get active listings
 const response = await fetch(`${API_URL}/odata/Property?$filter=StandardStatus eq 'Active'&$top=20`);
@@ -39,7 +39,7 @@ console.log(data.value); // Array of properties
 
 ```json
 {
-  "@odata.context": "https://humaticai.com/reso/$metadata#Property",
+  "@odata.context": "https://your-server.com/reso/$metadata#Property",
   "@odata.count": 14034,
   "value": [
     {
@@ -54,7 +54,7 @@ console.log(data.value); // Array of properties
       "Longitude": -80.1918
     }
   ],
-  "@odata.nextLink": "https://humaticai.com/reso/odata/Property?$skip=20&$top=20"
+  "@odata.nextLink": "https://your-server.com/reso/odata/Property?$skip=20&$top=20"
 }
 ```
 
@@ -126,7 +126,7 @@ $top=20&$skip=40
 // Get photos for a property
 const listingKey = 'QOBRIX_abc123';
 const response = await fetch(
-  `https://humaticai.com/reso/odata/Media?$filter=ResourceRecordKey eq '${listingKey}'&$orderby=Order`
+  `https://your-server.com/reso/odata/Media?$filter=ResourceRecordKey eq '${listingKey}'&$orderby=Order`
 );
 const data = await response.json();
 
@@ -166,7 +166,7 @@ interface ODataResponse<T> {
 ```tsx
 import { useState, useEffect } from 'react';
 
-const API_URL = 'https://humaticai.com/reso';
+const API_URL = 'https://your-server.com/reso';
 
 function PropertyList() {
   const [properties, setProperties] = useState([]);
@@ -203,7 +203,7 @@ function PropertyList() {
 In your frontend project:
 
 ```env
-VITE_RESO_API_URL=https://humaticai.com/reso
+VITE_RESO_API_URL=https://your-server.com/reso
 ```
 
 Then use:
