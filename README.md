@@ -154,6 +154,35 @@ A FastAPI-based RESO Data Dictionary 2.0 compliant OData API that queries Databr
 ./scripts/run_api.sh --dev
 ```
 
+### Run with PM2 (Production)
+
+PM2 keeps the API running and auto-restarts on crashes/reboots:
+
+```bash
+# Start with PM2
+pm2 start ecosystem.config.js
+
+# Save for auto-start on reboot
+pm2 save
+
+# Enable startup on boot (run once)
+pm2 startup
+
+# View status
+pm2 status reso-web-api
+
+# View logs
+pm2 logs reso-web-api
+
+# Restart
+pm2 restart reso-web-api
+
+# Stop
+pm2 stop reso-web-api
+```
+
+Default port: **3900** (configured in `ecosystem.config.js`)
+
 ### API Endpoints
 
 | Endpoint | Description |
