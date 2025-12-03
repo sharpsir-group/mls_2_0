@@ -198,49 +198,15 @@ API will be available at: `https://your-server.com/reso`
 | `GET /odata/Contacts` | RESO Contacts resource |
 | `GET /odata/ShowingAppointment` | RESO ShowingAppointment resource |
 
-### OData Query Examples
+### Quick Test
 
 ```bash
-# Get 10 active properties
-curl "https://your-server.com/reso/odata/Property?\$filter=StandardStatus eq 'Active'&\$top=10"
-
-# Select specific fields
-curl "https://your-server.com/reso/odata/Property?\$select=ListingKey,ListPrice,City,BedroomsTotal"
-
-# Filter by price range
-curl "https://your-server.com/reso/odata/Property?\$filter=ListPrice gt 500000 and ListPrice lt 1000000"
-
-# Sort by price descending
-curl "https://your-server.com/reso/odata/Property?\$orderby=ListPrice desc&\$top=5"
-
-# Pagination
-curl "https://your-server.com/reso/odata/Property?\$top=100&\$skip=200"
-
-# Count total records
-curl "https://your-server.com/reso/odata/Property?\$count=true&\$top=1"
-
-# Get single property by key
-curl "https://your-server.com/reso/odata/Property('QOBRIX_abc123')"
-
-# Get media for a property
-curl "https://your-server.com/reso/odata/Media?\$filter=ResourceRecordKey eq 'QOBRIX_abc123'"
+curl "https://your-server.com/reso/odata/Property?\$top=5"
 ```
-
-### Environment Variables
-
-The API reads from `.env` in the `mls_2_0` directory:
-
-| Variable | Description |
-|----------|-------------|
-| `DATABRICKS_HOST` | Databricks workspace URL |
-| `DATABRICKS_TOKEN` | Personal access token |
-| `DATABRICKS_WAREHOUSE_ID` | SQL Warehouse ID |
-| `DATABRICKS_CATALOG` | Catalog name (default: `mls2`) |
-| `DATABRICKS_SCHEMA` | Schema name (default: `reso_gold`) |
 
 ### Frontend Integration
 
-See **[Integration Guide](docs/integration-guide.md)** for connecting your real estate site to this API.
+See **[Integration Guide](docs/integration-guide.md)** for OData queries, TypeScript types, and React examples.
 
 ## Directory Structure
 
