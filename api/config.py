@@ -51,6 +51,17 @@ class Settings(BaseSettings):
     
     # Qobrix default currency (ISO 4217 code) - set in .env
     qobrix_default_currency: str = ""
+    
+    # API Keys for authentication (comma-separated list)
+    # Example: API_KEYS=key1,key2,key3
+    api_keys: str = ""
+    
+    @property
+    def api_keys_list(self) -> list:
+        """Parse API keys from comma-separated string."""
+        if not self.api_keys:
+            return []
+        return [k.strip() for k in self.api_keys.split(",") if k.strip()]
 
 
 @lru_cache()

@@ -28,10 +28,11 @@ from pathlib import Path
 # Add api directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from config import get_settings
+from auth import get_api_key
 
 # Import routers
 from routers import property, member, office, media, contacts, showing, metadata
@@ -60,14 +61,17 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     
-    # Include routers
-    app.include_router(metadata.router)
-    app.include_router(property.router)
-    app.include_router(member.router)
-    app.include_router(office.router)
-    app.include_router(media.router)
-    app.include_router(contacts.router)
-    app.include_router(showing.router)
+    # Include routers with API key authentication
+    # API key dependency protects all OData endpoints
+    api_key_dependency = [Depends(get_api_key)]
+    
+    app.include_router(metadata.router, dependencies=api_key_dependency)
+    app.include_router(property.router, dependencies=api_key_dependency)
+    app.include_router(member.router, dependencies=api_key_dependency)
+    app.include_router(office.router, dependencies=api_key_dependency)
+    app.include_router(media.router, dependencies=api_key_dependency)
+    app.include_router(contacts.router, dependencies=api_key_dependency)
+    app.include_router(showing.router, dependencies=api_key_dependency)
     
     return app
 
