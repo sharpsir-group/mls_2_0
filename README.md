@@ -141,27 +141,44 @@ cd mls_2_0
 
 A FastAPI-based RESO Data Dictionary 2.0 compliant OData API that queries Databricks directly.
 
-### Start the API Server
+### PM2 Management (Production)
 
 ```bash
-# Start on default port 8000
-./scripts/run_api.sh
+# Using the management script
+./scripts/pm2-manage.sh start     # Start the API
+./scripts/pm2-manage.sh stop      # Stop the API
+./scripts/pm2-manage.sh restart   # Restart the API
+./scripts/pm2-manage.sh status    # Show status
+./scripts/pm2-manage.sh logs      # View logs
+./scripts/pm2-manage.sh health    # Check API health
+./scripts/pm2-manage.sh setup     # Initial setup (venv + deps)
+./scripts/pm2-manage.sh save      # Save PM2 state for reboot
 
-# Start on custom port
-./scripts/run_api.sh 3900
-
-# Development mode with auto-reload
-./scripts/run_api.sh --dev
+# Or use PM2 directly
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup                       # Enable auto-start on boot
 ```
 
-### Run with PM2 (Production)
+### API Key Authentication
+
+Protect your API with API keys (optional):
 
 ```bash
-pm2 start ecosystem.config.js   # Start
-pm2 save                         # Save for reboot
-pm2 startup                      # Enable auto-start
-pm2 logs reso-web-api           # View logs
-pm2 restart reso-web-api        # Restart
+# .env - comma-separated list of valid keys
+API_KEYS=key1,key2,key3
+
+# Leave empty to disable authentication
+API_KEYS=
+```
+
+**Usage:**
+```bash
+# Via header
+curl -H "X-API-Key: your-key" https://your-server.com/reso/odata/Property
+
+# Via query parameter
+curl "https://your-server.com/reso/odata/Property?api_key=your-key"
 ```
 
 ### Apache Reverse Proxy (HTTPS)
@@ -255,22 +272,34 @@ mls_2_0/
 │   └── 10_verify_data_integrity_qobrix_vs_reso.py  # Integrity test
 ├── scripts/
 │   ├── import_notebooks.sh     # Import notebooks to Databricks
-│   ├── run_api.sh              # Start RESO Web API server
+│   ├── pm2-manage.sh           # PM2 management for RESO Web API
 │   ├── run_pipeline.sh         # Run ETL pipeline via CLI
 │   └── verify_data_integrity.sh # Local integrity test
 ```
 
 ## Configuration
 
-All credentials are stored in `.env` (copy from `.env.example`):
+All settings are stored in `.env` (copy from `.env.example`):
 
-```
+```bash
+# 1. Qobrix API Credentials
 QOBRIX_API_USER=<your-api-user-uuid>
 QOBRIX_API_KEY=<your-api-key>
 QOBRIX_API_BASE_URL=https://<your-instance>.qobrix.com/api/v2
+QOBRIX_DEFAULT_CURRENCY=EUR
+
+# 2. Databricks Workspace
 DATABRICKS_HOST=https://<your-workspace>.cloud.databricks.com
 DATABRICKS_TOKEN=<your-databricks-token>
 DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/<your-warehouse-id>
+DATABRICKS_WAREHOUSE_ID=<your-warehouse-id>
+
+# 3. RESO Web API Authentication (optional)
+API_KEYS=key1,key2,key3  # Leave empty to disable auth
+
+# 4. RESO Web API Server
+RESO_API_HOST=0.0.0.0
+RESO_API_PORT=3900
 ```
 
 Copy `.env.example` to `.env` and fill in your values.
@@ -551,13 +580,30 @@ CDC enables incremental data sync instead of full refresh:
 ### CDC Commands
 
 ```bash
-# Full CDC pipeline (bronze → silver → gold)
+# Smart CDC - only runs Silver/Gold for changed entities
 ./scripts/run_pipeline.sh cdc
+
+# Force all Silver/Gold ETLs regardless of changes
+./scripts/run_pipeline.sh cdc-all
 
 # Individual CDC stages
 ./scripts/run_pipeline.sh cdc-bronze   # Fetch changed records from API
 ./scripts/run_pipeline.sh cdc-silver   # Transform changed records
 ./scripts/run_pipeline.sh cdc-gold     # RESO transform changed records
+```
+
+**Smart CDC Output:**
+```
+📊 Checking which entities changed...
+   Properties: 0 changed
+   Agents: 0 changed
+   Contacts: 0 changed
+   Viewings: 0 changed
+   Opportunities: 0 changed
+
+✨ No changes detected - skipping Silver/Gold ETLs
+
+⏱️  Total time: 1m 43s
 ```
 
 ### How It Works
@@ -586,14 +632,18 @@ CDC enables incremental data sync instead of full refresh:
 
 ### Entity Sync Frequency
 
-| Entity | CDC Frequency | Reason |
-|--------|---------------|--------|
-| Properties | Every run | High change volume |
-| Property Media | Every run | Tied to property changes |
-| Agents | Hourly | Low change volume |
-| Contacts | Hourly | Low change volume |
-| Viewings | Every run | Tied to property activity |
-| Lookups | Daily (full refresh) | Rarely change |
+| Entity | CDC Method | Notes |
+|--------|------------|-------|
+| Properties | Incremental | High volume |
+| Property Media | Incremental | For changed properties |
+| Agents | Incremental | Low volume |
+| Contacts | Incremental | Medium volume |
+| Viewings | Incremental | Tied to properties |
+| Opportunities | Incremental | Leads/inquiries |
+| Users | Incremental | System users |
+| Projects | Incremental | Developments |
+| Lookups | Incremental | Types, subtypes, locations |
+| Portal Locations | Skip (full refresh only) | No `modified` filter support |
 
 ### Soft Delete Handling
 
@@ -601,11 +651,10 @@ CDC detects trashed properties via `GET /properties?trashed=true` and updates th
 
 ### Recommended Schedule
 
-```
+```bash
 # Cron examples
-*/15 * * * *  ./scripts/run_pipeline.sh cdc         # Every 15 min
-0 * * * *     ./scripts/run_pipeline.sh cdc-bronze  # Hourly (agents, contacts)
-0 0 * * 0     ./scripts/run_pipeline.sh all         # Weekly full refresh
+*/15 * * * *  ./scripts/run_pipeline.sh cdc   # Smart CDC every 15 min
+0 0 * * 0     ./scripts/run_pipeline.sh all   # Weekly full refresh
 ```
 
 ---
