@@ -117,7 +117,7 @@ async def execute_odata_query(
         actual_skip = parser.parse_skip(skip)
         if len(values) == actual_top:
             next_skip = actual_skip + actual_top
-            response["@odata.nextLink"] = f"{base_url}/{resource_name}?$skip={next_skip}&$top={actual_top}"
+            response["@odata.nextLink"] = f"{base_url}/odata/{resource_name}?$skip={next_skip}&$top={actual_top}"
             if filter:
                 response["@odata.nextLink"] += f"&$filter={filter}"
             if select:
