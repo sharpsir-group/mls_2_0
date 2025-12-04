@@ -341,18 +341,18 @@ try:
     changes = {}
     if data:
         # Print table header
-        print('+----------------------------+----------+-----------+')
-        print('| table_name                 |total_rows|cdc_changed|')
-        print('+----------------------------+----------+-----------+')
+        print('+------------------------------+----------+-----------+')
+        print('| table_name                   |total_rows|cdc_changed|')
+        print('+------------------------------+----------+-----------+')
         for row in data:
             name = row[0] if row[0] else ''
             total = row[1] if row[1] else '0'
             changed = row[2] if row[2] else '0'
-            print(f'| {name:<26} | {total:>8} | {changed:>9} |')
+            print(f'| {name:<28} | {total:>8} | {changed:>9} |')
             # Also collect changes for later use
             if name:
                 changes[name] = int(changed) if changed and changed != 'NULL' else 0
-        print('+----------------------------+----------+-----------+')
+        print('+------------------------------+----------+-----------+')
     # Output entity=count for parsing
     for e, c in changes.items():
         print(f'CDC:{e}={c}', file=sys.stderr)
