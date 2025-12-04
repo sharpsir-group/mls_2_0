@@ -13,14 +13,14 @@
 # MAGIC 3. MERGEs changed records into bronze tables (insert/update)
 # MAGIC 4. Updates metadata with new sync timestamp
 # MAGIC 
-# MAGIC **Tables Updated:**
-# MAGIC | Table | CDC Supported | Method |
-# MAGIC |-------|---------------|--------|
-# MAGIC | `properties` | ✅ Yes | `modified` timestamp filter |
-# MAGIC | `property_media` | ✅ Yes | Fetched for changed properties |
-# MAGIC | `agents` | ⚠️ Partial | Hourly sync (low volume) |
-# MAGIC | `contacts` | ⚠️ Partial | Hourly sync (low volume) |
-# MAGIC | Lookups | ❌ No | Daily full refresh |
+# MAGIC **Tables Updated (Every CDC Run):**
+# MAGIC | Table | Method |
+# MAGIC |-------|--------|
+# MAGIC | `properties` | Incremental (`modified` timestamp filter) |
+# MAGIC | `property_media` | Full refresh for changed properties |
+# MAGIC | `agents` | Full refresh |
+# MAGIC | `contacts` | Full refresh |
+# MAGIC | `viewings` | Full refresh |
 # MAGIC 
 # MAGIC **When to use:**
 # MAGIC - Regular sync (every 15-30 min): Run this notebook
