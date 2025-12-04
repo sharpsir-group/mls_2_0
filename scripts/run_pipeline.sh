@@ -25,6 +25,26 @@ fi
 # Suppress CLI warning
 export DATABRICKS_CLI_DO_NOT_SHOW_UPGRADE_MESSAGE=1
 
+# Track script start time
+SCRIPT_START_TIME=$(date +%s)
+
+# Format duration in human-readable format
+format_duration() {
+    local seconds=$1
+    if [ "$seconds" -lt 60 ]; then
+        echo "${seconds}s"
+    elif [ "$seconds" -lt 3600 ]; then
+        local mins=$((seconds / 60))
+        local secs=$((seconds % 60))
+        echo "${mins}m ${secs}s"
+    else
+        local hours=$((seconds / 3600))
+        local mins=$(((seconds % 3600) / 60))
+        local secs=$((seconds % 60))
+        echo "${hours}h ${mins}m ${secs}s"
+    fi
+}
+
 # Get detailed error from a failed run
 get_error_details() {
     local run_id="$1"
@@ -101,6 +121,7 @@ run_notebook() {
     local name="$1"
     local path="$2"
     local needs_creds="$3"
+    local job_start_time=$(date +%s)
     
     echo "🚀 Running: $name"
     
@@ -159,11 +180,15 @@ run_notebook() {
         fi
         
         if [ "$state" = "TERMINATED" ]; then
+            local job_end_time=$(date +%s)
+            local job_duration=$((job_end_time - job_start_time))
+            local job_duration_fmt=$(format_duration $job_duration)
+            
             if [ "$result_state" = "SUCCESS" ]; then
-                echo "   ✅ $name completed successfully"
+                echo "   ✅ $name completed successfully (${job_duration_fmt})"
                 return 0
             else
-                echo "   ❌ $name failed: $result_state"
+                echo "   ❌ $name failed: $result_state (${job_duration_fmt})"
                 echo ""
                 echo "   ┌─────────────────────────────────────────────────────────────────"
                 echo "   │ ERROR DETAILS"
@@ -282,7 +307,11 @@ case "$1" in
         run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "/Shared/mls_2_0/03d_gold_reso_contacts_etl" "false"
         run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "false"
         echo ""
+        SCRIPT_END_TIME=$(date +%s)
+        TOTAL_DURATION=$((SCRIPT_END_TIME - SCRIPT_START_TIME))
         echo "🎉 CDC pipeline completed! All entities synced."
+        echo ""
+        echo "⏱️  Total time: $(format_duration $TOTAL_DURATION)"
         ;;
     cdc)
         echo "🔄 CDC Mode: Smart incremental pipeline (only changed entities)"
@@ -344,8 +373,12 @@ except Exception as ex:
         if [ "$TOTAL_CHANGES" -eq 0 ]; then
             echo ""
             echo "✨ No changes detected - skipping Silver/Gold ETLs"
+            SCRIPT_END_TIME=$(date +%s)
+            TOTAL_DURATION=$((SCRIPT_END_TIME - SCRIPT_START_TIME))
             echo ""
             echo "🎉 CDC pipeline completed! (no updates needed)"
+            echo ""
+            echo "⏱️  Total time: $(format_duration $TOTAL_DURATION)"
         else
             echo ""
             echo "🔄 Stage 2: Silver (changed entities only)"
@@ -382,8 +415,12 @@ except Exception as ex:
                 run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "false"
             fi
             
+            SCRIPT_END_TIME=$(date +%s)
+            TOTAL_DURATION=$((SCRIPT_END_TIME - SCRIPT_START_TIME))
             echo ""
             echo "🎉 CDC pipeline completed! Changed entities synced."
+            echo ""
+            echo "⏱️  Total time: $(format_duration $TOTAL_DURATION)"
         fi
         ;;
     
@@ -412,7 +449,11 @@ except Exception as ex:
         echo "✅ Stage 4: Integrity verification"
         run_notebook "MLS 2.0 - Qobrix vs RESO Integrity Test" "/Shared/mls_2_0/10_verify_data_integrity_qobrix_vs_reso" "true"
         echo ""
+        SCRIPT_END_TIME=$(date +%s)
+        TOTAL_DURATION=$((SCRIPT_END_TIME - SCRIPT_START_TIME))
         echo "🎉 Full pipeline completed!"
+        echo ""
+        echo "⏱️  Total time: $(format_duration $TOTAL_DURATION)"
         ;;
     --help|-h|*)
         echo "Usage: $0 <STAGE>"
