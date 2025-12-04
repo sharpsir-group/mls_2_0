@@ -32,7 +32,7 @@
 # MAGIC | `property_subtypes` | Incremental (`modified >= last_sync`) |
 # MAGIC | `locations` | Incremental (`modified >= last_sync`) |
 # MAGIC | `media_categories` | Incremental (`modified >= last_sync`) |
-# MAGIC | `portal_locations` | Incremental (4 portals combined) |
+# MAGIC | `portal_locations` | Skipped (static lookups, full refresh only) |
 # MAGIC 
 # MAGIC **When to use:**
 # MAGIC - Regular sync (every 15-30 min): Run this notebook
@@ -617,73 +617,20 @@ else:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## CDC: Portal Location Mappings
+# MAGIC ## Portal Locations (Skipped in CDC)
+# MAGIC 
+# MAGIC Portal location mappings (bayut, bazaraki, spitogatos, property_finder_ae) are static lookup tables
+# MAGIC that don't support the `modified` timestamp filter. They're only refreshed during full pipeline runs.
 
 # COMMAND ----------
 
 print("\n" + "=" * 80)
-print("📥 CDC: PORTAL LOCATIONS")
+print("ℹ️  PORTAL LOCATIONS (Skipped)")
 print("=" * 80)
-
-portal_total = 0
-
-# Bayut
-started_at = datetime.utcnow()
-last_sync = get_last_sync("bayut_locations")
-print(f"\n1️⃣  Bayut Locations (last sync: {last_sync})...")
-modified_bayut = fetch_modified_records("/bayut-locations", last_sync)
-print(f"   Found: {len(modified_bayut)} modified")
-if modified_bayut:
-    max_modified = max(b.get("modified", "") for b in modified_bayut)
-    merged_count = merge_to_bronze(modified_bayut, "bayut_locations", "id")
-    portal_total += merged_count
-    update_sync_metadata("bayut_locations", merged_count, max_modified, "SUCCESS", started_at)
-else:
-    update_sync_metadata("bayut_locations", 0, last_sync, "SUCCESS", started_at)
-
-# Bazaraki
-started_at = datetime.utcnow()
-last_sync = get_last_sync("bazaraki_locations")
-print(f"\n2️⃣  Bazaraki Locations (last sync: {last_sync})...")
-modified_bazaraki = fetch_modified_records("/bazaraki-locations", last_sync)
-print(f"   Found: {len(modified_bazaraki)} modified")
-if modified_bazaraki:
-    max_modified = max(b.get("modified", "") for b in modified_bazaraki)
-    merged_count = merge_to_bronze(modified_bazaraki, "bazaraki_locations", "id")
-    portal_total += merged_count
-    update_sync_metadata("bazaraki_locations", merged_count, max_modified, "SUCCESS", started_at)
-else:
-    update_sync_metadata("bazaraki_locations", 0, last_sync, "SUCCESS", started_at)
-
-# Spitogatos
-started_at = datetime.utcnow()
-last_sync = get_last_sync("spitogatos_locations")
-print(f"\n3️⃣  Spitogatos Locations (last sync: {last_sync})...")
-modified_spitogatos = fetch_modified_records("/spitogatos-locations", last_sync)
-print(f"   Found: {len(modified_spitogatos)} modified")
-if modified_spitogatos:
-    max_modified = max(s.get("modified", "") for s in modified_spitogatos)
-    merged_count = merge_to_bronze(modified_spitogatos, "spitogatos_locations", "id")
-    portal_total += merged_count
-    update_sync_metadata("spitogatos_locations", merged_count, max_modified, "SUCCESS", started_at)
-else:
-    update_sync_metadata("spitogatos_locations", 0, last_sync, "SUCCESS", started_at)
-
-# Property Finder AE
-started_at = datetime.utcnow()
-last_sync = get_last_sync("property_finder_ae_locations")
-print(f"\n4️⃣  Property Finder AE Locations (last sync: {last_sync})...")
-modified_pf = fetch_modified_records("/property-finder-ae-locations", last_sync)
-print(f"   Found: {len(modified_pf)} modified")
-if modified_pf:
-    max_modified = max(p.get("modified", "") for p in modified_pf)
-    merged_count = merge_to_bronze(modified_pf, "property_finder_ae_locations", "id")
-    portal_total += merged_count
-    update_sync_metadata("property_finder_ae_locations", merged_count, max_modified, "SUCCESS", started_at)
-else:
-    update_sync_metadata("property_finder_ae_locations", 0, last_sync, "SUCCESS", started_at)
-
-cdc_changes["portal_locations"] = portal_total
+print("\n   Portal location mappings are static lookup tables.")
+print("   They don't support incremental sync and are only refreshed during full pipeline runs.")
+print("   Tables: bayut_locations, bazaraki_locations, spitogatos_locations, property_finder_ae_locations")
+cdc_changes["portal_locations"] = 0
 
 # COMMAND ----------
 
