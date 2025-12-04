@@ -1,0 +1,17 @@
+# Cursor Ignore - Files to ignore in suggestions
+
+# Documentation files (unless explicitly requested)
+*.md
+!README.md
+!CHANGELOG.md
+
+# Temporary files and directories (ignore tmp/ directory contents)
+tmp/*
+!tmp/.gitkeep
+*.tmp
+*_temp.*
+*_test_temp.*
+
+# But allow if explicitly in path when user requests
+# This prevents automatic creation but allows explicit requests
+
