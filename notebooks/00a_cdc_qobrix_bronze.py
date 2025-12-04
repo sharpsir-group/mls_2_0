@@ -25,6 +25,14 @@
 # MAGIC | `viewings` | Incremental (`modified >= last_sync`) |
 # MAGIC | `opportunities` | Incremental (`modified >= last_sync`) |
 # MAGIC | `property_media` | Re-fetched for changed properties |
+# MAGIC | `users` | Incremental (`modified >= last_sync`) |
+# MAGIC | `projects` | Incremental (`modified >= last_sync`) |
+# MAGIC | `project_features` | Incremental (`modified >= last_sync`) |
+# MAGIC | `property_types` | Incremental (`modified >= last_sync`) |
+# MAGIC | `property_subtypes` | Incremental (`modified >= last_sync`) |
+# MAGIC | `locations` | Incremental (`modified >= last_sync`) |
+# MAGIC | `media_categories` | Incremental (`modified >= last_sync`) |
+# MAGIC | `portal_locations` | Incremental (4 portals combined) |
 # MAGIC 
 # MAGIC **When to use:**
 # MAGIC - Regular sync (every 15-30 min): Run this notebook
@@ -82,7 +90,15 @@ cdc_changes = {
     "contacts": 0,
     "viewings": 0,
     "opportunities": 0,
-    "media": 0
+    "media": 0,
+    "users": 0,
+    "projects": 0,
+    "project_features": 0,
+    "property_types": 0,
+    "property_subtypes": 0,
+    "locations": 0,
+    "media_categories": 0,
+    "portal_locations": 0
 }
 
 # COMMAND ----------
@@ -449,6 +465,225 @@ if modified_opportunities:
     update_sync_metadata("opportunities", merged_count, max_modified, "SUCCESS", started_at)
 else:
     update_sync_metadata("opportunities", 0, last_sync, "SUCCESS", started_at)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## CDC: Users
+
+# COMMAND ----------
+
+print("\n" + "=" * 80)
+print("📥 CDC: USERS")
+print("=" * 80)
+
+started_at = datetime.utcnow()
+last_sync = get_last_sync("users")
+print(f"\n🕐 Last sync: {last_sync}")
+
+print(f"\n1️⃣  Fetching users modified since {last_sync}...")
+modified_users = fetch_modified_records("/users", last_sync)
+print(f"   Found: {len(modified_users)} modified users")
+
+if modified_users:
+    max_modified = max(u.get("modified", "") for u in modified_users)
+    merged_count = merge_to_bronze(modified_users, "users", "id")
+    cdc_changes["users"] = merged_count
+    update_sync_metadata("users", merged_count, max_modified, "SUCCESS", started_at)
+else:
+    update_sync_metadata("users", 0, last_sync, "SUCCESS", started_at)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## CDC: Projects
+
+# COMMAND ----------
+
+print("\n" + "=" * 80)
+print("📥 CDC: PROJECTS")
+print("=" * 80)
+
+started_at = datetime.utcnow()
+last_sync = get_last_sync("projects")
+print(f"\n🕐 Last sync: {last_sync}")
+
+print(f"\n1️⃣  Fetching projects modified since {last_sync}...")
+modified_projects = fetch_modified_records("/projects", last_sync)
+print(f"   Found: {len(modified_projects)} modified projects")
+
+if modified_projects:
+    max_modified = max(p.get("modified", "") for p in modified_projects)
+    merged_count = merge_to_bronze(modified_projects, "projects", "id")
+    cdc_changes["projects"] = merged_count
+    update_sync_metadata("projects", merged_count, max_modified, "SUCCESS", started_at)
+else:
+    update_sync_metadata("projects", 0, last_sync, "SUCCESS", started_at)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## CDC: Project Features
+
+# COMMAND ----------
+
+print("\n" + "=" * 80)
+print("📥 CDC: PROJECT FEATURES")
+print("=" * 80)
+
+started_at = datetime.utcnow()
+last_sync = get_last_sync("project_features")
+print(f"\n🕐 Last sync: {last_sync}")
+
+print(f"\n1️⃣  Fetching project features modified since {last_sync}...")
+modified_features = fetch_modified_records("/project-features", last_sync)
+print(f"   Found: {len(modified_features)} modified project features")
+
+if modified_features:
+    max_modified = max(f.get("modified", "") for f in modified_features)
+    merged_count = merge_to_bronze(modified_features, "project_features", "id")
+    cdc_changes["project_features"] = merged_count
+    update_sync_metadata("project_features", merged_count, max_modified, "SUCCESS", started_at)
+else:
+    update_sync_metadata("project_features", 0, last_sync, "SUCCESS", started_at)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## CDC: Lookups (Property Types, Subtypes, Locations, Media Categories)
+
+# COMMAND ----------
+
+print("\n" + "=" * 80)
+print("📥 CDC: LOOKUPS")
+print("=" * 80)
+
+# Property Types
+started_at = datetime.utcnow()
+last_sync = get_last_sync("property_types")
+print(f"\n1️⃣  Property Types (last sync: {last_sync})...")
+modified_types = fetch_modified_records("/property-types", last_sync)
+print(f"   Found: {len(modified_types)} modified")
+if modified_types:
+    max_modified = max(t.get("modified", "") for t in modified_types)
+    merged_count = merge_to_bronze(modified_types, "property_types", "id")
+    cdc_changes["property_types"] = merged_count
+    update_sync_metadata("property_types", merged_count, max_modified, "SUCCESS", started_at)
+else:
+    update_sync_metadata("property_types", 0, last_sync, "SUCCESS", started_at)
+
+# Property Subtypes
+started_at = datetime.utcnow()
+last_sync = get_last_sync("property_subtypes")
+print(f"\n2️⃣  Property Subtypes (last sync: {last_sync})...")
+modified_subtypes = fetch_modified_records("/property-subtypes", last_sync)
+print(f"   Found: {len(modified_subtypes)} modified")
+if modified_subtypes:
+    max_modified = max(s.get("modified", "") for s in modified_subtypes)
+    merged_count = merge_to_bronze(modified_subtypes, "property_subtypes", "id")
+    cdc_changes["property_subtypes"] = merged_count
+    update_sync_metadata("property_subtypes", merged_count, max_modified, "SUCCESS", started_at)
+else:
+    update_sync_metadata("property_subtypes", 0, last_sync, "SUCCESS", started_at)
+
+# Locations
+started_at = datetime.utcnow()
+last_sync = get_last_sync("locations")
+print(f"\n3️⃣  Locations (last sync: {last_sync})...")
+modified_locations = fetch_modified_records("/locations", last_sync)
+print(f"   Found: {len(modified_locations)} modified")
+if modified_locations:
+    max_modified = max(l.get("modified", "") for l in modified_locations)
+    merged_count = merge_to_bronze(modified_locations, "locations", "id")
+    cdc_changes["locations"] = merged_count
+    update_sync_metadata("locations", merged_count, max_modified, "SUCCESS", started_at)
+else:
+    update_sync_metadata("locations", 0, last_sync, "SUCCESS", started_at)
+
+# Media Categories
+started_at = datetime.utcnow()
+last_sync = get_last_sync("media_categories")
+print(f"\n4️⃣  Media Categories (last sync: {last_sync})...")
+modified_cats = fetch_modified_records("/media/categories", last_sync)
+print(f"   Found: {len(modified_cats)} modified")
+if modified_cats:
+    max_modified = max(c.get("modified", "") for c in modified_cats)
+    merged_count = merge_to_bronze(modified_cats, "media_categories", "id")
+    cdc_changes["media_categories"] = merged_count
+    update_sync_metadata("media_categories", merged_count, max_modified, "SUCCESS", started_at)
+else:
+    update_sync_metadata("media_categories", 0, last_sync, "SUCCESS", started_at)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## CDC: Portal Location Mappings
+
+# COMMAND ----------
+
+print("\n" + "=" * 80)
+print("📥 CDC: PORTAL LOCATIONS")
+print("=" * 80)
+
+portal_total = 0
+
+# Bayut
+started_at = datetime.utcnow()
+last_sync = get_last_sync("bayut_locations")
+print(f"\n1️⃣  Bayut Locations (last sync: {last_sync})...")
+modified_bayut = fetch_modified_records("/bayut-locations", last_sync)
+print(f"   Found: {len(modified_bayut)} modified")
+if modified_bayut:
+    max_modified = max(b.get("modified", "") for b in modified_bayut)
+    merged_count = merge_to_bronze(modified_bayut, "bayut_locations", "id")
+    portal_total += merged_count
+    update_sync_metadata("bayut_locations", merged_count, max_modified, "SUCCESS", started_at)
+else:
+    update_sync_metadata("bayut_locations", 0, last_sync, "SUCCESS", started_at)
+
+# Bazaraki
+started_at = datetime.utcnow()
+last_sync = get_last_sync("bazaraki_locations")
+print(f"\n2️⃣  Bazaraki Locations (last sync: {last_sync})...")
+modified_bazaraki = fetch_modified_records("/bazaraki-locations", last_sync)
+print(f"   Found: {len(modified_bazaraki)} modified")
+if modified_bazaraki:
+    max_modified = max(b.get("modified", "") for b in modified_bazaraki)
+    merged_count = merge_to_bronze(modified_bazaraki, "bazaraki_locations", "id")
+    portal_total += merged_count
+    update_sync_metadata("bazaraki_locations", merged_count, max_modified, "SUCCESS", started_at)
+else:
+    update_sync_metadata("bazaraki_locations", 0, last_sync, "SUCCESS", started_at)
+
+# Spitogatos
+started_at = datetime.utcnow()
+last_sync = get_last_sync("spitogatos_locations")
+print(f"\n3️⃣  Spitogatos Locations (last sync: {last_sync})...")
+modified_spitogatos = fetch_modified_records("/spitogatos-locations", last_sync)
+print(f"   Found: {len(modified_spitogatos)} modified")
+if modified_spitogatos:
+    max_modified = max(s.get("modified", "") for s in modified_spitogatos)
+    merged_count = merge_to_bronze(modified_spitogatos, "spitogatos_locations", "id")
+    portal_total += merged_count
+    update_sync_metadata("spitogatos_locations", merged_count, max_modified, "SUCCESS", started_at)
+else:
+    update_sync_metadata("spitogatos_locations", 0, last_sync, "SUCCESS", started_at)
+
+# Property Finder AE
+started_at = datetime.utcnow()
+last_sync = get_last_sync("property_finder_ae_locations")
+print(f"\n4️⃣  Property Finder AE Locations (last sync: {last_sync})...")
+modified_pf = fetch_modified_records("/property-finder-ae-locations", last_sync)
+print(f"   Found: {len(modified_pf)} modified")
+if modified_pf:
+    max_modified = max(p.get("modified", "") for p in modified_pf)
+    merged_count = merge_to_bronze(modified_pf, "property_finder_ae_locations", "id")
+    portal_total += merged_count
+    update_sync_metadata("property_finder_ae_locations", merged_count, max_modified, "SUCCESS", started_at)
+else:
+    update_sync_metadata("property_finder_ae_locations", 0, last_sync, "SUCCESS", started_at)
+
+cdc_changes["portal_locations"] = portal_total
 
 # COMMAND ----------
 
