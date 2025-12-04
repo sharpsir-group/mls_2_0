@@ -261,8 +261,8 @@ case "$1" in
         echo "🔄 CDC Mode: Incremental gold sync"
         run_notebook "MLS 2.0 - RESO CDC Gold Property" "/Shared/mls_2_0/03_cdc_gold_reso_property_etl" "false"
         ;;
-    cdc)
-        echo "🔄 CDC Mode: Full incremental pipeline (ALL entities)"
+    cdc-all)
+        echo "🔄 CDC Mode: Full incremental pipeline (ALL entities - forced)"
         echo ""
         echo "📦 Stage 1: CDC Bronze (incremental data from API)"
         run_notebook "MLS 2.0 - Qobrix CDC Bronze" "/Shared/mls_2_0/00a_cdc_qobrix_bronze" "true"
@@ -283,6 +283,108 @@ case "$1" in
         run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "false"
         echo ""
         echo "🎉 CDC pipeline completed! All entities synced."
+        ;;
+    cdc)
+        echo "🔄 CDC Mode: Smart incremental pipeline (only changed entities)"
+        echo ""
+        echo "📦 Stage 1: CDC Bronze (incremental data from API)"
+        run_notebook "MLS 2.0 - Qobrix CDC Bronze" "/Shared/mls_2_0/00a_cdc_qobrix_bronze" "true"
+        
+        # Get CDC changes from notebook output
+        echo ""
+        echo "📊 Checking which entities changed..."
+        
+        # Query cdc_metadata table to get recent changes
+        CDC_QUERY='SELECT entity_name, SUM(records_processed) as total FROM mls2.qobrix_bronze.cdc_metadata WHERE sync_completed_at >= CURRENT_TIMESTAMP() - INTERVAL 5 MINUTES GROUP BY entity_name'
+        CDC_RESULT=$(databricks jobs run-now --job-id 0 2>/dev/null || echo "")
+        
+        # For now, check the cdc_metadata table via SQL API
+        # Parse changes from a temp file approach
+        CHANGES_FILE=$(mktemp)
+        curl -s -X POST "https://${DATABRICKS_HOST}/api/2.0/sql/statements" \
+            -H "Authorization: Bearer ${DATABRICKS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{
+                "warehouse_id": "'"${DATABRICKS_WAREHOUSE_ID}"'",
+                "statement": "SELECT entity_name, records_processed FROM mls2.qobrix_bronze.cdc_metadata WHERE sync_completed_at >= CURRENT_TIMESTAMP() - INTERVAL 2 MINUTES ORDER BY sync_completed_at DESC",
+                "wait_timeout": "30s"
+            }' 2>/dev/null | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    data = d.get('result', {}).get('data_array', [])
+    changes = {}
+    for row in data:
+        entity = row[0]
+        count = int(row[1]) if row[1] else 0
+        if entity not in changes:
+            changes[entity] = count
+    # Output entity=count format
+    for e, c in changes.items():
+        print(f'{e}={c}')
+except Exception as ex:
+    print(f'error={ex}', file=sys.stderr)
+" > "$CHANGES_FILE" 2>/dev/null
+
+        # Parse changes
+        PROPS_CHANGED=$(grep "^properties=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2 || echo "0")
+        AGENTS_CHANGED=$(grep "^agents=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2 || echo "0")
+        CONTACTS_CHANGED=$(grep "^contacts=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2 || echo "0")
+        VIEWINGS_CHANGED=$(grep "^property_viewings=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2 || echo "0")
+        rm -f "$CHANGES_FILE"
+        
+        echo "   Properties: $PROPS_CHANGED changed"
+        echo "   Agents: $AGENTS_CHANGED changed"
+        echo "   Contacts: $CONTACTS_CHANGED changed"
+        echo "   Viewings: $VIEWINGS_CHANGED changed"
+        
+        # Calculate if anything changed
+        TOTAL_CHANGES=$((PROPS_CHANGED + AGENTS_CHANGED + CONTACTS_CHANGED + VIEWINGS_CHANGED))
+        
+        if [ "$TOTAL_CHANGES" -eq 0 ]; then
+            echo ""
+            echo "✨ No changes detected - skipping Silver/Gold ETLs"
+            echo ""
+            echo "🎉 CDC pipeline completed! (no updates needed)"
+        else
+            echo ""
+            echo "🔄 Stage 2: Silver (changed entities only)"
+            
+            if [ "$PROPS_CHANGED" -gt 0 ]; then
+                run_notebook "MLS 2.0 - Qobrix Silver Property ETL" "/Shared/mls_2_0/02_silver_qobrix_property_etl" "false"
+                run_notebook "MLS 2.0 - Qobrix Silver Media ETL" "/Shared/mls_2_0/02c_silver_qobrix_media_etl" "false"
+            fi
+            if [ "$AGENTS_CHANGED" -gt 0 ]; then
+                run_notebook "MLS 2.0 - Qobrix Silver Agent ETL" "/Shared/mls_2_0/02a_silver_qobrix_agent_etl" "false"
+            fi
+            if [ "$CONTACTS_CHANGED" -gt 0 ]; then
+                run_notebook "MLS 2.0 - Qobrix Silver Contact ETL" "/Shared/mls_2_0/02b_silver_qobrix_contact_etl" "false"
+            fi
+            if [ "$VIEWINGS_CHANGED" -gt 0 ]; then
+                run_notebook "MLS 2.0 - Qobrix Silver Viewing ETL" "/Shared/mls_2_0/02d_silver_qobrix_viewing_etl" "false"
+            fi
+            
+            echo ""
+            echo "🏆 Stage 3: Gold (changed entities only)"
+            
+            if [ "$PROPS_CHANGED" -gt 0 ]; then
+                run_notebook "MLS 2.0 - RESO Gold Property ETL" "/Shared/mls_2_0/03_gold_reso_property_etl" "false"
+                run_notebook "MLS 2.0 - RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" "false"
+            fi
+            if [ "$AGENTS_CHANGED" -gt 0 ]; then
+                run_notebook "MLS 2.0 - RESO Gold Member ETL" "/Shared/mls_2_0/03a_gold_reso_member_etl" "false"
+                run_notebook "MLS 2.0 - RESO Gold Office ETL" "/Shared/mls_2_0/03b_gold_reso_office_etl" "false"
+            fi
+            if [ "$CONTACTS_CHANGED" -gt 0 ]; then
+                run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "/Shared/mls_2_0/03d_gold_reso_contacts_etl" "false"
+            fi
+            if [ "$VIEWINGS_CHANGED" -gt 0 ]; then
+                run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "false"
+            fi
+            
+            echo ""
+            echo "🎉 CDC pipeline completed! Changed entities synced."
+        fi
         ;;
     
     # ═══════════════════════════════════════════════════════════════════════════
@@ -338,7 +440,8 @@ case "$1" in
         echo "═══════════════════════════════════════════════════════════════════════"
         echo "CDC - INCREMENTAL SYNC (recommended for regular updates)"
         echo "═══════════════════════════════════════════════════════════════════════"
-        echo "  cdc                 Full CDC sync ALL entities (bronze → silver → gold)"
+        echo "  cdc                 Smart CDC - only run Silver/Gold for changed entities"
+        echo "  cdc-all             Force CDC ALL entities (bronze -> silver -> gold)"
         echo "  cdc-bronze          CDC bronze only (fetch changed records from API)"
         echo "  cdc-silver          CDC silver property only (incremental transform)"
         echo "  cdc-gold            CDC gold property only (incremental RESO transform)"

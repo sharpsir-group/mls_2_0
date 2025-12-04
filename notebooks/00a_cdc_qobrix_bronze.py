@@ -75,6 +75,16 @@ print("=" * 80)
 print("🔄 CDC MODE - Incremental Sync")
 print("=" * 80)
 
+# Track changes for each entity (used to determine which Silver/Gold ETLs to run)
+cdc_changes = {
+    "properties": 0,
+    "agents": 0,
+    "contacts": 0,
+    "viewings": 0,
+    "opportunities": 0,
+    "media": 0
+}
+
 # COMMAND ----------
 
 # MAGIC %md
@@ -306,6 +316,7 @@ if modified_properties:
     # Merge into bronze
     print("\n2️⃣  Merging into bronze.properties...")
     merged_count = merge_to_bronze(modified_properties, "properties", "id")
+    cdc_changes["properties"] = merged_count
     
     # Fetch and merge media for modified properties
     print("\n3️⃣  Fetching media for modified properties...")
@@ -314,6 +325,7 @@ if modified_properties:
     
     if modified_media:
         print(f"   Found: {len(modified_media)} media items")
+        cdc_changes["media"] = len(modified_media)
         # For media, we need to handle differently - delete old media for these properties first
         for prop_id in property_ids:
             spark.sql(f"DELETE FROM property_media WHERE property_id = '{prop_id}'")
@@ -348,6 +360,7 @@ print(f"   Found: {len(modified_agents)} modified agents")
 if modified_agents:
     max_modified = max(a.get("modified", "") for a in modified_agents)
     merged_count = merge_to_bronze(modified_agents, "agents", "id")
+    cdc_changes["agents"] = merged_count
     update_sync_metadata("agents", merged_count, max_modified, "SUCCESS", started_at)
     print(f"\n✅ Agents CDC complete: {merged_count} records updated")
 else:
@@ -376,6 +389,7 @@ print(f"   Found: {len(modified_contacts)} modified contacts")
 if modified_contacts:
     max_modified = max(c.get("modified", "") for c in modified_contacts)
     merged_count = merge_to_bronze(modified_contacts, "contacts", "id")
+    cdc_changes["contacts"] = merged_count
     update_sync_metadata("contacts", merged_count, max_modified, "SUCCESS", started_at)
     print(f"\n✅ Contacts CDC complete: {merged_count} records updated")
 else:
@@ -404,6 +418,7 @@ print(f"   Found: {len(modified_viewings)} modified viewings")
 if modified_viewings:
     max_modified = max(v.get("modified", "") for v in modified_viewings)
     merged_count = merge_to_bronze(modified_viewings, "property_viewings", "id")
+    cdc_changes["viewings"] = merged_count
     update_sync_metadata("property_viewings", merged_count, max_modified, "SUCCESS", started_at)
 else:
     update_sync_metadata("property_viewings", 0, last_sync, "SUCCESS", started_at)
@@ -430,6 +445,7 @@ print(f"   Found: {len(modified_opportunities)} modified opportunities")
 if modified_opportunities:
     max_modified = max(o.get("modified", "") for o in modified_opportunities)
     merged_count = merge_to_bronze(modified_opportunities, "opportunities", "id")
+    cdc_changes["opportunities"] = merged_count
     update_sync_metadata("opportunities", merged_count, max_modified, "SUCCESS", started_at)
 else:
     update_sync_metadata("opportunities", 0, last_sync, "SUCCESS", started_at)
@@ -503,4 +519,9 @@ for table in tables:
 print("\n" + "=" * 80)
 print("✅ CDC SYNC COMPLETE")
 print("=" * 80)
+
+# Output parseable change summary for pipeline orchestration
+# Format: CDC_CHANGES:entity=count,entity=count,...
+changes_str = ",".join([f"{k}={v}" for k, v in cdc_changes.items()])
+print(f"\nCDC_CHANGES:{changes_str}")
 
