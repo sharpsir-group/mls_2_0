@@ -19,12 +19,12 @@
 # MAGIC **Tables Updated (Every CDC Run):**
 # MAGIC | Table | Method |
 # MAGIC |-------|--------|
-# MAGIC | `properties` | Incremental (`modified` timestamp filter) |
-# MAGIC | `property_media` | Full refresh for changed properties |
-# MAGIC | `agents` | Full refresh |
-# MAGIC | `contacts` | Full refresh |
-# MAGIC | `viewings` | Full refresh |
-# MAGIC | `opportunities` | Full refresh |
+# MAGIC | `properties` | Incremental (`modified >= last_sync`) |
+# MAGIC | `agents` | Incremental (`modified >= last_sync`) |
+# MAGIC | `contacts` | Incremental (`modified >= last_sync`) |
+# MAGIC | `viewings` | Incremental (`modified >= last_sync`) |
+# MAGIC | `opportunities` | Incremental (`modified >= last_sync`) |
+# MAGIC | `property_media` | Re-fetched for changed properties |
 # MAGIC 
 # MAGIC **When to use:**
 # MAGIC - Regular sync (every 15-30 min): Run this notebook
