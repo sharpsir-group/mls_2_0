@@ -669,7 +669,7 @@ CDC detects trashed properties via `GET /properties?trashed=true` and updates th
 - [x] Add Qobrix extension fields (X_ prefix) to Property
 - [x] Map Qobrix fields to RESO standard names (hybrid approach)
 - [x] Add Silver layer for all resources (agent, contact, media, viewing)
-- [x] Implement CDC (incremental updates) ✅ Tested
+- [x] Implement CDC (incremental updates)
 - [x] Scale to full data load
 
 ---
