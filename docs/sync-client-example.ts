@@ -329,7 +329,7 @@ export class MLSSyncClient {
 
     // Process pages in parallel batches
     for (let i = 0; i < totalPages; i += maxConcurrent) {
-      const batch = [];
+      const batch: Promise<void>[] = [];
       for (let j = 0; j < maxConcurrent && i + j < totalPages; j++) {
         batch.push(fetchPageTask(i + j));
       }
