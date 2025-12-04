@@ -31,7 +31,19 @@ export interface Property {
   Longitude?: number;
   ModificationTimestamp?: string;
   X_MainPhoto?: string;
+  media?: Media[]; // Attached media/photos
   [key: string]: unknown; // Allow extension fields
+}
+
+export interface Media {
+  MediaKey: string;
+  ResourceRecordKey: string; // = Property.ListingKey
+  MediaURL: string;
+  MediaCategory: 'Photo' | 'Floorplan' | 'Document' | 'Video' | string;
+  Order: number;
+  ShortDescription?: string;
+  MediaModificationTimestamp?: string;
+  [key: string]: unknown;
 }
 
 export interface ODataResponse<T> {
@@ -344,6 +356,139 @@ export class MLSSyncClient {
       filter,
     });
   }
+
+  // ---------------------------------------------------------------------------
+  // Media Sync
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get total media count
+   */
+  async getMediaCount(filter?: string): Promise<number> {
+    let url = `${this.baseUrl}/odata/Media?$top=0&$count=true`;
+    if (filter) url += `&$filter=${encodeURIComponent(filter)}`;
+
+    const response = await this.fetchWithRetry<ODataResponse<Media>>(url);
+    return response['@odata.count'] ?? 0;
+  }
+
+  /**
+   * Fetch media for a single property
+   */
+  async getPropertyMedia(listingKey: string): Promise<Media[]> {
+    const url = `${this.baseUrl}/odata/Media?$filter=ResourceRecordKey eq '${listingKey}'&$orderby=Order`;
+    const response = await this.fetchWithRetry<ODataResponse<Media>>(url);
+    return response.value;
+  }
+
+  /**
+   * Fetch media for multiple properties (bulk)
+   */
+  async getMediaForProperties(listingKeys: string[]): Promise<Map<string, Media[]>> {
+    const mediaMap = new Map<string, Media[]>();
+    
+    // Process in batches of 50 to avoid URL length limits
+    const batchSize = 50;
+    for (let i = 0; i < listingKeys.length; i += batchSize) {
+      const batch = listingKeys.slice(i, i + batchSize);
+      const keyList = batch.map(k => `'${k}'`).join(',');
+      const filter = `ResourceRecordKey in (${keyList})`;
+      
+      const url = `${this.baseUrl}/odata/Media?$filter=${encodeURIComponent(filter)}&$orderby=ResourceRecordKey,Order&$top=1000`;
+      const response = await this.fetchWithRetry<ODataResponse<Media>>(url);
+      
+      // Group by property
+      for (const m of response.value) {
+        const key = m.ResourceRecordKey;
+        if (!mediaMap.has(key)) mediaMap.set(key, []);
+        mediaMap.get(key)!.push(m);
+      }
+    }
+    
+    return mediaMap;
+  }
+
+  /**
+   * Sync all media (for full database sync)
+   */
+  async syncAllMedia(options: {
+    pageSize?: number;
+    onProgress?: (progress: SyncProgress) => void;
+  } = {}): Promise<Media[]> {
+    const { pageSize = 1000, onProgress } = options;
+    const startTime = Date.now();
+    const allMedia: Media[] = [];
+    
+    const total = await this.getMediaCount();
+    let fetched = 0;
+    let skip = 0;
+
+    while (true) {
+      const url = `${this.baseUrl}/odata/Media?$top=${pageSize}&$skip=${skip}&$orderby=ResourceRecordKey,Order`;
+      const response = await this.fetchWithRetry<ODataResponse<Media>>(url);
+      
+      allMedia.push(...response.value);
+      fetched += response.value.length;
+
+      if (onProgress) {
+        const elapsed = Date.now() - startTime;
+        const rate = fetched / (elapsed / 1000);
+        onProgress({
+          total,
+          fetched,
+          percent: Math.round((fetched / total) * 100),
+          elapsedMs: elapsed,
+          estimatedRemainingMs: rate > 0 ? ((total - fetched) / rate) * 1000 : 0,
+          propertiesPerSecond: Math.round(rate),
+        });
+      }
+
+      if (!response['@odata.nextLink'] || response.value.length < pageSize) {
+        break;
+      }
+      skip += pageSize;
+    }
+
+    return allMedia;
+  }
+
+  /**
+   * Full sync with media attached to properties
+   */
+  async syncAllWithMedia(options: SyncOptions = {}): Promise<Property[]> {
+    const { onProgress } = options;
+    
+    // Phase 1: Sync properties
+    console.log('Phase 1/2: Syncing properties...');
+    const properties = await this.syncAllParallel({
+      ...options,
+      onProgress: onProgress ? (p) => {
+        onProgress({ ...p, percent: Math.round(p.percent * 0.6) }); // 0-60%
+      } : undefined,
+    });
+
+    // Phase 2: Sync media
+    console.log('Phase 2/2: Syncing media...');
+    const allMedia = await this.syncAllMedia({
+      onProgress: onProgress ? (p) => {
+        onProgress({ ...p, percent: 60 + Math.round(p.percent * 0.4) }); // 60-100%
+      } : undefined,
+    });
+
+    // Attach media to properties
+    const mediaMap = new Map<string, Media[]>();
+    for (const m of allMedia) {
+      const key = m.ResourceRecordKey;
+      if (!mediaMap.has(key)) mediaMap.set(key, []);
+      mediaMap.get(key)!.push(m);
+    }
+
+    for (const p of properties) {
+      p.media = mediaMap.get(p.ListingKey) || [];
+    }
+
+    return properties;
+  }
 }
 
 // =============================================================================
@@ -389,7 +534,7 @@ export function useMLSSync(client: MLSSyncClient) {
 }
 
 // =============================================================================
-// USAGE EXAMPLE
+// USAGE EXAMPLES
 // =============================================================================
 
 /*
@@ -400,10 +545,14 @@ const mlsClient = new MLSSyncClient({
   clientSecret: 'your-client-secret',
 });
 
+// ---------------------------------------------------------------------------
+// PROPERTIES ONLY
+// ---------------------------------------------------------------------------
+
 // Option 1: Full sync with progress
 const properties = await mlsClient.syncAllParallel({
   filter: "StandardStatus eq 'Active'",
-  select: ['ListingKey', 'ListPrice', 'City', 'BedroomsTotal'],
+  select: ['ListingKey', 'ListPrice', 'City', 'BedroomsTotal', 'X_MainPhoto'],
   maxConcurrent: 3,
   onProgress: (p) => {
     console.log(`${p.percent}% - ${p.propertiesPerSecond} props/sec`);
@@ -414,7 +563,65 @@ const properties = await mlsClient.syncAllParallel({
 const lastSync = new Date('2024-12-01T00:00:00Z');
 const updates = await mlsClient.syncModifiedSince(lastSync);
 
-// Option 3: React component
+// ---------------------------------------------------------------------------
+// PROPERTIES WITH MEDIA (PHOTOS)
+// ---------------------------------------------------------------------------
+
+// Option 3: Full sync with all media attached
+const propertiesWithMedia = await mlsClient.syncAllWithMedia({
+  filter: "StandardStatus eq 'Active'",
+  onProgress: (p) => console.log(`${p.percent}%`),
+});
+
+// Each property now has .media array
+propertiesWithMedia.forEach(p => {
+  console.log(`${p.ListingKey}: ${p.media?.length || 0} photos`);
+  p.media?.forEach(m => console.log(`  - ${m.MediaURL}`));
+});
+
+// Option 4: Get media for specific properties
+const listingKeys = ['QOBRIX_123', 'QOBRIX_456', 'QOBRIX_789'];
+const mediaMap = await mlsClient.getMediaForProperties(listingKeys);
+
+listingKeys.forEach(key => {
+  const photos = mediaMap.get(key) || [];
+  console.log(`${key}: ${photos.length} photos`);
+});
+
+// Option 5: Get media for single property (on-demand)
+const singlePropertyMedia = await mlsClient.getPropertyMedia('QOBRIX_123');
+console.log(`Found ${singlePropertyMedia.length} photos`);
+
+// ---------------------------------------------------------------------------
+// REACT COMPONENT
+// ---------------------------------------------------------------------------
+
+function PropertyGallery({ listingKey }: { listingKey: string }) {
+  const [media, setMedia] = useState<Media[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    mlsClient.getPropertyMedia(listingKey)
+      .then(setMedia)
+      .finally(() => setLoading(false));
+  }, [listingKey]);
+
+  if (loading) return <div>Loading photos...</div>;
+
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {media.map(m => (
+        <img 
+          key={m.MediaKey} 
+          src={m.MediaURL} 
+          alt={m.ShortDescription || `Photo ${m.Order}`}
+          className="w-full h-32 object-cover rounded"
+        />
+      ))}
+    </div>
+  );
+}
+
 function SyncButton() {
   const { syncAll, loading, progress, error } = useMLSSync(mlsClient);
 

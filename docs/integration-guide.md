@@ -447,3 +447,37 @@ function SyncButton() {
 |------|-------------------|
 | Sequential | ~1,300 |
 | Parallel (3) | ~3,500 |
+
+### Syncing Media (Photos)
+
+```typescript
+// Option 1: Full sync with media attached
+const propertiesWithMedia = await client.syncAllWithMedia({
+  filter: "StandardStatus eq 'Active'",
+});
+
+// Each property has .media array
+propertiesWithMedia.forEach(p => {
+  console.log(`${p.ListingKey}: ${p.media?.length} photos`);
+});
+
+// Option 2: On-demand for single property
+const photos = await client.getPropertyMedia('QOBRIX_123');
+
+// Option 3: Bulk fetch for multiple properties
+const mediaMap = await client.getMediaForProperties(['KEY1', 'KEY2']);
+```
+
+### Best Practice: Use X_MainPhoto for Listings
+
+```typescript
+// For listing pages, X_MainPhoto is already included - no extra request!
+const props = await client.syncAllParallel({
+  select: ['ListingKey', 'ListPrice', 'City', 'X_MainPhoto'],
+});
+
+// Use X_MainPhoto directly
+props.forEach(p => {
+  console.log(p.X_MainPhoto); // Main image URL
+});
+```
