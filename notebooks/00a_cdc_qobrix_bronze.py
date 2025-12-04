@@ -24,6 +24,7 @@
 # MAGIC | `agents` | Full refresh |
 # MAGIC | `contacts` | Full refresh |
 # MAGIC | `viewings` | Full refresh |
+# MAGIC | `opportunities` | Full refresh |
 # MAGIC 
 # MAGIC **When to use:**
 # MAGIC - Regular sync (every 15-30 min): Run this notebook
@@ -406,6 +407,32 @@ if modified_viewings:
     update_sync_metadata("property_viewings", merged_count, max_modified, "SUCCESS", started_at)
 else:
     update_sync_metadata("property_viewings", 0, last_sync, "SUCCESS", started_at)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## CDC: Opportunities
+
+# COMMAND ----------
+
+print("\n" + "=" * 80)
+print("📥 CDC: OPPORTUNITIES")
+print("=" * 80)
+
+started_at = datetime.utcnow()
+last_sync = get_last_sync("opportunities")
+print(f"\n🕐 Last sync: {last_sync}")
+
+print(f"\n1️⃣  Fetching opportunities modified since {last_sync}...")
+modified_opportunities = fetch_modified_records("/opportunities", last_sync)
+print(f"   Found: {len(modified_opportunities)} modified opportunities")
+
+if modified_opportunities:
+    max_modified = max(o.get("modified", "") for o in modified_opportunities)
+    merged_count = merge_to_bronze(modified_opportunities, "opportunities", "id")
+    update_sync_metadata("opportunities", merged_count, max_modified, "SUCCESS", started_at)
+else:
+    update_sync_metadata("opportunities", 0, last_sync, "SUCCESS", started_at)
 
 # COMMAND ----------
 
