@@ -3,7 +3,7 @@
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
 # MAGIC %md
-# MAGIC # MLS 2.0 – Silver → Gold RESO Property ETL
+# MAGIC # MLS 2.0 - Silver → Gold RESO Property ETL
 # MAGIC 
 # MAGIC **Purpose:** Transforms silver properties to RESO Data Dictionary 2.x compliant format.
 # MAGIC 
@@ -12,32 +12,32 @@
 # MAGIC **Output:** `mls2.reso_gold.property` with:
 # MAGIC 
 # MAGIC **RESO Standard Fields (Core):**
-# MAGIC - `ListingKey`, `ListingId` – Unique identifiers
-# MAGIC - `StandardStatus` – Active, Pending, Closed, Withdrawn
-# MAGIC - `PropertyType`, `PropertySubType` – Property classification
+# MAGIC - `ListingKey`, `ListingId` - Unique identifiers
+# MAGIC - `StandardStatus` - Active, Pending, Closed, Withdrawn
+# MAGIC - `PropertyType`, `PropertySubType` - Property classification
 # MAGIC - `BedroomsTotal`, `BathroomsTotalInteger`, `LivingArea`, `ListPrice`
 # MAGIC - `City`, `StateOrProvince`, `Country`, `Latitude`, `Longitude`
-# MAGIC - `ListAgentKey`, `CoListAgentKey` – Links to Member resource
+# MAGIC - `ListAgentKey`, `CoListAgentKey` - Links to Member resource
 # MAGIC 
 # MAGIC **RESO Standard Fields (Mapped from Qobrix):**
-# MAGIC - `YearBuilt`, `YearBuiltEffective` – Construction/renovation years
-# MAGIC - `View`, `PoolFeatures` – Views and pool amenities
-# MAGIC - `Heating`, `Cooling` – HVAC systems
-# MAGIC - `Furnished`, `PetsAllowed` – Property conditions
-# MAGIC - `FireplaceYN`, `FireplaceFeatures`, `ParkingFeatures` – Features
-# MAGIC - `StoriesTotal`, `Stories` – Building floors
-# MAGIC - `Flooring`, `Fencing`, `WaterfrontFeatures` – Property details
-# MAGIC - `PatioAndPorchFeatures`, `OtherStructures`, `AssociationAmenities` – Amenities
+# MAGIC - `YearBuilt`, `YearBuiltEffective` - Construction/renovation years
+# MAGIC - `View`, `PoolFeatures` - Views and pool amenities
+# MAGIC - `Heating`, `Cooling` - HVAC systems
+# MAGIC - `Furnished`, `PetsAllowed` - Property conditions
+# MAGIC - `FireplaceYN`, `FireplaceFeatures`, `ParkingFeatures` - Features
+# MAGIC - `StoriesTotal`, `Stories` - Building floors
+# MAGIC - `Flooring`, `Fencing`, `WaterfrontFeatures` - Property details
+# MAGIC - `PatioAndPorchFeatures`, `OtherStructures`, `AssociationAmenities` - Amenities
 # MAGIC 
 # MAGIC **Qobrix Extension Fields (X_ prefix per RESO convention):**
-# MAGIC - `X_SeaView`, `X_MountainView`, `X_BeachFront`, `X_AbutsGreenArea` – View flags
-# MAGIC - `X_EnergyEfficiencyGrade`, `X_HeatingType` – Energy details
-# MAGIC - `X_DistanceFromBeach`, `X_DistanceFromAirport`, `X_DistanceFromRailStation` – Distances
-# MAGIC - `X_Featured`, `X_PropertyOfTheMonth`, `X_ShortDescription` – Marketing
-# MAGIC - `X_UnitNumber`, `X_Height`, `X_MaxFloor` – Building details
-# MAGIC - `X_AuctionStartDate`, `X_ReservePrice` – Auction fields
-# MAGIC - `X_PreviousListPrice`, `X_ListPriceModified` – Price history
-# MAGIC - `X_ApartmentType`, `X_HouseType`, `X_LandType` – Property subtypes
+# MAGIC - `X_SeaView`, `X_MountainView`, `X_BeachFront`, `X_AbutsGreenArea` - View flags
+# MAGIC - `X_EnergyEfficiencyGrade`, `X_HeatingType` - Energy details
+# MAGIC - `X_DistanceFromBeach`, `X_DistanceFromAirport`, `X_DistanceFromRailStation` - Distances
+# MAGIC - `X_Featured`, `X_PropertyOfTheMonth`, `X_ShortDescription` - Marketing
+# MAGIC - `X_UnitNumber`, `X_Height`, `X_MaxFloor` - Building details
+# MAGIC - `X_AuctionStartDate`, `X_ReservePrice` - Auction fields
+# MAGIC - `X_PreviousListPrice`, `X_ListPriceModified` - Price history
+# MAGIC - `X_ApartmentType`, `X_HouseType`, `X_LandType` - Property subtypes
 # MAGIC - All other Qobrix-specific attributes preserved (125+ total fields)
 # MAGIC 
 # MAGIC **RESO Data Dictionary 2.0:** https://ddwiki.reso.org/display/DDW20/Property+Resource

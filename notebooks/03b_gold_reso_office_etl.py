@@ -3,19 +3,19 @@
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
 # MAGIC %md
-# MAGIC # MLS 2.0 – Silver → Gold RESO Office ETL
+# MAGIC # MLS 2.0 - Silver → Gold RESO Office ETL
 # MAGIC 
 # MAGIC **Purpose:** Creates RESO-compliant Office resource from normalized Qobrix agent data.
 # MAGIC 
 # MAGIC **Input:** `mls2.qobrix_silver.agent` (offices = agents with sub-agents or top-level)
 # MAGIC 
 # MAGIC **Output:** `mls2.reso_gold.office` with RESO standard fields:
-# MAGIC - `OfficeKey` – Unique identifier (QOBRIX_OFFICE_{id})
-# MAGIC - `OfficeMlsId` – MLS ID (Qobrix ref)
-# MAGIC - `OfficeName` – Office/agency name
+# MAGIC - `OfficeKey` - Unique identifier (QOBRIX_OFFICE_{id})
+# MAGIC - `OfficeMlsId` - MLS ID (Qobrix ref)
+# MAGIC - `OfficeName` - Office/agency name
 # MAGIC - `OfficeEmail`, `OfficePhone`
-# MAGIC - `OfficeStatus` – Active, Inactive
-# MAGIC - `OfficeType` – MLS, Broker, etc.
+# MAGIC - `OfficeStatus` - Active, Inactive
+# MAGIC - `OfficeType` - MLS, Broker, etc.
 # MAGIC - `OfficeAddress1`, `OfficeCity`, etc.
 # MAGIC 
 # MAGIC **RESO Data Dictionary 2.0:** https://ddwiki.reso.org/display/DDW20/Office+Resource

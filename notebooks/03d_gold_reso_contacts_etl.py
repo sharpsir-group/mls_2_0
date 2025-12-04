@@ -3,18 +3,18 @@
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
 # MAGIC %md
-# MAGIC # MLS 2.0 – Silver → Gold RESO Contacts ETL
+# MAGIC # MLS 2.0 - Silver → Gold RESO Contacts ETL
 # MAGIC 
 # MAGIC **Purpose:** Creates RESO-compliant Contacts resource from normalized Qobrix contact data.
 # MAGIC 
 # MAGIC **Input:** `mls2.qobrix_silver.contact`
 # MAGIC 
 # MAGIC **Output:** `mls2.reso_gold.contacts` with RESO standard fields:
-# MAGIC - `ContactKey` – Unique identifier (QOBRIX_CONTACT_{id})
+# MAGIC - `ContactKey` - Unique identifier (QOBRIX_CONTACT_{id})
 # MAGIC - `ContactFirstName`, `ContactLastName`, `ContactFullName`
 # MAGIC - `ContactEmail`, `ContactPhone`
-# MAGIC - `ContactType` – Buyer, Seller, Tenant, Landlord, etc.
-# MAGIC - `ContactStatus` – Active, Inactive
+# MAGIC - `ContactType` - Buyer, Seller, Tenant, Landlord, etc.
+# MAGIC - `ContactStatus` - Active, Inactive
 # MAGIC - `ContactAddress`, `ContactCity`, `ContactCountry`
 # MAGIC 
 # MAGIC **RESO Data Dictionary 2.0:** https://ddwiki.reso.org/display/DDW20/Contacts+Resource

@@ -3,7 +3,7 @@
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
 # MAGIC %md
-# MAGIC # MLS 2.0 – Comprehensive Data Integrity Verification
+# MAGIC # MLS 2.0 - Comprehensive Data Integrity Verification
 # MAGIC 
 # MAGIC **Purpose:** Validates entire ETL pipeline by comparing Qobrix bronze data with all RESO gold tables.
 # MAGIC 
@@ -18,11 +18,11 @@
 # MAGIC | ShowingAppointment | `property_viewings` | `reso_gold.showing_appointment` |
 # MAGIC 
 # MAGIC **Checks Performed:**
-# MAGIC 1. **Record Counts** – Bronze vs Gold record counts for all resources
-# MAGIC 2. **RESO Compliance** – Validates enum values (StandardStatus, PropertyType, etc.)
-# MAGIC 3. **Property Coverage** – Ensures all API properties exist in RESO table
-# MAGIC 4. **Required Fields** – Verifies required fields are populated
-# MAGIC 5. **Foreign Key Integrity** – Validates cross-resource linkages
+# MAGIC 1. **Record Counts** - Bronze vs Gold record counts for all resources
+# MAGIC 2. **RESO Compliance** - Validates enum values (StandardStatus, PropertyType, etc.)
+# MAGIC 3. **Property Coverage** - Ensures all API properties exist in RESO table
+# MAGIC 4. **Required Fields** - Verifies required fields are populated
+# MAGIC 5. **Foreign Key Integrity** - Validates cross-resource linkages
 # MAGIC 
 # MAGIC **Output:** Pass/Fail status with detailed error report
 # MAGIC 
@@ -143,7 +143,7 @@ VALID_PROPERTY_TYPES = ["Agricultural", "Apartment", "Business", "Commercial", "
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 1 – Fetch Sample from Qobrix API
+# MAGIC ## Step 1 - Fetch Sample from Qobrix API
 
 # COMMAND ----------
 
@@ -169,7 +169,7 @@ if not api_properties:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 2 – Convert API data to Spark DataFrame
+# MAGIC ## Step 2 - Convert API data to Spark DataFrame
 
 # COMMAND ----------
 
@@ -189,7 +189,7 @@ print(f"📊 API sample has {len(api_df.columns)} columns")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 3 – Fetch RESO Properties from Databricks
+# MAGIC ## Step 3 - Fetch RESO Properties from Databricks
 
 # COMMAND ----------
 
@@ -218,7 +218,7 @@ print(f"   ✅ Fetched {reso_count} properties from RESO")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 4 – Compare Properties (Join API to RESO)
+# MAGIC ## Step 4 - Compare Properties (Join API to RESO)
 
 # COMMAND ----------
 
@@ -269,7 +269,7 @@ print(f"   Joined rows: {joined_count}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 5 – Check for Missing Properties (Bidirectional)
+# MAGIC ## Step 5 - Check for Missing Properties (Bidirectional)
 
 # COMMAND ----------
 
@@ -332,7 +332,7 @@ else:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 6 – Field-Level Integrity Checks
+# MAGIC ## Step 6 - Field-Level Integrity Checks
 
 # COMMAND ----------
 
@@ -396,7 +396,7 @@ print(f"   Field Mismatches: {field_mismatch_count}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 7 – RESO Compliance Verification
+# MAGIC ## Step 7 - RESO Compliance Verification
 
 # COMMAND ----------
 
@@ -461,7 +461,7 @@ print(f"   Missing Required Fields: {missing_required}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 8 – Comprehensive Summary
+# MAGIC ## Step 8 - Comprehensive Summary
 
 # COMMAND ----------
 
@@ -553,7 +553,7 @@ else:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 9 – Verify Gold Property Field Coverage
+# MAGIC ## Step 9 - Verify Gold Property Field Coverage
 
 # COMMAND ----------
 
@@ -612,7 +612,7 @@ else:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 10 – Verify All RESO Resources (Record Counts)
+# MAGIC ## Step 10 - Verify All RESO Resources (Record Counts)
 
 # COMMAND ----------
 
@@ -691,7 +691,7 @@ for res in resources:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 11 – Foreign Key Integrity
+# MAGIC ## Step 11 - Foreign Key Integrity
 
 # COMMAND ----------
 
@@ -764,7 +764,7 @@ except Exception as e:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 12 – Final Comprehensive Summary
+# MAGIC ## Step 12 - Final Comprehensive Summary
 
 # COMMAND ----------
 

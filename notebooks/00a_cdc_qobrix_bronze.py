@@ -3,7 +3,7 @@
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
 # MAGIC %md
-# MAGIC # MLS 2.0 – Qobrix CDC → Bronze Layer (Incremental)
+# MAGIC # MLS 2.0 - Qobrix CDC → Bronze Layer (Incremental)
 # MAGIC 
 # MAGIC **Purpose:** Fetches ONLY changed property data from Qobrix API since last sync.
 # MAGIC 

@@ -3,7 +3,7 @@
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
 # MAGIC %md
-# MAGIC # MLS 2.0 – Bronze → Silver Media ETL
+# MAGIC # MLS 2.0 - Bronze → Silver Media ETL
 # MAGIC 
 # MAGIC **Purpose:** Normalizes and cleans property media data from bronze layer.
 # MAGIC 

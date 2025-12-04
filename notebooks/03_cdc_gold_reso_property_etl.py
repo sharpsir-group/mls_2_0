@@ -3,7 +3,7 @@
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
 # MAGIC %md
-# MAGIC # MLS 2.0 – CDC Gold RESO Property ETL (Incremental)
+# MAGIC # MLS 2.0 - CDC Gold RESO Property ETL (Incremental)
 # MAGIC 
 # MAGIC **Purpose:** Transforms changed silver properties to RESO format using MERGE.
 # MAGIC 

@@ -3,20 +3,20 @@
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
 # MAGIC %md
-# MAGIC # MLS 2.0 – Silver → Gold RESO ShowingAppointment ETL
+# MAGIC # MLS 2.0 - Silver → Gold RESO ShowingAppointment ETL
 # MAGIC 
 # MAGIC **Purpose:** Creates RESO-compliant ShowingAppointment resource from normalized Qobrix viewing data.
 # MAGIC 
 # MAGIC **Input:** `mls2.qobrix_silver.viewing`
 # MAGIC 
 # MAGIC **Output:** `mls2.reso_gold.showing_appointment` with RESO standard fields:
-# MAGIC - `ShowingAppointmentKey` – Unique identifier (QOBRIX_SHOWING_{id})
-# MAGIC - `ListingKey` – Link to Property
-# MAGIC - `ShowingAgentKey` – Agent conducting the showing
-# MAGIC - `BuyerAgentKey` – Buyer's agent (if applicable)
+# MAGIC - `ShowingAppointmentKey` - Unique identifier (QOBRIX_SHOWING_{id})
+# MAGIC - `ListingKey` - Link to Property
+# MAGIC - `ShowingAgentKey` - Agent conducting the showing
+# MAGIC - `BuyerAgentKey` - Buyer's agent (if applicable)
 # MAGIC - `ShowingDate`, `ShowingStartTime`, `ShowingEndTime`
-# MAGIC - `ShowingStatus` – Scheduled, Confirmed, Completed, Cancelled
-# MAGIC - `ShowingRemarks` – Notes/feedback
+# MAGIC - `ShowingStatus` - Scheduled, Confirmed, Completed, Cancelled
+# MAGIC - `ShowingRemarks` - Notes/feedback
 # MAGIC 
 # MAGIC **RESO Data Dictionary 2.0:** https://ddwiki.reso.org/display/DDW20/ShowingAppointment+Resource
 # MAGIC 

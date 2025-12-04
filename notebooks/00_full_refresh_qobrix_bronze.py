@@ -3,7 +3,7 @@
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
 # MAGIC %md
-# MAGIC # MLS 2.0 – Qobrix Full Refresh → Bronze Layer
+# MAGIC # MLS 2.0 - Qobrix Full Refresh → Bronze Layer
 # MAGIC 
 # MAGIC **Purpose:** Fetches ALL property-related data from Qobrix API into bronze Delta tables.
 # MAGIC 

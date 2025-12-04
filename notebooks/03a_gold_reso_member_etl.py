@@ -3,20 +3,20 @@
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
 # MAGIC %md
-# MAGIC # MLS 2.0 – Silver → Gold RESO Member ETL
+# MAGIC # MLS 2.0 - Silver → Gold RESO Member ETL
 # MAGIC 
 # MAGIC **Purpose:** Creates RESO-compliant Member resource from normalized Qobrix agent data.
 # MAGIC 
 # MAGIC **Input:** `mls2.qobrix_silver.agent`
 # MAGIC 
 # MAGIC **Output:** `mls2.reso_gold.member` with RESO standard fields:
-# MAGIC - `MemberKey` – Unique identifier (QOBRIX_AGENT_{id} or QOBRIX_USER_{id})
-# MAGIC - `MemberMlsId` – MLS ID (Qobrix ref)
+# MAGIC - `MemberKey` - Unique identifier (QOBRIX_AGENT_{id} or QOBRIX_USER_{id})
+# MAGIC - `MemberMlsId` - MLS ID (Qobrix ref)
 # MAGIC - `MemberFirstName`, `MemberLastName`, `MemberFullName`
 # MAGIC - `MemberEmail`, `MemberPreferredPhone`
-# MAGIC - `MemberStatus` – Active, Inactive
-# MAGIC - `MemberType` – Agent, Staff, etc.
-# MAGIC - `OfficeKey` – Link to Office resource
+# MAGIC - `MemberStatus` - Active, Inactive
+# MAGIC - `MemberType` - Agent, Staff, etc.
+# MAGIC - `OfficeKey` - Link to Office resource
 # MAGIC 
 # MAGIC **RESO Data Dictionary 2.0:** https://ddwiki.reso.org/display/DDW20/Member+Resource
 # MAGIC 

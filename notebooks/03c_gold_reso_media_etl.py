@@ -3,20 +3,20 @@
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
 # MAGIC %md
-# MAGIC # MLS 2.0 – Silver → Gold RESO Media ETL
+# MAGIC # MLS 2.0 - Silver → Gold RESO Media ETL
 # MAGIC 
 # MAGIC **Purpose:** Creates RESO-compliant Media resource from normalized Qobrix media data.
 # MAGIC 
 # MAGIC **Input:** `mls2.qobrix_silver.media`
 # MAGIC 
 # MAGIC **Output:** `mls2.reso_gold.media` with RESO standard fields:
-# MAGIC - `MediaKey` – Unique identifier (QOBRIX_MEDIA_{id})
-# MAGIC - `ResourceRecordKey` – Link to Property (ListingKey)
-# MAGIC - `ResourceName` – "Property" (resource type)
-# MAGIC - `MediaCategory` – Photo, Document, FloorPlan, etc.
-# MAGIC - `MediaURL` – URL to the media file
-# MAGIC - `MediaType` – MIME type (image/jpeg, application/pdf, etc.)
-# MAGIC - `Order` – Display order
+# MAGIC - `MediaKey` - Unique identifier (QOBRIX_MEDIA_{id})
+# MAGIC - `ResourceRecordKey` - Link to Property (ListingKey)
+# MAGIC - `ResourceName` - "Property" (resource type)
+# MAGIC - `MediaCategory` - Photo, Document, FloorPlan, etc.
+# MAGIC - `MediaURL` - URL to the media file
+# MAGIC - `MediaType` - MIME type (image/jpeg, application/pdf, etc.)
+# MAGIC - `Order` - Display order
 # MAGIC - `ShortDescription`, `LongDescription`
 # MAGIC 
 # MAGIC **RESO Data Dictionary 2.0:** https://ddwiki.reso.org/display/DDW20/Media+Resource
