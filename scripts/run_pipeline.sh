@@ -362,15 +362,17 @@ except Exception as ex:
         AGENTS_CHANGED=$(grep "^agents=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2 || echo "0")
         CONTACTS_CHANGED=$(grep "^contacts=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2 || echo "0")
         VIEWINGS_CHANGED=$(grep "^property_viewings=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2 || echo "0")
+        OPPS_CHANGED=$(grep "^opportunities=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2 || echo "0")
         rm -f "$CHANGES_FILE"
         
         echo "   Properties: $PROPS_CHANGED changed"
         echo "   Agents: $AGENTS_CHANGED changed"
         echo "   Contacts: $CONTACTS_CHANGED changed"
         echo "   Viewings: $VIEWINGS_CHANGED changed"
+        echo "   Opportunities: $OPPS_CHANGED changed"
         
         # Calculate if anything changed
-        TOTAL_CHANGES=$((PROPS_CHANGED + AGENTS_CHANGED + CONTACTS_CHANGED + VIEWINGS_CHANGED))
+        TOTAL_CHANGES=$((PROPS_CHANGED + AGENTS_CHANGED + CONTACTS_CHANGED + VIEWINGS_CHANGED + OPPS_CHANGED))
         
         if [ "$TOTAL_CHANGES" -eq 0 ]; then
             echo ""
