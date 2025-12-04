@@ -319,22 +319,26 @@ case "$1" in
         echo "📦 Stage 1: CDC Bronze (incremental data from API)"
         run_notebook "MLS 2.0 - Qobrix CDC Bronze" "/Shared/mls_2_0/00a_cdc_qobrix_bronze" "true"
         
-        # Show bronze table counts report
+        # Show bronze table counts report with MOST RECENT CDC run data
         echo ""
         echo "📊 Current bronze table counts:"
         DB_HOST="${DATABRICKS_HOST#https://}"
+        
+        # Query for bronze table counts with most recent CDC changes (not time-based)
+        CHANGES_FILE=$(mktemp)
         curl -s -X POST "https://${DB_HOST}/api/2.0/sql/statements" \
             -H "Authorization: Bearer ${DATABRICKS_TOKEN}" \
             -H "Content-Type: application/json" \
             -d '{
                 "warehouse_id": "'"${DATABRICKS_WAREHOUSE_ID}"'",
-                "statement": "WITH table_counts AS (SELECT '\''properties'\'' as table_name, COUNT(*) as total_rows FROM mls2.qobrix_bronze.properties UNION ALL SELECT '\''agents'\'', COUNT(*) FROM mls2.qobrix_bronze.agents UNION ALL SELECT '\''contacts'\'', COUNT(*) FROM mls2.qobrix_bronze.contacts UNION ALL SELECT '\''property_viewings'\'', COUNT(*) FROM mls2.qobrix_bronze.property_viewings UNION ALL SELECT '\''property_media'\'', COUNT(*) FROM mls2.qobrix_bronze.property_media UNION ALL SELECT '\''opportunities'\'', COUNT(*) FROM mls2.qobrix_bronze.opportunities UNION ALL SELECT '\''users'\'', COUNT(*) FROM mls2.qobrix_bronze.users UNION ALL SELECT '\''projects'\'', COUNT(*) FROM mls2.qobrix_bronze.projects UNION ALL SELECT '\''project_features'\'', COUNT(*) FROM mls2.qobrix_bronze.project_features UNION ALL SELECT '\''property_types'\'', COUNT(*) FROM mls2.qobrix_bronze.property_types UNION ALL SELECT '\''property_subtypes'\'', COUNT(*) FROM mls2.qobrix_bronze.property_subtypes UNION ALL SELECT '\''locations'\'', COUNT(*) FROM mls2.qobrix_bronze.locations UNION ALL SELECT '\''media_categories'\'', COUNT(*) FROM mls2.qobrix_bronze.media_categories UNION ALL SELECT '\''bayut_locations'\'', COUNT(*) FROM mls2.qobrix_bronze.bayut_locations UNION ALL SELECT '\''bazaraki_locations'\'', COUNT(*) FROM mls2.qobrix_bronze.bazaraki_locations UNION ALL SELECT '\''spitogatos_locations'\'', COUNT(*) FROM mls2.qobrix_bronze.spitogatos_locations UNION ALL SELECT '\''property_finder_ae_locations'\'', COUNT(*) FROM mls2.qobrix_bronze.property_finder_ae_locations), cdc_changes AS (SELECT entity_name, SUM(records_processed) as cdc_changed FROM mls2.qobrix_bronze.cdc_metadata WHERE sync_completed_at >= CURRENT_TIMESTAMP() - INTERVAL 10 MINUTES GROUP BY entity_name) SELECT t.table_name, t.total_rows, COALESCE(c.cdc_changed, 0) as cdc_changed FROM table_counts t LEFT JOIN cdc_changes c ON t.table_name = c.entity_name ORDER BY CASE t.table_name WHEN '\''properties'\'' THEN 1 WHEN '\''agents'\'' THEN 2 WHEN '\''contacts'\'' THEN 3 WHEN '\''property_viewings'\'' THEN 4 WHEN '\''property_media'\'' THEN 5 WHEN '\''opportunities'\'' THEN 6 WHEN '\''users'\'' THEN 7 WHEN '\''projects'\'' THEN 8 ELSE 99 END",
+                "statement": "WITH table_counts AS (SELECT '\''properties'\'' as table_name, COUNT(*) as total_rows FROM mls2.qobrix_bronze.properties UNION ALL SELECT '\''agents'\'', COUNT(*) FROM mls2.qobrix_bronze.agents UNION ALL SELECT '\''contacts'\'', COUNT(*) FROM mls2.qobrix_bronze.contacts UNION ALL SELECT '\''property_viewings'\'', COUNT(*) FROM mls2.qobrix_bronze.property_viewings UNION ALL SELECT '\''property_media'\'', COUNT(*) FROM mls2.qobrix_bronze.property_media UNION ALL SELECT '\''opportunities'\'', COUNT(*) FROM mls2.qobrix_bronze.opportunities UNION ALL SELECT '\''users'\'', COUNT(*) FROM mls2.qobrix_bronze.users UNION ALL SELECT '\''projects'\'', COUNT(*) FROM mls2.qobrix_bronze.projects UNION ALL SELECT '\''project_features'\'', COUNT(*) FROM mls2.qobrix_bronze.project_features UNION ALL SELECT '\''property_types'\'', COUNT(*) FROM mls2.qobrix_bronze.property_types UNION ALL SELECT '\''property_subtypes'\'', COUNT(*) FROM mls2.qobrix_bronze.property_subtypes UNION ALL SELECT '\''locations'\'', COUNT(*) FROM mls2.qobrix_bronze.locations UNION ALL SELECT '\''media_categories'\'', COUNT(*) FROM mls2.qobrix_bronze.media_categories UNION ALL SELECT '\''bayut_locations'\'', COUNT(*) FROM mls2.qobrix_bronze.bayut_locations UNION ALL SELECT '\''bazaraki_locations'\'', COUNT(*) FROM mls2.qobrix_bronze.bazaraki_locations UNION ALL SELECT '\''spitogatos_locations'\'', COUNT(*) FROM mls2.qobrix_bronze.spitogatos_locations UNION ALL SELECT '\''property_finder_ae_locations'\'', COUNT(*) FROM mls2.qobrix_bronze.property_finder_ae_locations), latest_sync AS (SELECT MAX(sync_completed_at) as max_ts FROM mls2.qobrix_bronze.cdc_metadata), cdc_changes AS (SELECT entity_name, records_processed as cdc_changed FROM mls2.qobrix_bronze.cdc_metadata m, latest_sync l WHERE m.sync_completed_at = l.max_ts) SELECT t.table_name, t.total_rows, COALESCE(c.cdc_changed, 0) as cdc_changed FROM table_counts t LEFT JOIN cdc_changes c ON t.table_name = c.entity_name ORDER BY CASE t.table_name WHEN '\''properties'\'' THEN 1 WHEN '\''agents'\'' THEN 2 WHEN '\''contacts'\'' THEN 3 WHEN '\''property_viewings'\'' THEN 4 WHEN '\''property_media'\'' THEN 5 WHEN '\''opportunities'\'' THEN 6 WHEN '\''users'\'' THEN 7 WHEN '\''projects'\'' THEN 8 ELSE 99 END",
                 "wait_timeout": "30s"
             }' 2>/dev/null | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
     data = d.get('result', {}).get('data_array', [])
+    changes = {}
     if data:
         # Print table header
         print('+----------------------------+----------+-----------+')
@@ -345,60 +349,33 @@ try:
             total = row[1] if row[1] else '0'
             changed = row[2] if row[2] else '0'
             print(f'| {name:<26} | {total:>8} | {changed:>9} |')
+            # Also collect changes for later use
+            if name:
+                changes[name] = int(changed) if changed and changed != 'NULL' else 0
         print('+----------------------------+----------+-----------+')
+    # Output entity=count for parsing
+    for e, c in changes.items():
+        print(f'CDC:{e}={c}', file=sys.stderr)
 except Exception as ex:
     print(f'Error: {ex}', file=sys.stderr)
-"
+" 2> "$CHANGES_FILE"
         
-        # Get CDC changes from notebook output
         echo ""
         echo "📊 Checking which entities changed..."
-        
-        # Query cdc_metadata table to get recent changes
-        CDC_QUERY='SELECT entity_name, SUM(records_processed) as total FROM mls2.qobrix_bronze.cdc_metadata WHERE sync_completed_at >= CURRENT_TIMESTAMP() - INTERVAL 5 MINUTES GROUP BY entity_name'
-        CDC_RESULT=$(databricks jobs run-now --job-id 0 2>/dev/null || echo "")
-        
-        # For now, check the cdc_metadata table via SQL API
-        # Parse changes from a temp file approach
-        CHANGES_FILE=$(mktemp)
-        # Remove https:// if already present in DATABRICKS_HOST
-        DB_HOST="${DATABRICKS_HOST#https://}"
-        curl -s -X POST "https://${DB_HOST}/api/2.0/sql/statements" \
-            -H "Authorization: Bearer ${DATABRICKS_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d '{
-                "warehouse_id": "'"${DATABRICKS_WAREHOUSE_ID}"'",
-                "statement": "SELECT entity_name, records_processed FROM mls2.qobrix_bronze.cdc_metadata WHERE sync_completed_at >= CURRENT_TIMESTAMP() - INTERVAL 2 MINUTES ORDER BY sync_completed_at DESC",
-                "wait_timeout": "30s"
-            }' 2>/dev/null | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    data = d.get('result', {}).get('data_array', [])
-    changes = {}
-    for row in data:
-        entity = row[0]
-        count = int(row[1]) if row[1] else 0
-        if entity not in changes:
-            changes[entity] = count
-    # Output entity=count format
-    for e, c in changes.items():
-        print(f'{e}={c}')
-except Exception as ex:
-    print(f'error={ex}', file=sys.stderr)
-" > "$CHANGES_FILE" 2>/dev/null
 
-        # Parse changes (with default 0 for empty/missing values)
-        PROPS_CHANGED=$(grep "^properties=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2)
+        # Parse changes from the CDC output (with default 0 for empty/missing values)
+        PROPS_CHANGED=$(grep "^CDC:properties=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2)
         PROPS_CHANGED=${PROPS_CHANGED:-0}
-        AGENTS_CHANGED=$(grep "^agents=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2)
+        AGENTS_CHANGED=$(grep "^CDC:agents=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2)
         AGENTS_CHANGED=${AGENTS_CHANGED:-0}
-        CONTACTS_CHANGED=$(grep "^contacts=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2)
+        CONTACTS_CHANGED=$(grep "^CDC:contacts=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2)
         CONTACTS_CHANGED=${CONTACTS_CHANGED:-0}
-        VIEWINGS_CHANGED=$(grep "^property_viewings=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2)
+        VIEWINGS_CHANGED=$(grep "^CDC:property_viewings=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2)
         VIEWINGS_CHANGED=${VIEWINGS_CHANGED:-0}
-        OPPS_CHANGED=$(grep "^opportunities=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2)
+        OPPS_CHANGED=$(grep "^CDC:opportunities=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2)
         OPPS_CHANGED=${OPPS_CHANGED:-0}
+        MEDIA_CHANGED=$(grep "^CDC:property_media=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2)
+        MEDIA_CHANGED=${MEDIA_CHANGED:-0}
         rm -f "$CHANGES_FILE"
         
         echo "   Properties: $PROPS_CHANGED changed"
@@ -406,6 +383,7 @@ except Exception as ex:
         echo "   Contacts: $CONTACTS_CHANGED changed"
         echo "   Viewings: $VIEWINGS_CHANGED changed"
         echo "   Opportunities: $OPPS_CHANGED changed"
+        echo "   Media: $MEDIA_CHANGED changed"
         
         # Calculate if anything changed
         TOTAL_CHANGES=$((PROPS_CHANGED + AGENTS_CHANGED + CONTACTS_CHANGED + VIEWINGS_CHANGED + OPPS_CHANGED))
