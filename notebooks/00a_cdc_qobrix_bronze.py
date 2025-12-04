@@ -688,10 +688,8 @@ spark.sql("""
     ORDER BY sync_completed_at DESC
 """).show(truncate=False)
 
-# Show current table counts with CDC changes
+# Show current table counts with CDC changes as Spark DataFrame
 print("\nCurrent bronze table counts:")
-print(f"   {'Table':<30} {'Total':>10} {'Changed':>10}")
-print(f"   {'-'*30} {'-'*10} {'-'*10}")
 
 # Map table names to cdc_changes keys
 table_to_cdc = {
@@ -720,24 +718,32 @@ tables = [
     "property_types", "property_subtypes", "locations", "media_categories",
     "bayut_locations", "bazaraki_locations", "spitogatos_locations", "property_finder_ae_locations"
 ]
+
+# Build data for DataFrame
+table_data = []
 for table in tables:
     try:
         count = spark.sql(f"SELECT COUNT(*) FROM {table}").collect()[0][0]
         cdc_key = table_to_cdc.get(table, table)
         changed = cdc_changes.get(cdc_key, 0)
-        # For portal locations, only show changed once (not per table)
+        # For portal locations (skipped in CDC), show as skipped
         if table in ["bazaraki_locations", "spitogatos_locations", "property_finder_ae_locations"]:
-            changed = "-"
-        print(f"   {table:<30} {count:>10} {str(changed):>10}")
+            changed = None  # Will show as null/skipped
+        table_data.append((table, count, changed))
     except:
-        print(f"   {table:<30} {'(not found)':>10} {'-':>10}")
+        table_data.append((table, 0, None))
+
+# Create and display DataFrame
+from pyspark.sql.types import StructType, StructField, StringType, LongType, IntegerType
+schema = StructType([
+    StructField("table_name", StringType(), False),
+    StructField("total_rows", LongType(), False),
+    StructField("cdc_changed", IntegerType(), True)
+])
+df = spark.createDataFrame(table_data, schema)
+df.show(20, truncate=False)
 
 print("\n" + "=" * 80)
 print("✅ CDC SYNC COMPLETE")
 print("=" * 80)
-
-# Output parseable change summary for pipeline orchestration
-# Format: CDC_CHANGES:entity=count,entity=count,...
-changes_str = ",".join([f"{k}={v}" for k, v in cdc_changes.items()])
-print(f"\nCDC_CHANGES:{changes_str}")
 
