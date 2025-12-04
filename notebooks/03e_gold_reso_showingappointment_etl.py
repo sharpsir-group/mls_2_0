@@ -2,8 +2,11 @@
 # Copyright 2025 SharpSir Group
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
+
+# COMMAND ----------
+
 # MAGIC %md
-# MAGIC # MLS 2.0 - Silver → Gold RESO ShowingAppointment ETL
+# MAGIC # MLS 2.0 - Silver -> Gold RESO ShowingAppointment ETL
 # MAGIC 
 # MAGIC **Purpose:** Creates RESO-compliant ShowingAppointment resource from normalized Qobrix viewing data.
 # MAGIC 
@@ -20,7 +23,7 @@
 # MAGIC 
 # MAGIC **RESO Data Dictionary 2.0:** https://ddwiki.reso.org/display/DDW20/ShowingAppointment+Resource
 # MAGIC 
-# MAGIC **Run After:** `02d_silver_qobrix_viewing_etl.py`
+# MAGIC **Run After:** 02d_silver_qobrix_viewing_etl.py
 
 # COMMAND ----------
 

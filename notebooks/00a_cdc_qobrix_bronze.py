@@ -2,8 +2,11 @@
 # Copyright 2025 SharpSir Group
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
+
+# COMMAND ----------
+
 # MAGIC %md
-# MAGIC # MLS 2.0 - Qobrix CDC → Bronze Layer (Incremental)
+# MAGIC # MLS 2.0 - Qobrix CDC -> Bronze Layer (Incremental)
 # MAGIC 
 # MAGIC **Purpose:** Fetches ONLY changed property data from Qobrix API since last sync.
 # MAGIC 
@@ -24,7 +27,7 @@
 # MAGIC 
 # MAGIC **When to use:**
 # MAGIC - Regular sync (every 15-30 min): Run this notebook
-# MAGIC - Initial load or recovery: Run `00_full_refresh_qobrix_bronze.py`
+# MAGIC - Initial load or recovery: Run 00_full_refresh_qobrix_bronze.py
 # MAGIC 
 # MAGIC **Credentials:** Requires `QOBRIX_API_USER`, `QOBRIX_API_KEY`, `QOBRIX_API_BASE_URL`
 

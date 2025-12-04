@@ -2,6 +2,9 @@
 # Copyright 2025 SharpSir Group
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # MLS 2.0 - CDC Gold RESO Property ETL (Incremental)
 # MAGIC 
@@ -18,7 +21,7 @@
 # MAGIC 
 # MAGIC **When to use:**
 # MAGIC - After CDC silver sync: Run this notebook
-# MAGIC - After full refresh silver: Run `03_gold_reso_property_etl.py` (full refresh)
+# MAGIC - After full refresh silver: Run 03_gold_reso_property_etl.py (full refresh)
 
 # COMMAND ----------
 

@@ -2,8 +2,11 @@
 # Copyright 2025 SharpSir Group
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
+
+# COMMAND ----------
+
 # MAGIC %md
-# MAGIC # MLS 2.0 - Silver → Gold RESO Property ETL
+# MAGIC # MLS 2.0 - Silver -> Gold RESO Property ETL
 # MAGIC 
 # MAGIC **Purpose:** Transforms silver properties to RESO Data Dictionary 2.x compliant format.
 # MAGIC 
@@ -42,7 +45,7 @@
 # MAGIC 
 # MAGIC **RESO Data Dictionary 2.0:** https://ddwiki.reso.org/display/DDW20/Property+Resource
 # MAGIC 
-# MAGIC **Run After:** `02_silver_qobrix_property_etl.py`
+# MAGIC **Run After:** 02_silver_qobrix_property_etl.py
 
 # COMMAND ----------
 
@@ -97,7 +100,7 @@ SELECT
     CONCAT('QOBRIX_', s.qobrix_id)               AS ListingKey,
     CAST(s.qobrix_ref AS STRING)                 AS ListingId,
 
-    -- Status mapping (Qobrix → RESO StandardStatus)
+    -- Status mapping (Qobrix -> RESO StandardStatus)
     CASE LOWER(s.status)
         WHEN 'available'    THEN 'Active'
         WHEN 'reserved'     THEN 'Pending'

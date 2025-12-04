@@ -2,8 +2,11 @@
 # Copyright 2025 SharpSir Group
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
+
+# COMMAND ----------
+
 # MAGIC %md
-# MAGIC # MLS 2.0 - Silver → Gold RESO Media ETL
+# MAGIC # MLS 2.0 - Silver -> Gold RESO Media ETL
 # MAGIC 
 # MAGIC **Purpose:** Creates RESO-compliant Media resource from normalized Qobrix media data.
 # MAGIC 
@@ -21,7 +24,7 @@
 # MAGIC 
 # MAGIC **RESO Data Dictionary 2.0:** https://ddwiki.reso.org/display/DDW20/Media+Resource
 # MAGIC 
-# MAGIC **Run After:** `02c_silver_qobrix_media_etl.py`
+# MAGIC **Run After:** 02c_silver_qobrix_media_etl.py
 
 # COMMAND ----------
 

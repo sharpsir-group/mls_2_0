@@ -2,8 +2,11 @@
 # Copyright 2025 SharpSir Group
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
+
+# COMMAND ----------
+
 # MAGIC %md
-# MAGIC # MLS 2.0 - Silver → Gold RESO Office ETL
+# MAGIC # MLS 2.0 - Silver -> Gold RESO Office ETL
 # MAGIC 
 # MAGIC **Purpose:** Creates RESO-compliant Office resource from normalized Qobrix agent data.
 # MAGIC 
@@ -22,7 +25,7 @@
 # MAGIC 
 # MAGIC **Note:** In Qobrix, "agencies" are represented as agents that have sub-agents.
 # MAGIC 
-# MAGIC **Run After:** `02a_silver_qobrix_agent_etl.py`
+# MAGIC **Run After:** 02a_silver_qobrix_agent_etl.py
 
 # COMMAND ----------
 

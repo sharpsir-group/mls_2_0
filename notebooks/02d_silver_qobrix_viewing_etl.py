@@ -2,8 +2,11 @@
 # Copyright 2025 SharpSir Group
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
+
+# COMMAND ----------
+
 # MAGIC %md
-# MAGIC # MLS 2.0 - Bronze → Silver Viewing ETL
+# MAGIC # MLS 2.0 - Bronze -> Silver Viewing ETL
 # MAGIC 
 # MAGIC **Purpose:** Normalizes and cleans property viewing/appointment data from bronze layer.
 # MAGIC 
@@ -15,7 +18,7 @@
 # MAGIC - Assessment/feedback normalization
 # MAGIC - Type casting and null handling
 # MAGIC 
-# MAGIC **Run After:** `00_full_refresh_qobrix_bronze.py`
+# MAGIC **Run After:** 00_full_refresh_qobrix_bronze.py
 
 # COMMAND ----------
 

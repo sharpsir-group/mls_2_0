@@ -2,6 +2,9 @@
 # Copyright 2025 SharpSir Group
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # MLS 2.0 - Comprehensive Data Integrity Verification
 # MAGIC 
@@ -26,7 +29,7 @@
 # MAGIC 
 # MAGIC **Output:** Pass/Fail status with detailed error report
 # MAGIC 
-# MAGIC **Run After:** Full pipeline (`bronze` → `silver` → `gold-all`)
+# MAGIC **Run After:** Full pipeline (`bronze` -> `silver` -> `gold-all`)
 # MAGIC 
 # MAGIC **Credentials:** Requires `QOBRIX_API_USER`, `QOBRIX_API_KEY`, `QOBRIX_API_BASE_URL`
 
@@ -282,7 +285,7 @@ bronze_ids_df = spark.sql("SELECT DISTINCT id FROM qobrix_bronze.properties")
 bronze_ids = set([str(row['id']) for row in bronze_ids_df.collect()])
 print(f"   Bronze properties loaded: {len(bronze_ids)}")
 
-# Forward: API → RESO (properties in API but missing in RESO)
+# Forward: API -> RESO (properties in API but missing in RESO)
 # Only count as "missing" if the property was loaded into bronze
 missing_in_reso_df = spark.sql("""
 SELECT qobrix_id, qobrix_ref
@@ -298,7 +301,7 @@ missing_in_reso_expected = [row for row in missing_in_reso_all if str(row['qobri
 missing_in_reso_count = len(missing_in_reso_critical)
 expected_missing_count = len(missing_in_reso_expected)
 
-# Reverse: RESO → API (properties in RESO but not in API sample)
+# Reverse: RESO -> API (properties in RESO but not in API sample)
 api_ids = [str(p.get('id')) for p in api_properties if p.get('id')]
 api_ids_str = ",".join([f"'{id}'" for id in api_ids])
 
@@ -314,20 +317,20 @@ else:
 
 # Report
 if missing_in_reso_count > 0:
-    print(f"   ❌ Forward Check (API → RESO): {missing_in_reso_count} properties LOADED but missing in RESO")
+    print(f"   ❌ Forward Check (API -> RESO): {missing_in_reso_count} properties LOADED but missing in RESO")
     for row in missing_in_reso_critical[:10]:
         print(f"      - {row['qobrix_id']} ({row['qobrix_ref']})")
 else:
-    print(f"   ✅ Forward Check (API → RESO): All {len(bronze_ids)} loaded properties found in RESO")
+    print(f"   ✅ Forward Check (API -> RESO): All {len(bronze_ids)} loaded properties found in RESO")
 
 if expected_missing_count > 0:
     print(f"   ℹ️  Expected: {expected_missing_count} API properties not in RESO (not loaded in test mode)")
 
 if extra_in_reso_count > 0:
-    print(f"   ℹ️  Reverse Check (RESO → API): {extra_in_reso_count} properties in RESO not in API sample")
+    print(f"   ℹ️  Reverse Check (RESO -> API): {extra_in_reso_count} properties in RESO not in API sample")
     print("      (This is expected if RESO has more data than the API sample)")
 else:
-    print(f"   ✅ Reverse Check (RESO → API): All RESO properties found in API sample")
+    print(f"   ✅ Reverse Check (RESO -> API): All RESO properties found in API sample")
 
 # COMMAND ----------
 
@@ -357,14 +360,14 @@ for idx, row in comparison_pdf.iterrows():
     expected_status = map_status(row['api_status'])
     actual_status = row['reso_status']
     if normalize_value(expected_status) != normalize_value(actual_status):
-        issues.append(f"Property {qobrix_id} ({qobrix_ref}): Status mismatch - API: '{row['api_status']}' → Expected RESO: '{expected_status}', Actual: '{actual_status}'")
+        issues.append(f"Property {qobrix_id} ({qobrix_ref}): Status mismatch - API: '{row['api_status']}' -> Expected RESO: '{expected_status}', Actual: '{actual_status}'")
         field_mismatch_count += 1
     
     # Property type mapping check
     expected_type = map_property_type(row['api_property_type'])
     actual_type = row['reso_property_type']
     if normalize_value(expected_type) != normalize_value(actual_type):
-        issues.append(f"Property {qobrix_id} ({qobrix_ref}): PropertyType mismatch - API: '{row['api_property_type']}' → Expected RESO: '{expected_type}', Actual: '{actual_type}'")
+        issues.append(f"Property {qobrix_id} ({qobrix_ref}): PropertyType mismatch - API: '{row['api_property_type']}' -> Expected RESO: '{expected_type}', Actual: '{actual_type}'")
         field_mismatch_count += 1
     
     # Price check (with tolerance)
@@ -519,7 +522,7 @@ else:
 print("\n✅ Property Coverage: " + ("PASSED" if coverage_passed else "FAILED"))
 if coverage_passed:
     print("   ✓ All Qobrix API properties found in RESO table")
-    print("   ✓ No data loss from Qobrix → RESO")
+    print("   ✓ No data loss from Qobrix -> RESO")
 else:
     print(f"   ✗ {missing_in_reso_count} properties in API missing in RESO")
 
@@ -701,7 +704,7 @@ print("=" * 80)
 
 fk_issues = []
 
-# Check Property → Member (ListAgentKey)
+# Check Property -> Member (ListAgentKey)
 try:
     orphan_agents = spark.sql("""
         SELECT COUNT(*) as c FROM reso_gold.property p
@@ -710,13 +713,13 @@ try:
     """).collect()[0]["c"]
     if orphan_agents > 0:
         fk_issues.append(f"Property.ListAgentKey: {orphan_agents} orphan references")
-        print(f"   ⚠️ Property → Member: {orphan_agents} orphan ListAgentKey references")
+        print(f"   ⚠️ Property -> Member: {orphan_agents} orphan ListAgentKey references")
     else:
-        print(f"   ✅ Property → Member: All ListAgentKey references valid")
+        print(f"   ✅ Property -> Member: All ListAgentKey references valid")
 except Exception as e:
-    print(f"   ⚪ Property → Member: Skipped ({str(e)[:30]})")
+    print(f"   ⚪ Property -> Member: Skipped ({str(e)[:30]})")
 
-# Check Media → Property (ResourceRecordKey)
+# Check Media -> Property (ResourceRecordKey)
 try:
     orphan_media = spark.sql("""
         SELECT COUNT(*) as c FROM reso_gold.media m
@@ -725,13 +728,13 @@ try:
     """).collect()[0]["c"]
     if orphan_media > 0:
         fk_issues.append(f"Media.ResourceRecordKey: {orphan_media} orphan references")
-        print(f"   ⚠️ Media → Property: {orphan_media} orphan ResourceRecordKey references")
+        print(f"   ⚠️ Media -> Property: {orphan_media} orphan ResourceRecordKey references")
     else:
-        print(f"   ✅ Media → Property: All ResourceRecordKey references valid")
+        print(f"   ✅ Media -> Property: All ResourceRecordKey references valid")
 except Exception as e:
-    print(f"   ⚪ Media → Property: Skipped ({str(e)[:30]})")
+    print(f"   ⚪ Media -> Property: Skipped ({str(e)[:30]})")
 
-# Check ShowingAppointment → Property (ListingKey)
+# Check ShowingAppointment -> Property (ListingKey)
 try:
     orphan_showings = spark.sql("""
         SELECT COUNT(*) as c FROM reso_gold.showing_appointment s
@@ -740,13 +743,13 @@ try:
     """).collect()[0]["c"]
     if orphan_showings > 0:
         fk_issues.append(f"ShowingAppointment.ListingKey: {orphan_showings} orphan references")
-        print(f"   ⚠️ ShowingAppointment → Property: {orphan_showings} orphan ListingKey references")
+        print(f"   ⚠️ ShowingAppointment -> Property: {orphan_showings} orphan ListingKey references")
     else:
-        print(f"   ✅ ShowingAppointment → Property: All ListingKey references valid")
+        print(f"   ✅ ShowingAppointment -> Property: All ListingKey references valid")
 except Exception as e:
-    print(f"   ⚪ ShowingAppointment → Property: Skipped ({str(e)[:30]})")
+    print(f"   ⚪ ShowingAppointment -> Property: Skipped ({str(e)[:30]})")
 
-# Check Contacts → Member (ContactAssignedToKey)
+# Check Contacts -> Member (ContactAssignedToKey)
 try:
     orphan_contacts = spark.sql("""
         SELECT COUNT(*) as c FROM reso_gold.contacts c
@@ -755,11 +758,11 @@ try:
     """).collect()[0]["c"]
     if orphan_contacts > 0:
         fk_issues.append(f"Contacts.ContactAssignedToKey: {orphan_contacts} orphan references")
-        print(f"   ⚠️ Contacts → Member: {orphan_contacts} orphan ContactAssignedToKey references")
+        print(f"   ⚠️ Contacts -> Member: {orphan_contacts} orphan ContactAssignedToKey references")
     else:
-        print(f"   ✅ Contacts → Member: All ContactAssignedToKey references valid")
+        print(f"   ✅ Contacts -> Member: All ContactAssignedToKey references valid")
 except Exception as e:
-    print(f"   ⚪ Contacts → Member: Skipped ({str(e)[:30]})")
+    print(f"   ⚪ Contacts -> Member: Skipped ({str(e)[:30]})")
 
 # COMMAND ----------
 

@@ -2,8 +2,11 @@
 # Copyright 2025 SharpSir Group
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
+
+# COMMAND ----------
+
 # MAGIC %md
-# MAGIC # MLS 2.0 - Bronze → Silver Property ETL
+# MAGIC # MLS 2.0 - Bronze -> Silver Property ETL
 # MAGIC 
 # MAGIC **Purpose:** Transforms raw Qobrix properties from bronze to normalized silver layer.
 # MAGIC 
@@ -16,7 +19,7 @@
 # MAGIC - Location fields (country, city, street, coordinates)
 # MAGIC - Pricing (list_selling_price_amount)
 # MAGIC 
-# MAGIC **Run After:** `00_full_refresh_qobrix_bronze.py`
+# MAGIC **Run After:** 00_full_refresh_qobrix_bronze.py
 
 # COMMAND ----------
 
