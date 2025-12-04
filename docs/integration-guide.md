@@ -139,6 +139,32 @@ console.log(data.value); // Array of properties
 | `$skip` | `40` | Pagination offset |
 | `$count` | `true` | Include total count |
 
+### Pagination Limits
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| Default | 100 | If `$top` not specified |
+| Maximum | 1000 | Hard limit per request |
+
+```bash
+# Default (100 properties)
+/odata/Property
+
+# Custom page size
+/odata/Property?$top=500
+
+# Max enforced (>1000 capped to 1000)
+/odata/Property?$top=5000  # returns 1000
+
+# Pagination example
+/odata/Property?$top=100&$skip=0    # Page 1
+/odata/Property?$top=100&$skip=100  # Page 2
+/odata/Property?$top=100&$skip=200  # Page 3
+```
+
+The response includes `@odata.nextLink` for automatic pagination.
+
+
 ## Common Queries
 
 ```bash
