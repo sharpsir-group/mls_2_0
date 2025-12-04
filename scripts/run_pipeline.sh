@@ -357,12 +357,17 @@ except Exception as ex:
     print(f'error={ex}', file=sys.stderr)
 " > "$CHANGES_FILE" 2>/dev/null
 
-        # Parse changes
-        PROPS_CHANGED=$(grep "^properties=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2 || echo "0")
-        AGENTS_CHANGED=$(grep "^agents=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2 || echo "0")
-        CONTACTS_CHANGED=$(grep "^contacts=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2 || echo "0")
-        VIEWINGS_CHANGED=$(grep "^property_viewings=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2 || echo "0")
-        OPPS_CHANGED=$(grep "^opportunities=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2 || echo "0")
+        # Parse changes (with default 0 for empty/missing values)
+        PROPS_CHANGED=$(grep "^properties=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2)
+        PROPS_CHANGED=${PROPS_CHANGED:-0}
+        AGENTS_CHANGED=$(grep "^agents=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2)
+        AGENTS_CHANGED=${AGENTS_CHANGED:-0}
+        CONTACTS_CHANGED=$(grep "^contacts=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2)
+        CONTACTS_CHANGED=${CONTACTS_CHANGED:-0}
+        VIEWINGS_CHANGED=$(grep "^property_viewings=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2)
+        VIEWINGS_CHANGED=${VIEWINGS_CHANGED:-0}
+        OPPS_CHANGED=$(grep "^opportunities=" "$CHANGES_FILE" 2>/dev/null | cut -d= -f2)
+        OPPS_CHANGED=${OPPS_CHANGED:-0}
         rm -f "$CHANGES_FILE"
         
         echo "   Properties: $PROPS_CHANGED changed"
