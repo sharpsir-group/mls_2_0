@@ -418,7 +418,7 @@ print("\n" + "=" * 80)
 print("🗑️  SOFT DELETE DETECTION")
 print("=" * 80)
 
-# Check for trashed properties
+# Check for trashed properties (info only - trashed properties are filtered in Silver/Gold layers)
 print("\n1️⃣  Checking for trashed properties...")
 try:
     trashed_url = f"{api_base_url}/properties"
@@ -427,21 +427,13 @@ try:
     
     if response.status_code == 200:
         trashed_data = response.json().get("data", [])
-        trashed_ids = [p.get("id") for p in trashed_data if p.get("id")]
+        trashed_count = len(trashed_data)
         
-        if trashed_ids:
-            print(f"   Found {len(trashed_ids)} trashed properties")
-            
-            # Mark as deleted in bronze (add _is_deleted flag)
-            for prop_id in trashed_ids:
-                spark.sql(f"""
-                    UPDATE properties 
-                    SET _cdc_updated_at = CURRENT_TIMESTAMP()
-                    WHERE id = '{prop_id}'
-                """)
-            print(f"   ✅ Marked {len(trashed_ids)} properties as updated (trashed)")
+        if trashed_count > 0:
+            print(f"   ℹ️  Found {trashed_count} trashed properties in Qobrix")
+            print(f"   ℹ️  These are excluded in Silver/Gold layers via status filter")
         else:
-            print("   No trashed properties found")
+            print("   ✅ No trashed properties found")
     else:
         print(f"   ⚠️  Could not check trashed properties: {response.status_code}")
 except Exception as e:
