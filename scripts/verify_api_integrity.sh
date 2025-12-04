@@ -38,6 +38,35 @@ QOBRIX_API = os.environ['QOBRIX_API_BASE_URL']
 QOBRIX_USER = os.environ['QOBRIX_API_USER']
 QOBRIX_KEY = os.environ['QOBRIX_API_KEY']
 RESO_API = os.environ.get('RESO_API_URL', 'https://humaticai.com/reso')
+OAUTH_CLIENT_ID = os.environ.get('OAUTH_CLIENT_ID', '')
+OAUTH_CLIENT_SECRET = os.environ.get('OAUTH_CLIENT_SECRET', '')
+
+# OAuth token cache
+_oauth_token = None
+
+def get_oauth_token():
+    """Get OAuth token for RESO API"""
+    global _oauth_token
+    if _oauth_token:
+        return _oauth_token
+    
+    if not OAUTH_CLIENT_ID or not OAUTH_CLIENT_SECRET:
+        return None
+    
+    import base64
+    credentials = base64.b64encode(f"{OAUTH_CLIENT_ID}:{OAUTH_CLIENT_SECRET}".encode()).decode()
+    resp = httpx.post(
+        f"{RESO_API}/oauth/token",
+        headers={
+            'Authorization': f'Basic {credentials}',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        data='grant_type=client_credentials',
+        timeout=30
+    )
+    if resp.status_code == 200:
+        _oauth_token = resp.json().get('access_token')
+    return _oauth_token
 
 def qobrix_get(endpoint, params=None):
     """GET from Qobrix API"""
@@ -49,8 +78,12 @@ def qobrix_get(endpoint, params=None):
     return resp.json()
 
 def reso_get(endpoint):
-    """GET from RESO API"""
-    resp = httpx.get(f"{RESO_API}{endpoint}", timeout=60)
+    """GET from RESO API with OAuth"""
+    headers = {}
+    token = get_oauth_token()
+    if token:
+        headers['Authorization'] = f'Bearer {token}'
+    resp = httpx.get(f"{RESO_API}{endpoint}", headers=headers, timeout=60)
     return resp.json()
 
 print("=" * 60)
