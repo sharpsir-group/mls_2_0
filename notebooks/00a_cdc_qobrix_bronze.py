@@ -688,8 +688,32 @@ spark.sql("""
     ORDER BY sync_completed_at DESC
 """).show(truncate=False)
 
-# Show current table counts
+# Show current table counts with CDC changes
 print("\nCurrent bronze table counts:")
+print(f"   {'Table':<30} {'Total':>10} {'Changed':>10}")
+print(f"   {'-'*30} {'-'*10} {'-'*10}")
+
+# Map table names to cdc_changes keys
+table_to_cdc = {
+    "properties": "properties",
+    "agents": "agents", 
+    "contacts": "contacts",
+    "property_viewings": "viewings",
+    "property_media": "media",
+    "opportunities": "opportunities",
+    "users": "users",
+    "projects": "projects",
+    "project_features": "project_features",
+    "property_types": "property_types",
+    "property_subtypes": "property_subtypes",
+    "locations": "locations",
+    "media_categories": "media_categories",
+    "bayut_locations": "portal_locations",
+    "bazaraki_locations": "portal_locations",
+    "spitogatos_locations": "portal_locations",
+    "property_finder_ae_locations": "portal_locations"
+}
+
 tables = [
     "properties", "agents", "contacts", "property_viewings", "property_media",
     "opportunities", "users", "projects", "project_features",
@@ -699,9 +723,14 @@ tables = [
 for table in tables:
     try:
         count = spark.sql(f"SELECT COUNT(*) FROM {table}").collect()[0][0]
-        print(f"   {table:30s} {count:>8} rows")
+        cdc_key = table_to_cdc.get(table, table)
+        changed = cdc_changes.get(cdc_key, 0)
+        # For portal locations, only show changed once (not per table)
+        if table in ["bazaraki_locations", "spitogatos_locations", "property_finder_ae_locations"]:
+            changed = "-"
+        print(f"   {table:<30} {count:>10} {str(changed):>10}")
     except:
-        print(f"   {table:30s} (not found)")
+        print(f"   {table:<30} {'(not found)':>10} {'-':>10}")
 
 print("\n" + "=" * 80)
 print("✅ CDC SYNC COMPLETE")
