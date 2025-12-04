@@ -330,7 +330,9 @@ case "$1" in
         # For now, check the cdc_metadata table via SQL API
         # Parse changes from a temp file approach
         CHANGES_FILE=$(mktemp)
-        curl -s -X POST "https://${DATABRICKS_HOST}/api/2.0/sql/statements" \
+        # Remove https:// if already present in DATABRICKS_HOST
+        DB_HOST="${DATABRICKS_HOST#https://}"
+        curl -s -X POST "https://${DB_HOST}/api/2.0/sql/statements" \
             -H "Authorization: Bearer ${DATABRICKS_TOKEN}" \
             -H "Content-Type: application/json" \
             -d '{
