@@ -10,30 +10,95 @@ https://your-server.com/reso
 
 ## Authentication
 
-If API key authentication is enabled, include your key in requests:
+The API supports two authentication methods:
 
-**Option 1: Header (Recommended)**
+### 1. OAuth 2.0 (RESO Compliant - Recommended)
+
+Use OAuth 2.0 Client Credentials flow for RESO-compliant authentication.
+
+**Step 1: Get an Access Token**
+
+```bash
+curl -X POST https://your-server.com/reso/oauth/token \
+  -u "client_id:client_secret" \
+  -d "grant_type=client_credentials"
+```
+
+**Response:**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "token_type": "Bearer",
+  "expires_in": 3600
+}
+```
+
+**Step 2: Use Bearer Token**
+
+```javascript
+const response = await fetch(`${API_URL}/odata/Property`, {
+  headers: { 'Authorization': `Bearer ${accessToken}` }
+});
+```
+
+**JavaScript Example:**
+
+```javascript
+const API_URL = 'https://your-server.com/reso';
+const CLIENT_ID = 'your-client-id';
+const CLIENT_SECRET = 'your-client-secret';
+
+// Get access token
+async function getAccessToken() {
+  const credentials = btoa(`${CLIENT_ID}:${CLIENT_SECRET}`);
+  const response = await fetch(`${API_URL}/oauth/token`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${credentials}`,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: 'grant_type=client_credentials'
+  });
+  const data = await response.json();
+  return data.access_token;
+}
+
+// Use token
+const token = await getAccessToken();
+const properties = await fetch(`${API_URL}/odata/Property`, {
+  headers: { 'Authorization': `Bearer ${token}` }
+}).then(r => r.json());
+```
+
+### 2. API Key (Legacy)
+
+Simple API key authentication for backward compatibility.
+
+**Option A: Header (Recommended)**
 ```javascript
 const response = await fetch(`${API_URL}/odata/Property`, {
   headers: { 'X-API-Key': 'your-api-key' }
 });
 ```
 
-**Option 2: Query Parameter**
+**Option B: Query Parameter**
 ```javascript
 const response = await fetch(`${API_URL}/odata/Property?api_key=your-api-key`);
 ```
 
-**Error Responses:**
-| Status | Message | Cause |
-|--------|---------|-------|
-| 403 | API key required | No key provided |
-| 403 | Invalid API key | Key not recognized |
+### Error Responses
+
+| Status | Code | Description |
+|--------|------|-------------|
+| 401 | Unauthorized | No credentials provided |
+| 401 | InvalidToken | Bearer token expired or invalid |
+| 403 | Forbidden | Invalid API key |
 
 ## Available Endpoints
 
 | Endpoint | Description |
 |----------|-------------|
+| `POST /oauth/token` | Get OAuth access token |
 | `GET /odata/Property` | Property listings |
 | `GET /odata/Property('{key}')` | Single property |
 | `GET /odata/Media` | Property photos |
@@ -49,12 +114,12 @@ const response = await fetch(`${API_URL}/odata/Property?api_key=your-api-key`);
 
 ```javascript
 const API_URL = 'https://your-server.com/reso';
-const API_KEY = 'your-api-key'; // Optional if auth disabled
 
-// Get active listings
+// Using Bearer token (recommended)
+const token = await getAccessToken();
 const response = await fetch(
   `${API_URL}/odata/Property?$filter=StandardStatus eq 'Active'&$top=20`,
-  { headers: { 'X-API-Key': API_KEY } }
+  { headers: { 'Authorization': `Bearer ${token}` } }
 );
 const data = await response.json();
 
@@ -71,6 +136,7 @@ console.log(data.value); // Array of properties
     {
       "ListingKey": "QOBRIX_abc123",
       "ListPrice": 750000,
+      "ListPriceCurrencyCode": "EUR",
       "City": "Miami",
       "StandardStatus": "Active",
       "BedroomsTotal": 3,
@@ -153,7 +219,8 @@ $top=20&$skip=40
 // Get photos for a property
 const listingKey = 'QOBRIX_abc123';
 const response = await fetch(
-  `https://your-server.com/reso/odata/Media?$filter=ResourceRecordKey eq '${listingKey}'&$orderby=Order`
+  `https://your-server.com/reso/odata/Media?$filter=ResourceRecordKey eq '${listingKey}'&$orderby=Order`,
+  { headers: { 'Authorization': `Bearer ${token}` } }
 );
 const data = await response.json();
 
@@ -195,30 +262,63 @@ interface ODataResponse<T> {
   '@odata.nextLink'?: string;
   value: T[];
 }
+
+interface TokenResponse {
+  access_token: string;
+  token_type: 'Bearer';
+  expires_in: number;
+}
 ```
 
-## React Example
+## React Example with OAuth
 
 ```tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 const API_URL = import.meta.env.VITE_RESO_API_URL || 'https://your-server.com/reso';
-const API_KEY = import.meta.env.VITE_RESO_API_KEY;
+const CLIENT_ID = import.meta.env.VITE_RESO_CLIENT_ID;
+const CLIENT_SECRET = import.meta.env.VITE_RESO_CLIENT_SECRET;
+
+// Token management hook
+function useAuth() {
+  const [token, setToken] = useState<string | null>(null);
+  
+  const getToken = useCallback(async () => {
+    const credentials = btoa(`${CLIENT_ID}:${CLIENT_SECRET}`);
+    const response = await fetch(`${API_URL}/oauth/token`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: 'grant_type=client_credentials'
+    });
+    const data = await response.json();
+    setToken(data.access_token);
+    return data.access_token;
+  }, []);
+
+  return { token, getToken };
+}
 
 function PropertyList() {
+  const { token, getToken } = useAuth();
   const [properties, setProperties] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${API_URL}/odata/Property?$filter=StandardStatus eq 'Active'&$top=20`, {
-      headers: API_KEY ? { 'X-API-Key': API_KEY } : {}
-    })
-      .then(res => res.json())
-      .then(data => {
-        setProperties(data.value);
-        setLoading(false);
-      });
-  }, []);
+    async function fetchData() {
+      const accessToken = token || await getToken();
+      const response = await fetch(
+        `${API_URL}/odata/Property?$filter=StandardStatus eq 'Active'&$top=20`,
+        { headers: { 'Authorization': `Bearer ${accessToken}` } }
+      );
+      const data = await response.json();
+      setProperties(data.value);
+      setLoading(false);
+    }
+    fetchData();
+  }, [token, getToken]);
 
   if (loading) return <div>Loading...</div>;
 
@@ -227,7 +327,7 @@ function PropertyList() {
       {properties.map(property => (
         <div key={property.ListingKey} className="border rounded p-4">
           <img src={property.X_MainPhoto} alt="" className="w-full h-48 object-cover" />
-          <h3>${property.ListPrice?.toLocaleString()}</h3>
+          <h3>${property.ListPrice?.toLocaleString()} {property.ListPriceCurrencyCode}</h3>
           <p>{property.City}</p>
           <p>{property.BedroomsTotal} bed | {property.BathroomsTotalInteger} bath</p>
         </div>
@@ -243,45 +343,48 @@ In your frontend project:
 
 ```env
 VITE_RESO_API_URL=https://your-server.com/reso
+# OAuth (recommended)
+VITE_RESO_CLIENT_ID=your-client-id
+VITE_RESO_CLIENT_SECRET=your-client-secret
+# API Key (legacy)
 VITE_RESO_API_KEY=your-api-key
-```
-
-Then use:
-
-```javascript
-const API_URL = import.meta.env.VITE_RESO_API_URL;
-const API_KEY = import.meta.env.VITE_RESO_API_KEY;
-
-const fetchProperties = async () => {
-  const response = await fetch(`${API_URL}/odata/Property`, {
-    headers: { 'X-API-Key': API_KEY }
-  });
-  return response.json();
-};
 ```
 
 ## Error Handling
 
 ```javascript
-try {
-  const response = await fetch(`${API_URL}/odata/Property`, {
-    headers: { 'X-API-Key': API_KEY }
-  });
-  
-  if (!response.ok) {
-    const error = await response.json();
+async function fetchWithAuth(url, token) {
+  try {
+    const response = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
     
-    if (response.status === 403) {
-      // Authentication error
-      console.error('Auth error:', error.error.message);
-    } else {
-      console.error('API error:', error.error.message);
+    if (!response.ok) {
+      const error = await response.json();
+      
+      if (response.status === 401) {
+        // Token expired - refresh and retry
+        const newToken = await getAccessToken();
+        return fetchWithAuth(url, newToken);
+      }
+      
+      throw new Error(error.error?.message || 'API Error');
     }
-    return;
+    
+    return response.json();
+  } catch (e) {
+    console.error('Request failed:', e);
+    throw e;
   }
-  
-  const data = await response.json();
-} catch (e) {
-  console.error('Network error:', e);
 }
 ```
+
+## RESO Compliance
+
+This API implements:
+- **OAuth 2.0 Client Credentials** flow per RESO Web API Core specification
+- **OData 4.0** query syntax
+- **RESO Data Dictionary 2.0** field names and types
+- Standard error response format
+
+For full RESO certification, use OAuth 2.0 authentication.

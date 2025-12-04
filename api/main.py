@@ -6,10 +6,15 @@ RESO Web API - FastAPI Application
 
 A RESO Data Dictionary 2.0 compliant OData API backed by Databricks.
 
+Authentication:
+    - OAuth 2.0 Client Credentials (RESO compliant)
+    - API Key (legacy support)
+
 Usage:
     uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 Endpoints:
+    POST /oauth/token               - OAuth 2.0 token endpoint
     GET /                           - API info
     GET /health                     - Health check
     GET /odata                      - Service document
@@ -32,10 +37,10 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from config import get_settings
-from auth import get_api_key
+from auth import require_auth
 
 # Import routers
-from routers import property, member, office, media, contacts, showing, metadata
+from routers import property, member, office, media, contacts, showing, metadata, oauth
 
 
 def create_app() -> FastAPI:
@@ -61,17 +66,19 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     
-    # Include routers with API key authentication
-    # API key dependency protects all OData endpoints
-    api_key_dependency = [Depends(get_api_key)]
+    # OAuth 2.0 token endpoint (no auth required)
+    app.include_router(oauth.router)
     
-    app.include_router(metadata.router, dependencies=api_key_dependency)
-    app.include_router(property.router, dependencies=api_key_dependency)
-    app.include_router(member.router, dependencies=api_key_dependency)
-    app.include_router(office.router, dependencies=api_key_dependency)
-    app.include_router(media.router, dependencies=api_key_dependency)
-    app.include_router(contacts.router, dependencies=api_key_dependency)
-    app.include_router(showing.router, dependencies=api_key_dependency)
+    # OData endpoints with authentication (OAuth Bearer or API Key)
+    auth_dependency = [require_auth]
+    
+    app.include_router(metadata.router, dependencies=auth_dependency)
+    app.include_router(property.router, dependencies=auth_dependency)
+    app.include_router(member.router, dependencies=auth_dependency)
+    app.include_router(office.router, dependencies=auth_dependency)
+    app.include_router(media.router, dependencies=auth_dependency)
+    app.include_router(contacts.router, dependencies=auth_dependency)
+    app.include_router(showing.router, dependencies=auth_dependency)
     
     return app
 
@@ -89,6 +96,11 @@ async def root():
         "description": settings.api_description,
         "specification": "RESO Data Dictionary 2.0",
         "odata_version": "4.0",
+        "authentication": {
+            "oauth2_token_url": "/oauth/token",
+            "grant_types": ["client_credentials"],
+            "note": "Use OAuth 2.0 Bearer token or API key for authentication"
+        },
         "endpoints": {
             "service_document": "/odata",
             "metadata": "/odata/$metadata",

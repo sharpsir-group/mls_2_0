@@ -52,9 +52,16 @@ class Settings(BaseSettings):
     # Qobrix default currency (ISO 4217 code) - set in .env
     qobrix_default_currency: str = ""
     
-    # API Keys for authentication (comma-separated list)
+    # API Keys for authentication (comma-separated list) - Legacy support
     # Example: API_KEYS=key1,key2,key3
     api_keys: str = ""
+    
+    # OAuth 2.0 Client Credentials (RESO compliant)
+    # Generate with: openssl rand -hex 32
+    oauth_client_id: str = ""
+    oauth_client_secret: str = ""
+    oauth_jwt_secret: str = ""  # For signing JWT tokens
+    oauth_token_expire_minutes: int = 60  # Token expiry (default: 1 hour)
     
     @property
     def api_keys_list(self) -> list:
@@ -62,6 +69,11 @@ class Settings(BaseSettings):
         if not self.api_keys:
             return []
         return [k.strip() for k in self.api_keys.split(",") if k.strip()]
+    
+    @property
+    def oauth_enabled(self) -> bool:
+        """Check if OAuth is configured."""
+        return bool(self.oauth_client_id and self.oauth_client_secret and self.oauth_jwt_secret)
 
 
 @lru_cache()

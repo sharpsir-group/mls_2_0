@@ -160,16 +160,40 @@ pm2 save
 pm2 startup                       # Enable auto-start on boot
 ```
 
-### API Key Authentication
+### Authentication
 
-Protect your API with API keys (optional):
+The API supports two authentication methods:
+
+**1. OAuth 2.0 (RESO Compliant - Recommended)**
 
 ```bash
-# .env - comma-separated list of valid keys
-API_KEYS=key1,key2,key3
+# .env - OAuth client credentials
+OAUTH_CLIENT_ID=reso-client-xxx
+OAUTH_CLIENT_SECRET=your-secret
+OAUTH_JWT_SECRET=your-jwt-secret
+OAUTH_TOKEN_EXPIRE_MINUTES=60
 
-# Leave empty to disable authentication
-API_KEYS=
+# Generate credentials
+openssl rand -hex 32  # For secrets
+```
+
+**Usage:**
+```bash
+# Get token
+curl -X POST https://your-server.com/reso/oauth/token \
+  -u "client_id:client_secret" \
+  -d "grant_type=client_credentials"
+
+# Use Bearer token
+curl -H "Authorization: Bearer TOKEN" \
+  https://your-server.com/reso/odata/Property
+```
+
+**2. API Key (Legacy)**
+
+```bash
+# .env - comma-separated list
+API_KEYS=key1,key2,key3
 ```
 
 **Usage:**
@@ -181,7 +205,9 @@ curl -H "X-API-Key: your-key" https://your-server.com/reso/odata/Property
 curl "https://your-server.com/reso/odata/Property?api_key=your-key"
 ```
 
-### Apache Reverse Proxy (HTTPS)
+**Disable Authentication:** Leave both `OAUTH_*` and `API_KEYS` empty.
+
+### Apache Reverse Proxy
 
 Add to your Apache VirtualHost config for HTTPS access:
 
