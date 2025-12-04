@@ -508,13 +508,18 @@ spark.sql("""
 
 # Show current table counts
 print("\nCurrent bronze table counts:")
-tables = ["properties", "agents", "contacts", "property_viewings", "property_media"]
+tables = [
+    "properties", "agents", "contacts", "property_viewings", "property_media",
+    "opportunities", "users", "projects", "project_features",
+    "property_types", "property_subtypes", "locations", "media_categories",
+    "bayut_locations", "bazaraki_locations", "spitogatos_locations", "property_finder_ae_locations"
+]
 for table in tables:
     try:
         count = spark.sql(f"SELECT COUNT(*) FROM {table}").collect()[0][0]
-        print(f"   {table:25s} {count:>8} rows")
+        print(f"   {table:30s} {count:>8} rows")
     except:
-        print(f"   {table:25s} (not found)")
+        print(f"   {table:30s} (not found)")
 
 print("\n" + "=" * 80)
 print("✅ CDC SYNC COMPLETE")
