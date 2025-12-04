@@ -481,3 +481,31 @@ props.forEach(p => {
   console.log(p.X_MainPhoto); // Main image URL
 });
 ```
+
+## Vanilla JavaScript Client
+
+For projects without TypeScript, use [`sync-client-example.js`](sync-client-example.js):
+
+```html
+<script src="sync-client-example.js"></script>
+<script>
+  const client = new MLSSyncClient({
+    baseUrl: 'https://your-server.com/reso',
+    clientId: 'your-client-id',
+    clientSecret: 'your-client-secret',
+  });
+
+  // Sync all properties
+  client.syncAllParallel({
+    filter: "StandardStatus eq 'Active'",
+    onProgress: (p) => console.log(p.percent + '%'),
+  }).then(properties => {
+    console.log('Synced', properties.length, 'properties');
+  });
+
+  // Get single property with all photos
+  client.getPropertyWithMedia('QOBRIX_123').then(property => {
+    console.log(property.ListPrice, property.media.length, 'photos');
+  });
+</script>
+```
