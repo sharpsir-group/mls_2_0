@@ -319,6 +319,37 @@ case "$1" in
         echo "📦 Stage 1: CDC Bronze (incremental data from API)"
         run_notebook "MLS 2.0 - Qobrix CDC Bronze" "/Shared/mls_2_0/00a_cdc_qobrix_bronze" "true"
         
+        # Show bronze table counts report
+        echo ""
+        echo "📊 Current bronze table counts:"
+        DB_HOST="${DATABRICKS_HOST#https://}"
+        curl -s -X POST "https://${DB_HOST}/api/2.0/sql/statements" \
+            -H "Authorization: Bearer ${DATABRICKS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{
+                "warehouse_id": "'"${DATABRICKS_WAREHOUSE_ID}"'",
+                "statement": "WITH table_counts AS (SELECT '\''properties'\'' as table_name, COUNT(*) as total_rows FROM mls2.qobrix_bronze.properties UNION ALL SELECT '\''agents'\'', COUNT(*) FROM mls2.qobrix_bronze.agents UNION ALL SELECT '\''contacts'\'', COUNT(*) FROM mls2.qobrix_bronze.contacts UNION ALL SELECT '\''property_viewings'\'', COUNT(*) FROM mls2.qobrix_bronze.property_viewings UNION ALL SELECT '\''property_media'\'', COUNT(*) FROM mls2.qobrix_bronze.property_media UNION ALL SELECT '\''opportunities'\'', COUNT(*) FROM mls2.qobrix_bronze.opportunities UNION ALL SELECT '\''users'\'', COUNT(*) FROM mls2.qobrix_bronze.users UNION ALL SELECT '\''projects'\'', COUNT(*) FROM mls2.qobrix_bronze.projects UNION ALL SELECT '\''project_features'\'', COUNT(*) FROM mls2.qobrix_bronze.project_features UNION ALL SELECT '\''property_types'\'', COUNT(*) FROM mls2.qobrix_bronze.property_types UNION ALL SELECT '\''property_subtypes'\'', COUNT(*) FROM mls2.qobrix_bronze.property_subtypes UNION ALL SELECT '\''locations'\'', COUNT(*) FROM mls2.qobrix_bronze.locations UNION ALL SELECT '\''media_categories'\'', COUNT(*) FROM mls2.qobrix_bronze.media_categories UNION ALL SELECT '\''bayut_locations'\'', COUNT(*) FROM mls2.qobrix_bronze.bayut_locations UNION ALL SELECT '\''bazaraki_locations'\'', COUNT(*) FROM mls2.qobrix_bronze.bazaraki_locations UNION ALL SELECT '\''spitogatos_locations'\'', COUNT(*) FROM mls2.qobrix_bronze.spitogatos_locations UNION ALL SELECT '\''property_finder_ae_locations'\'', COUNT(*) FROM mls2.qobrix_bronze.property_finder_ae_locations), cdc_changes AS (SELECT entity_name, SUM(records_processed) as cdc_changed FROM mls2.qobrix_bronze.cdc_metadata WHERE sync_completed_at >= CURRENT_TIMESTAMP() - INTERVAL 10 MINUTES GROUP BY entity_name) SELECT t.table_name, t.total_rows, COALESCE(c.cdc_changed, 0) as cdc_changed FROM table_counts t LEFT JOIN cdc_changes c ON t.table_name = c.entity_name ORDER BY CASE t.table_name WHEN '\''properties'\'' THEN 1 WHEN '\''agents'\'' THEN 2 WHEN '\''contacts'\'' THEN 3 WHEN '\''property_viewings'\'' THEN 4 WHEN '\''property_media'\'' THEN 5 WHEN '\''opportunities'\'' THEN 6 WHEN '\''users'\'' THEN 7 WHEN '\''projects'\'' THEN 8 ELSE 99 END",
+                "wait_timeout": "30s"
+            }' 2>/dev/null | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    data = d.get('result', {}).get('data_array', [])
+    if data:
+        # Print table header
+        print('+----------------------------+----------+-----------+')
+        print('| table_name                 |total_rows|cdc_changed|')
+        print('+----------------------------+----------+-----------+')
+        for row in data:
+            name = row[0] if row[0] else ''
+            total = row[1] if row[1] else '0'
+            changed = row[2] if row[2] else '0'
+            print(f'| {name:<26} | {total:>8} | {changed:>9} |')
+        print('+----------------------------+----------+-----------+')
+except Exception as ex:
+    print(f'Error: {ex}', file=sys.stderr)
+"
+        
         # Get CDC changes from notebook output
         echo ""
         echo "📊 Checking which entities changed..."
