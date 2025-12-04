@@ -10,13 +10,9 @@ https://your-server.com/reso
 
 ## Authentication
 
-The API supports two authentication methods:
+OAuth 2.0 Client Credentials flow (RESO Web API Core compliant).
 
-### 1. OAuth 2.0 (RESO Compliant - Recommended)
-
-Use OAuth 2.0 Client Credentials flow for RESO-compliant authentication.
-
-**Step 1: Get an Access Token**
+### Step 1: Get Access Token
 
 ```bash
 curl -X POST https://your-server.com/reso/oauth/token \
@@ -33,7 +29,7 @@ curl -X POST https://your-server.com/reso/oauth/token \
 }
 ```
 
-**Step 2: Use Bearer Token**
+### Step 2: Use Bearer Token
 
 ```javascript
 const response = await fetch(`${API_URL}/odata/Property`, {
@@ -41,14 +37,13 @@ const response = await fetch(`${API_URL}/odata/Property`, {
 });
 ```
 
-**JavaScript Example:**
+### JavaScript Helper
 
 ```javascript
 const API_URL = 'https://your-server.com/reso';
 const CLIENT_ID = 'your-client-id';
 const CLIENT_SECRET = 'your-client-secret';
 
-// Get access token
 async function getAccessToken() {
   const credentials = btoa(`${CLIENT_ID}:${CLIENT_SECRET}`);
   const response = await fetch(`${API_URL}/oauth/token`, {
@@ -63,36 +58,19 @@ async function getAccessToken() {
   return data.access_token;
 }
 
-// Use token
+// Usage
 const token = await getAccessToken();
 const properties = await fetch(`${API_URL}/odata/Property`, {
   headers: { 'Authorization': `Bearer ${token}` }
 }).then(r => r.json());
 ```
 
-### 2. API Key (Legacy)
-
-Simple API key authentication for backward compatibility.
-
-**Option A: Header (Recommended)**
-```javascript
-const response = await fetch(`${API_URL}/odata/Property`, {
-  headers: { 'X-API-Key': 'your-api-key' }
-});
-```
-
-**Option B: Query Parameter**
-```javascript
-const response = await fetch(`${API_URL}/odata/Property?api_key=your-api-key`);
-```
-
 ### Error Responses
 
 | Status | Code | Description |
 |--------|------|-------------|
-| 401 | Unauthorized | No credentials provided |
-| 401 | InvalidToken | Bearer token expired or invalid |
-| 403 | Forbidden | Invalid API key |
+| 401 | Unauthorized | No token provided |
+| 401 | InvalidToken | Token expired or invalid |
 
 ## Available Endpoints
 
@@ -110,13 +88,13 @@ const response = await fetch(`${API_URL}/odata/Property?api_key=your-api-key`);
 
 ## Quick Start
 
-### Fetch Properties
-
 ```javascript
 const API_URL = 'https://your-server.com/reso';
 
-// Using Bearer token (recommended)
+// Get token first
 const token = await getAccessToken();
+
+// Fetch active properties
 const response = await fetch(
   `${API_URL}/odata/Property?$filter=StandardStatus eq 'Active'&$top=20`,
   { headers: { 'Authorization': `Bearer ${token}` } }
@@ -216,7 +194,6 @@ $top=20&$skip=40
 ## Get Property Photos
 
 ```javascript
-// Get photos for a property
 const listingKey = 'QOBRIX_abc123';
 const response = await fetch(
   `https://your-server.com/reso/odata/Media?$filter=ResourceRecordKey eq '${listingKey}'&$orderby=Order`,
@@ -270,16 +247,15 @@ interface TokenResponse {
 }
 ```
 
-## React Example with OAuth
+## React Example
 
 ```tsx
 import { useState, useEffect, useCallback } from 'react';
 
-const API_URL = import.meta.env.VITE_RESO_API_URL || 'https://your-server.com/reso';
+const API_URL = import.meta.env.VITE_RESO_API_URL;
 const CLIENT_ID = import.meta.env.VITE_RESO_CLIENT_ID;
 const CLIENT_SECRET = import.meta.env.VITE_RESO_CLIENT_SECRET;
 
-// Token management hook
 function useAuth() {
   const [token, setToken] = useState<string | null>(null);
   
@@ -339,35 +315,29 @@ function PropertyList() {
 
 ## Environment Variables
 
-In your frontend project:
-
 ```env
 VITE_RESO_API_URL=https://your-server.com/reso
-# OAuth (recommended)
 VITE_RESO_CLIENT_ID=your-client-id
 VITE_RESO_CLIENT_SECRET=your-client-secret
-# API Key (legacy)
-VITE_RESO_API_KEY=your-api-key
 ```
 
 ## Error Handling
 
 ```javascript
-async function fetchWithAuth(url, token) {
+async function fetchWithAuth(url, token, getToken) {
   try {
     const response = await fetch(url, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     
+    if (response.status === 401) {
+      // Token expired - refresh and retry
+      const newToken = await getToken();
+      return fetchWithAuth(url, newToken, getToken);
+    }
+    
     if (!response.ok) {
       const error = await response.json();
-      
-      if (response.status === 401) {
-        // Token expired - refresh and retry
-        const newToken = await getAccessToken();
-        return fetchWithAuth(url, newToken);
-      }
-      
       throw new Error(error.error?.message || 'API Error');
     }
     
@@ -386,5 +356,3 @@ This API implements:
 - **OData 4.0** query syntax
 - **RESO Data Dictionary 2.0** field names and types
 - Standard error response format
-
-For full RESO certification, use OAuth 2.0 authentication.

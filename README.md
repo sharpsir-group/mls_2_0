@@ -162,50 +162,40 @@ pm2 startup                       # Enable auto-start on boot
 
 ### Authentication
 
-The API supports two authentication methods:
-
-**1. OAuth 2.0 (RESO Compliant - Recommended)**
+OAuth 2.0 Client Credentials flow (RESO Web API Core compliant).
 
 ```bash
-# .env - OAuth client credentials
+# .env - OAuth configuration
 OAUTH_CLIENT_ID=reso-client-xxx
 OAUTH_CLIENT_SECRET=your-secret
 OAUTH_JWT_SECRET=your-jwt-secret
 OAUTH_TOKEN_EXPIRE_MINUTES=60
 
-# Generate credentials
-openssl rand -hex 32  # For secrets
+# Generate credentials with:
+openssl rand -hex 32
 ```
 
 **Usage:**
 ```bash
-# Get token
+# 1. Get access token
 curl -X POST https://your-server.com/reso/oauth/token \
   -u "client_id:client_secret" \
   -d "grant_type=client_credentials"
 
-# Use Bearer token
+# 2. Use Bearer token
 curl -H "Authorization: Bearer TOKEN" \
   https://your-server.com/reso/odata/Property
 ```
 
-**2. API Key (Legacy)**
+**Disable Authentication:** Leave `OAUTH_*` variables empty.
+
+### Server Configuration
 
 ```bash
-# .env - comma-separated list
-API_KEYS=key1,key2,key3
+# .env - API server settings
+RESO_API_HOST=0.0.0.0
+RESO_API_PORT=3900
 ```
-
-**Usage:**
-```bash
-# Via header
-curl -H "X-API-Key: your-key" https://your-server.com/reso/odata/Property
-
-# Via query parameter
-curl "https://your-server.com/reso/odata/Property?api_key=your-key"
-```
-
-**Disable Authentication:** Leave both `OAUTH_*` and `API_KEYS` empty.
 
 ### Apache Reverse Proxy
 

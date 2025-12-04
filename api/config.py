@@ -4,7 +4,6 @@
 """
 RESO Web API Configuration
 """
-import os
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
@@ -14,7 +13,6 @@ from functools import lru_cache
 API_DIR = Path(__file__).parent
 MLS2_ROOT = API_DIR.parent
 ENV_FILE = MLS2_ROOT / ".env"
-
 
 
 class Settings(BaseSettings):
@@ -33,7 +31,11 @@ class Settings(BaseSettings):
     databricks_catalog: str = "mls2"
     databricks_schema: str = "reso_gold"
     
-    # API settings
+    # API server settings
+    reso_api_host: str = "0.0.0.0"
+    reso_api_port: int = 3900
+    
+    # API metadata
     api_title: str = "RESO Web API"
     api_version: str = "2.0.0"
     api_description: str = "RESO Data Dictionary 2.0 compliant API for MLS data"
@@ -52,23 +54,12 @@ class Settings(BaseSettings):
     # Qobrix default currency (ISO 4217 code) - set in .env
     qobrix_default_currency: str = ""
     
-    # API Keys for authentication (comma-separated list) - Legacy support
-    # Example: API_KEYS=key1,key2,key3
-    api_keys: str = ""
-    
     # OAuth 2.0 Client Credentials (RESO compliant)
     # Generate with: openssl rand -hex 32
     oauth_client_id: str = ""
     oauth_client_secret: str = ""
     oauth_jwt_secret: str = ""  # For signing JWT tokens
     oauth_token_expire_minutes: int = 60  # Token expiry (default: 1 hour)
-    
-    @property
-    def api_keys_list(self) -> list:
-        """Parse API keys from comma-separated string."""
-        if not self.api_keys:
-            return []
-        return [k.strip() for k in self.api_keys.split(",") if k.strip()]
     
     @property
     def oauth_enabled(self) -> bool:
@@ -80,4 +71,3 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()
-

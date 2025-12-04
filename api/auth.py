@@ -4,28 +4,20 @@
 """
 RESO Web API Authentication
 
-Supports:
-1. OAuth 2.0 Bearer Token (RESO compliant) - Recommended
-2. API Key (legacy) - For backward compatibility
-
-RESO Web API Core requires OAuth 2.0 Client Credentials flow.
+OAuth 2.0 Client Credentials flow as required by RESO Web API Core.
 """
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import HTTPException, Security, Depends
-from fastapi.security import APIKeyHeader, APIKeyQuery, OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN
+from starlette.status import HTTP_401_UNAUTHORIZED
 
 from config import get_settings
 
 # OAuth 2.0 Bearer Token
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/oauth/token", auto_error=False)
-
-# Legacy API Key support
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-api_key_query = APIKeyQuery(name="api_key", auto_error=False)
 
 # JWT Algorithm
 ALGORITHM = "HS256"
@@ -98,33 +90,24 @@ def verify_token(token: str) -> dict:
 
 
 async def authenticate(
-    bearer_token: Optional[str] = Security(oauth2_scheme),
-    api_key_header_value: Optional[str] = Security(api_key_header),
-    api_key_query_value: Optional[str] = Security(api_key_query)
+    bearer_token: Optional[str] = Security(oauth2_scheme)
 ) -> dict:
     """
-    Authenticate request using OAuth 2.0 Bearer Token or legacy API Key.
+    Authenticate request using OAuth 2.0 Bearer Token.
     
-    Authentication methods (in order of precedence):
-    1. OAuth 2.0 Bearer Token (Authorization: Bearer <token>) - RESO compliant
-    2. API Key Header (X-API-Key: <key>) - Legacy
-    3. API Key Query (?api_key=<key>) - Legacy
-    
-    If no authentication is configured, all requests are allowed.
+    If OAuth is not configured, all requests are allowed.
     
     Returns:
-        dict with auth info: {"method": "oauth"|"api_key"|"none", "client_id": ...}
+        dict with auth info: {"method": "oauth"|"none", "client_id": ...}
     """
     settings = get_settings()
     
-    # Check if any auth is configured
-    auth_configured = settings.oauth_enabled or settings.api_keys_list
-    
-    if not auth_configured:
+    # Check if OAuth is configured
+    if not settings.oauth_enabled:
         # No auth configured - allow all requests
         return {"method": "none", "client_id": "anonymous"}
     
-    # 1. Try OAuth 2.0 Bearer Token first (RESO compliant)
+    # Require Bearer token
     if bearer_token:
         payload = verify_token(bearer_token)
         return {
@@ -133,39 +116,17 @@ async def authenticate(
             "scope": payload.get("scope", "")
         }
     
-    # 2. Try legacy API Key
-    api_key = api_key_header_value or api_key_query_value
-    
-    if api_key and api_key in settings.api_keys_list:
-        return {
-            "method": "api_key",
-            "client_id": api_key[:8] + "..."  # Masked for logging
-        }
-    
-    # No valid auth provided
-    if settings.oauth_enabled:
-        # OAuth is configured - require Bearer token
-        raise HTTPException(
-            status_code=HTTP_401_UNAUTHORIZED,
-            detail={
-                "error": {
-                    "code": "Unauthorized",
-                    "message": "Bearer token required. Use POST /oauth/token to obtain an access token."
-                }
-            },
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    else:
-        # Only API keys configured
-        raise HTTPException(
-            status_code=HTTP_401_UNAUTHORIZED,
-            detail={
-                "error": {
-                    "code": "Unauthorized",
-                    "message": "API key required. Provide via X-API-Key header or api_key query parameter."
-                }
+    # No token provided
+    raise HTTPException(
+        status_code=HTTP_401_UNAUTHORIZED,
+        detail={
+            "error": {
+                "code": "Unauthorized",
+                "message": "Bearer token required. Use POST /oauth/token to obtain an access token."
             }
-        )
+        },
+        headers={"WWW-Authenticate": "Bearer"}
+    )
 
 
 # Dependency to use in routers
