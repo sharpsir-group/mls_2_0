@@ -47,9 +47,10 @@ class Property(BaseModel):
     StandardStatus: Optional[str] = None
     MlsStatus: Optional[str] = None
     
-    # Property Type
+    # Property Type & Class
     PropertyType: Optional[str] = None
     PropertySubType: Optional[str] = None
+    PropertyClass: Optional[str] = None  # RESI, RLSE, COMS, COML, LAND
     
     # Location
     City: Optional[str] = None

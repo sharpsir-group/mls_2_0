@@ -111,6 +111,27 @@ SELECT
         ELSE 'Active'
     END                                           AS StandardStatus,
 
+    -- PropertyClass (RESO standard: RESI, RLSE, COMS, COML, LAND)
+    -- Distinguishes Sale vs Lease and Residential vs Commercial
+    CASE
+        -- Land is always LAND
+        WHEN LOWER(s.property_type) = 'land' THEN 'LAND'
+        -- Residential types
+        WHEN LOWER(s.property_type) IN ('apartment', 'house') THEN
+            CASE LOWER(COALESCE(s.sale_rent, 'for_sale'))
+                WHEN 'for_rent' THEN 'RLSE'  -- Residential Lease
+                ELSE 'RESI'                   -- Residential Sale
+            END
+        -- Commercial types
+        WHEN LOWER(s.property_type) IN ('office', 'retail', 'building', 'hotel', 'industrial', 'investment') THEN
+            CASE LOWER(COALESCE(s.sale_rent, 'for_sale'))
+                WHEN 'for_rent' THEN 'COML'  -- Commercial Lease
+                ELSE 'COMS'                   -- Commercial Sale
+            END
+        -- Default to Residential Sale
+        ELSE 'RESI'
+    END                                           AS PropertyClass,
+
     -- Property type mapping
     CASE LOWER(s.property_type)
         WHEN 'apartment'     THEN 'Apartment'
