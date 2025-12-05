@@ -132,6 +132,15 @@ SELECT
         ELSE 'RESI'
     END                                           AS PropertyClass,
 
+    -- DevelopmentStatus (RESO standard: Proposed, Under Construction, Complete)
+    -- Maps Qobrix project construction stage to RESO development status
+    CASE LOWER(COALESCE(b.project_project_construction_stage, ''))
+        WHEN 'offplans'          THEN 'Proposed'
+        WHEN 'construction_phase' THEN 'Under Construction'
+        WHEN 'completed'         THEN 'Complete'
+        ELSE NULL
+    END                                           AS DevelopmentStatus,
+
     -- Property type mapping
     CASE LOWER(s.property_type)
         WHEN 'apartment'     THEN 'Apartment'

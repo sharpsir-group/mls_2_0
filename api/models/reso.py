@@ -51,6 +51,7 @@ class Property(BaseModel):
     PropertyType: Optional[str] = None
     PropertySubType: Optional[str] = None
     PropertyClass: Optional[str] = None  # RESI, RLSE, COMS, COML, LAND
+    DevelopmentStatus: Optional[str] = None  # Proposed, Under Construction, Complete
     
     # Location
     City: Optional[str] = None

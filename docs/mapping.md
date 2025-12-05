@@ -67,6 +67,20 @@ This document describes the complete mapping from Qobrix CRM data to RESO Data D
 | `COML` | Commercial Lease | office/retail/etc + for_rent |
 | `LAND` | Land | land (any sale_rent) |
 
+### DevelopmentStatus (Construction Stage)
+
+| Qobrix Field | RESO Field | Type | Transformation |
+|--------------|------------|------|----------------|
+| `project_project_construction_stage` | `DevelopmentStatus` | ENUM | See mapping below |
+
+**DevelopmentStatus Mapping:**
+
+| DevelopmentStatus | Description | Qobrix Value |
+|-------------------|-------------|--------------|
+| `Proposed` | Off-plan, not yet started | `offplans` |
+| `Under Construction` | Currently being built | `construction_phase` |
+| `Complete` | Finished construction | `completed` |
+| *(null)* | Unknown/not specified | *(empty)* |
 
 
 ### Property Details
