@@ -51,6 +51,23 @@ This document describes the complete mapping from Qobrix CRM data to RESO Data D
 | `status` | `StandardStatus` | ENUM | available→Active, reserved→Pending, sold→Closed |
 | `property_type` | `PropertyType` | ENUM | apartment→Apartment, house→SingleFamilyDetached |
 | `property_subtype` | `PropertySubType` | STRING | Lookup from property_subtypes |
+### PropertyClass (Sale vs Lease)
+
+| Qobrix Fields | RESO Field | Type | Transformation |
+|---------------|------------|------|----------------|
+| `sale_rent` + `property_type` | `PropertyClass` | ENUM | See mapping below |
+
+**PropertyClass Mapping:**
+
+| PropertyClass | Description | Qobrix Mapping |
+|---------------|-------------|----------------|
+| `RESI` | Residential Sale | apartment/house + for_sale |
+| `RLSE` | Residential Lease | apartment/house + for_rent |
+| `COMS` | Commercial Sale | office/retail/etc + for_sale |
+| `COML` | Commercial Lease | office/retail/etc + for_rent |
+| `LAND` | Land | land (any sale_rent) |
+
+
 
 ### Property Details
 
