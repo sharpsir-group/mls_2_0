@@ -21,6 +21,7 @@ export interface Property {
   ListPriceCurrencyCode: string;
   StandardStatus: 'Active' | 'Pending' | 'Closed' | 'Withdrawn';
   PropertyType: string;
+  PropertyClass: 'RESI' | 'RLSE' | 'COMS' | 'COML' | 'LAND';  // Sale vs Lease classification
   City: string;
   StateOrProvince?: string;
   PostalCode?: string;

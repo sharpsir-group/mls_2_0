@@ -190,6 +190,50 @@ $orderby=ListPrice desc
 $top=20&$skip=40
 ```
 
+
+## PropertyClass (Sale vs Lease)
+
+RESO standard field to distinguish sale from lease/rental properties:
+
+| PropertyClass | Description | Count |
+|---------------|-------------|-------|
+| `RESI` | Residential Sale | ~13,776 |
+| `RLSE` | Residential Lease (Rental) | ~36 |
+| `COMS` | Commercial Sale | ~182 |
+| `COML` | Commercial Lease | ~3 |
+| `LAND` | Land | ~69 |
+
+### Filter Examples
+
+```bash
+# All rentals (residential)
+$filter=PropertyClass eq 'RLSE'
+
+# All for-sale properties
+$filter=PropertyClass eq 'RESI' or PropertyClass eq 'COMS' or PropertyClass eq 'LAND'
+
+# Commercial properties (sale + lease)
+$filter=PropertyClass eq 'COMS' or PropertyClass eq 'COML'
+
+# Residential rentals under €5000/month
+$filter=PropertyClass eq 'RLSE' and LeasePrice lt 5000
+```
+
+### JavaScript Example
+
+```javascript
+// Get all rental properties
+const rentals = await fetch(
+  `${API_URL}/odata/Property?$filter=PropertyClass eq 'RLSE'`,
+  { headers: { 'Authorization': `Bearer ${token}` } }
+).then(r => r.json());
+
+// Check property type
+rentals.value.forEach(p => {
+  console.log(`${p.ListingKey}: ${p.PropertyClass} - €${p.LeasePrice}/month`);
+});
+```
+
 ## Property Fields
 
 ### Core Fields
@@ -201,6 +245,7 @@ $top=20&$skip=40
 | `ListPriceCurrencyCode` | string | Currency (e.g., EUR, USD) |
 | `StandardStatus` | string | Active, Pending, Closed, Withdrawn |
 | `PropertyType` | string | Apartment, House, Land, etc. |
+| `PropertyClass` | string | RESI, RLSE, COMS, COML, LAND |
 | `City` | string | City name |
 | `BedroomsTotal` | integer | Number of bedrooms |
 | `BathroomsTotalInteger` | integer | Number of bathrooms |
@@ -242,6 +287,7 @@ interface Property {
   ListPriceCurrencyCode: string;
   StandardStatus: 'Active' | 'Pending' | 'Closed' | 'Withdrawn';
   PropertyType: string;
+  PropertyClass: 'RESI' | 'RLSE' | 'COMS' | 'COML' | 'LAND';  // Sale vs Lease
   City: string;
   BedroomsTotal: number;
   BathroomsTotalInteger: number;

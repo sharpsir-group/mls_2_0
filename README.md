@@ -235,6 +235,22 @@ mls2 (catalog)
 
 **Property Fields:** 48 RESO Standard + 129 Extensions (X_ prefix)
 
+### PropertyClass (Sale vs Lease)
+
+| PropertyClass | Description | Qobrix Mapping |
+|---------------|-------------|----------------|
+| `RESI` | Residential Sale | apartment/house + for_sale |
+| `RLSE` | Residential Lease | apartment/house + for_rent |
+| `COMS` | Commercial Sale | office/retail/etc + for_sale |
+| `COML` | Commercial Lease | office/retail/etc + for_rent |
+| `LAND` | Land | land |
+
+```bash
+# Query by PropertyClass
+GET /odata/Property?$filter=PropertyClass eq 'RLSE'  # All rentals
+GET /odata/Property?$filter=PropertyClass eq 'COMS'  # Commercial for sale
+```
+
 See [Field Mapping](docs/mapping.md) for complete mapping reference.
 
 ---

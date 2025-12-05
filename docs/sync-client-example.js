@@ -7,8 +7,16 @@
  * - Parallel requests for maximum throughput
  * - Retry logic with exponential backoff
  * - Progress tracking
+ * - PropertyClass filtering (RESI, RLSE, COMS, COML, LAND)
  * 
  * No dependencies - works in browser and Node.js (18+)
+ * 
+ * PropertyClass Values:
+ *   RESI = Residential Sale
+ *   RLSE = Residential Lease (Rental)
+ *   COMS = Commercial Sale
+ *   COML = Commercial Lease
+ *   LAND = Land
  */
 
 // =============================================================================
