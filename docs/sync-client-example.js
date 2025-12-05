@@ -8,6 +8,7 @@
  * - Retry logic with exponential backoff
  * - Progress tracking
  * - PropertyClass filtering (RESI, RLSE, COMS, COML, LAND)
+ * - DevelopmentStatus filtering (Proposed, Under Construction, Complete)
  * 
  * No dependencies - works in browser and Node.js (18+)
  * 
@@ -17,6 +18,12 @@
  *   COMS = Commercial Sale
  *   COML = Commercial Lease
  *   LAND = Land
+ * 
+ * DevelopmentStatus Values:
+ *   Proposed = Off-plan, not yet started
+ *   Under Construction = Currently being built
+ *   Complete = Finished construction
+ *   null = Unknown/not specified
  */
 
 // =============================================================================

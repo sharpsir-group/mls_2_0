@@ -8,6 +8,19 @@
  * - Retry logic with exponential backoff
  * - Progress tracking
  * - TypeScript types
+ * 
+ * PropertyClass Values:
+ *   RESI = Residential Sale
+ *   RLSE = Residential Lease (Rental)
+ *   COMS = Commercial Sale
+ *   COML = Commercial Lease
+ *   LAND = Land
+ * 
+ * DevelopmentStatus Values:
+ *   Proposed = Off-plan, not yet started
+ *   Under Construction = Currently being built
+ *   Complete = Finished construction
+ *   null = Unknown/not specified
  */
 
 // =============================================================================
@@ -22,6 +35,7 @@ export interface Property {
   StandardStatus: 'Active' | 'Pending' | 'Closed' | 'Withdrawn';
   PropertyType: string;
   PropertyClass: 'RESI' | 'RLSE' | 'COMS' | 'COML' | 'LAND';  // Sale vs Lease classification
+  DevelopmentStatus?: 'Proposed' | 'Under Construction' | 'Complete' | null;  // Construction stage
   City: string;
   StateOrProvince?: string;
   PostalCode?: string;
