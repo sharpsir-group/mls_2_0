@@ -630,7 +630,7 @@ resources = [
     {"name": "Property", "bronze": "qobrix_bronze.properties", "gold": "reso_gold.property", "key_field": "ListingKey"},
     {"name": "Member", "bronze": ["qobrix_bronze.agents", "qobrix_bronze.users"], "gold": "reso_gold.member", "key_field": "MemberKey"},
     {"name": "Office", "bronze": "qobrix_bronze.agents", "gold": "reso_gold.office", "key_field": "OfficeKey"},
-    {"name": "Media", "bronze": "qobrix_bronze.property_media", "gold": "reso_gold.media", "key_field": "MediaKey"},
+    {"name": "Media", "bronze": "qobrix_bronze.property_media", "gold": "reso_gold.media", "key_field": "MediaKey", "note": "Includes direct property media + project media"},
     {"name": "Contacts", "bronze": "qobrix_bronze.contacts", "gold": "reso_gold.contacts", "key_field": "ContactKey"},
     {"name": "ShowingAppointment", "bronze": "qobrix_bronze.property_viewings", "gold": "reso_gold.showing_appointment", "key_field": "ShowingAppointmentKey"},
 ]
@@ -651,7 +651,15 @@ for res in resources:
                     pass
         else:
             try:
-                bronze_count = spark.sql(f"SELECT COUNT(*) as c FROM {res['bronze']}").collect()[0]["c"]
+                # For Media, count both direct property media and project media
+                if res["name"] == "Media":
+                    # Count direct property media
+                    direct_count = spark.sql(f"SELECT COUNT(*) as c FROM {res['bronze']} WHERE (related_model IS NULL OR related_model = '' OR related_model != 'Projects')").collect()[0]["c"]
+                    # Count project media
+                    project_count = spark.sql(f"SELECT COUNT(*) as c FROM {res['bronze']} WHERE related_model = 'Projects'").collect()[0]["c"]
+                    bronze_count = direct_count + project_count
+                else:
+                    bronze_count = spark.sql(f"SELECT COUNT(*) as c FROM {res['bronze']}").collect()[0]["c"]
             except:
                 bronze_count = 0
         
@@ -733,6 +741,58 @@ try:
         print(f"   ✅ Media -> Property: All ResourceRecordKey references valid")
 except Exception as e:
     print(f"   ⚪ Media -> Property: Skipped ({str(e)[:30]})")
+
+# Check Project Media -> Property linkage
+try:
+    # Count properties with projects
+    props_with_projects = spark.sql("""
+        SELECT COUNT(DISTINCT p.id) as cnt
+        FROM qobrix_bronze.properties p
+        WHERE p.project IS NOT NULL AND p.project != ''
+    """).collect()[0]["cnt"]
+    
+    # Count project media items in bronze
+    project_media_bronze = spark.sql("""
+        SELECT COUNT(*) as cnt
+        FROM qobrix_bronze.property_media m
+        WHERE m.related_model = 'Projects'
+    """).collect()[0]["cnt"]
+    
+    # Count media linked to properties via projects in gold
+    project_media_gold = spark.sql("""
+        SELECT COUNT(DISTINCT m.MediaKey) as cnt
+        FROM reso_gold.media m
+        INNER JOIN reso_gold.property p ON m.ResourceRecordKey = p.ListingKey
+        INNER JOIN qobrix_bronze.properties bp ON p.X_QobrixId = bp.id
+        WHERE bp.project IS NOT NULL AND bp.project != ''
+    """).collect()[0]["cnt"]
+    
+    # Count total media for properties with projects
+    total_media_for_projects = spark.sql("""
+        SELECT COUNT(*) as cnt
+        FROM reso_gold.media m
+        INNER JOIN reso_gold.property p ON m.ResourceRecordKey = p.ListingKey
+        INNER JOIN qobrix_bronze.properties bp ON p.X_QobrixId = bp.id
+        WHERE bp.project IS NOT NULL AND bp.project != ''
+    """).collect()[0]["cnt"]
+    
+    print(f"\n   📊 Project Media Statistics:")
+    print(f"      Properties with projects: {props_with_projects}")
+    print(f"      Project media in bronze: {project_media_bronze}")
+    print(f"      Total media for project properties in gold: {total_media_for_projects}")
+    
+    if props_with_projects > 0 and project_media_bronze > 0:
+        if total_media_for_projects >= project_media_bronze:
+            print(f"   ✅ Project Media: All project media linked to properties")
+        else:
+            missing = project_media_bronze - total_media_for_projects
+            fk_issues.append(f"Project Media: {missing} project media items not linked to properties")
+            print(f"   ⚠️ Project Media: {missing} project media items may not be linked to properties")
+    else:
+        print(f"   ⚪ Project Media: No project media to verify")
+        
+except Exception as e:
+    print(f"   ⚪ Project Media Verification: Skipped ({str(e)[:30]})")
 
 # Check ShowingAppointment -> Property (ListingKey)
 try:

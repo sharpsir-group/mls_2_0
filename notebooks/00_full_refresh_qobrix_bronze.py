@@ -142,6 +142,7 @@ def fetch_paginated(endpoint: str, max_records: int = None, page_size: int = 100
 def fetch_media_for_properties(properties: list, categories: list = ["photos", "documents", "floorplans"]) -> list:
     """Fetch media for properties using correct endpoint: /media/by-category/{category}/Properties/{id}"""
     all_media = []
+    base_url = api_base_url.replace("/api/v2", "")  # Extract base URL for full media URLs
     
     for i, prop in enumerate(properties):
         prop_id = prop.get("id")
@@ -158,6 +159,11 @@ def fetch_media_for_properties(properties: list, categories: list = ["photos", "
                     for m in media_data:
                         m["property_id"] = prop_id
                         m["media_category"] = category
+                        # Build full URL from file.href if it's relative
+                        if m.get("file", {}).get("href"):
+                            href = m["file"]["href"]
+                            if href.startswith("/"):
+                                m["file"]["href"] = f"{base_url}{href}"
                     all_media.extend(media_data)
                     
             except Exception as e:
@@ -165,6 +171,42 @@ def fetch_media_for_properties(properties: list, categories: list = ["photos", "
         
         if (i + 1) % 10 == 0:
             print(f"   Processed {i + 1}/{len(properties)} properties, {len(all_media)} media items")
+    
+    return all_media
+
+
+def fetch_media_for_projects(projects: list, categories: list = ["photos", "documents", "floorplans"]) -> list:
+    """Fetch media for projects using endpoint: /media/by-category/{category}/Projects/{id}"""
+    all_media = []
+    base_url = api_base_url.replace("/api/v2", "")  # Extract base URL for full media URLs
+    
+    for i, project in enumerate(projects):
+        project_id = project.get("id")
+        if not project_id:
+            continue
+        
+        for category in categories:
+            try:
+                url = f"{api_base_url}/media/by-category/{category}/Projects/{project_id}"
+                response = requests.get(url, headers=headers, timeout=timeout_seconds)
+                
+                if response.status_code == 200:
+                    media_data = response.json().get("data", [])
+                    for m in media_data:
+                        m["project_id"] = project_id  # Store project ID for linking
+                        m["media_category"] = category
+                        # Build full URL from file.href if it's relative
+                        if m.get("file", {}).get("href"):
+                            href = m["file"]["href"]
+                            if href.startswith("/"):
+                                m["file"]["href"] = f"{base_url}{href}"
+                    all_media.extend(media_data)
+                    
+            except Exception as e:
+                pass  # Skip errors silently for media
+        
+        if (i + 1) % 10 == 0:
+            print(f"   Processed {i + 1}/{len(projects)} projects, {len(all_media)} media items")
     
     return all_media
 
@@ -290,7 +332,27 @@ print(f"   Property Finder AE locations: {len(property_finder_ae_locations)}")
 
 print("\n1️⃣3️⃣ Property Media (photos, documents, floorplans)...")
 property_media = fetch_media_for_properties(properties, categories=["photos", "documents", "floorplans"])
-print(f"   Total media items: {len(property_media)}")
+print(f"   Total property media items: {len(property_media)}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Fetch Project Media (linked to properties)
+
+# COMMAND ----------
+
+print("\n1️⃣4️⃣ Project Media (photos, documents, floorplans)...")
+project_media = fetch_media_for_projects(projects, categories=["photos", "documents", "floorplans"])
+print(f"   Total project media items: {len(project_media)}")
+
+# Merge project media into property_media with related_model='Projects'
+for m in project_media:
+    m["related_model"] = "Projects"
+    m["related_id"] = m.get("project_id")  # Store project ID in related_id
+    m.pop("project_id", None)  # Remove project_id, will link via property.project
+
+property_media.extend(project_media)
+print(f"   Combined media items: {len(property_media)}")
 
 # COMMAND ----------
 
