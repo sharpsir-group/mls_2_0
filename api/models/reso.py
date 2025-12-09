@@ -77,6 +77,7 @@ class Property(BaseModel):
     YearBuilt: Optional[int] = None
     
     # Dates
+    OriginalEntryTimestamp: Optional[str] = None
     ListingContractDate: Optional[str] = None
     ModificationTimestamp: Optional[str] = None
     

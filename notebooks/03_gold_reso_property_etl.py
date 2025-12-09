@@ -192,8 +192,9 @@ SELECT
     END                                           AS LeaseAmountFrequency,
 
     -- Dates
-    s.listing_date                                AS ListingContractDate,
-    s.modified_ts                                 AS ModificationTimestamp,
+    s.created_ts                                 AS OriginalEntryTimestamp,
+    s.listing_date                               AS ListingContractDate,
+    s.modified_ts                                AS ModificationTimestamp,
 
     -- Address / location
     s.street                                      AS UnparsedAddress,
@@ -462,7 +463,6 @@ SELECT
     s.qobrix_source                               AS X_QobrixSource,
     b.legacy_id                                   AS X_QobrixLegacyId,
     b.seller                                      AS X_QobrixSellerId,
-    s.created_ts                                  AS X_QobrixCreated,
     s.modified_ts                                 AS X_QobrixModified,
 
     -- ETL metadata (gold layer)

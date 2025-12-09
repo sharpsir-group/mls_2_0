@@ -140,8 +140,9 @@ SELECT
         WHEN 'annually' THEN 'Annually'
         ELSE b.rent_frequency
     END                                           AS LeaseAmountFrequency,
-    s.listing_date                                AS ListingContractDate,
-    s.modified_ts                                 AS ModificationTimestamp,
+    s.created_ts                                 AS OriginalEntryTimestamp,
+    s.listing_date                               AS ListingContractDate,
+    s.modified_ts                                AS ModificationTimestamp,
     s.street                                      AS UnparsedAddress,
     s.city                                        AS City,
     s.state                                       AS StateOrProvince,
@@ -328,7 +329,6 @@ SELECT
     s.qobrix_source                               AS X_QobrixSource,
     b.legacy_id                                   AS X_QobrixLegacyId,
     b.seller                                      AS X_QobrixSellerId,
-    s.created_ts                                  AS X_QobrixCreated,
     s.modified_ts                                 AS X_QobrixModified,
 
     CURRENT_TIMESTAMP()                           AS etl_timestamp,
