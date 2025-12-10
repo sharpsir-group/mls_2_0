@@ -186,24 +186,35 @@ for qprop in qobrix_props.get('data', []):
     listing_key = f"QOBRIX_{qid}"
     
     # Get direct property photos from Qobrix
+    # Note: Qobrix may return project media via /media/by-category/photos/Properties/{id}
+    # Filter out project media (related_model='Projects') to get truly direct media
     qobrix_direct_count = 0
+    qobrix_property_media_ids = set()
     try:
         qobrix_photos = qobrix_get(f'/media/by-category/photos/Properties/{qid}')
-        qobrix_direct_count = len(qobrix_photos.get('data', []))
+        for m in qobrix_photos.get('data', []):
+            # Only count as direct if it's not project media
+            if m.get('related_model') != 'Projects':
+                qobrix_direct_count += 1
+            qobrix_property_media_ids.add(m.get('id'))
     except:
         pass
     
     # Get project photos if property has a project
+    # Only count project media that wasn't already returned via property endpoint
     qobrix_project_count = 0
     if project_id:
         try:
             project_photos = qobrix_get(f'/media/by-category/photos/Projects/{project_id}')
-            qobrix_project_count = len(project_photos.get('data', []))
+            for m in project_photos.get('data', []):
+                if m.get('id') not in qobrix_property_media_ids:
+                    qobrix_project_count += 1
+                    qobrix_property_media_ids.add(m.get('id'))
         except:
             pass
     
-    # Total expected media (direct + project)
-    qobrix_total_count = qobrix_direct_count + qobrix_project_count
+    # Total expected media (unique media items)
+    qobrix_total_count = len(qobrix_property_media_ids)
     
     # Get media from RESO API
     reso_media = reso_get(f"/odata/Media?$filter=ResourceRecordKey eq '{listing_key}'&$count=true")

@@ -57,8 +57,8 @@ except:
 transform_sql = """
 CREATE OR REPLACE TABLE qobrix_silver.media AS
 
--- Part 1: Direct property media (property_media with property_id)
-SELECT
+-- Part 1: Direct property media (property_media with property_id, excluding project media)
+SELECT DISTINCT
     CAST(m.id AS STRING) AS media_id,
     CAST(m.property_id AS STRING) AS property_id,
     
@@ -112,7 +112,8 @@ WHERE m.id IS NOT NULL AND m.id != ''
 UNION ALL
 
 -- Part 2: Project media linked to properties (property_media with related_model='Projects')
-SELECT
+-- First, get unique project media (only with property_id=nan/NULL/empty), then join to all properties in project
+SELECT DISTINCT
     CAST(m.id AS STRING) AS media_id,
     CAST(p.id AS STRING) AS property_id,  -- Link via property.project = project media related_id
     
@@ -156,13 +157,35 @@ SELECT
     CURRENT_TIMESTAMP() AS etl_timestamp,
     CONCAT('silver_media_batch_', CURRENT_DATE()) AS etl_batch_id
 
-FROM qobrix_bronze.property_media m
+FROM (
+    -- Subquery: Get unique project media (only with property_id=nan/NULL/empty)
+    SELECT DISTINCT
+        id,
+        related_id,
+        file_href,
+        file_mime_type,
+        file_filename,
+        file_filesize,
+        display_order,
+        media_category,
+        category_name,
+        created,
+        modified
+    FROM qobrix_bronze.property_media
+    WHERE id IS NOT NULL AND id != ''
+      AND related_model = 'Projects'
+      AND related_id IS NOT NULL AND related_id != ''
+      -- Only use project media that doesn't have a specific property_id (to avoid duplicates)
+      AND (
+        property_id IS NULL 
+        OR TRIM(CAST(property_id AS STRING)) = '' 
+        OR LOWER(TRIM(CAST(property_id AS STRING))) = 'nan'
+        OR LOWER(TRIM(CAST(property_id AS STRING))) = 'none'
+      )
+) m
 INNER JOIN qobrix_bronze.properties p
     ON CAST(m.related_id AS STRING) = CAST(p.project AS STRING)
-WHERE m.id IS NOT NULL AND m.id != ''
-  AND m.related_model = 'Projects'
-  AND m.related_id IS NOT NULL AND m.related_id != ''
-  AND p.project IS NOT NULL AND p.project != ''
+WHERE p.project IS NOT NULL AND p.project != ''
 """
 
 print("📊 Creating silver media table...")
