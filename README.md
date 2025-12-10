@@ -120,7 +120,10 @@ Generate OAuth secrets with: `openssl rand -hex 32`
 ./scripts/run_pipeline.sh silver         # All silver tables
 ./scripts/run_pipeline.sh gold           # All RESO resources
 ./scripts/run_pipeline.sh cdc            # Smart incremental sync
-./scripts/run_pipeline.sh integrity      # Integrity test
+./scripts/run_pipeline.sh integrity      # Databricks integrity test
+
+# Verify API data matches
+./scripts/verify_api_integrity.sh        # Qobrix ↔ RESO API test
 ```
 
 ---
@@ -165,6 +168,8 @@ See **[Integration Guide](docs/integration-guide.md)** for:
 |----------|-------------|
 | [Integration Guide](docs/integration-guide.md) | Connect your app to the RESO API |
 | [Field Mapping](docs/mapping.md) | Qobrix → RESO field mapping |
+| [Sync Client (TS)](docs/sync-client-example.ts) | TypeScript MLS sync client example |
+| [Sync Client (JS)](docs/sync-client-example.js) | Vanilla JS MLS sync client example |
 | [Qobrix OpenAPI](docs/qobrix_openapi.yaml) | Qobrix API specification |
 
 ### External Resources
@@ -197,7 +202,8 @@ mls_2_0/
 └── scripts/
     ├── import_notebooks.sh     # Import to Databricks
     ├── pm2-manage.sh           # API management
-    └── run_pipeline.sh         # ETL orchestration
+    ├── run_pipeline.sh         # ETL orchestration
+    └── verify_api_integrity.sh # Qobrix ↔ RESO API verification
 ```
 
 ---
@@ -229,7 +235,7 @@ mls2 (catalog)
 | Property | properties | [Property](https://ddwiki.reso.org/display/DDW20/Property+Resource) |
 | Member | agents + users | [Member](https://ddwiki.reso.org/display/DDW20/Member+Resource) |
 | Office | agents (agencies) | [Office](https://ddwiki.reso.org/display/DDW20/Office+Resource) |
-| Media | property_media | [Media](https://ddwiki.reso.org/display/DDW20/Media+Resource) |
+| Media | property_media + project_media | [Media](https://ddwiki.reso.org/display/DDW20/Media+Resource) |
 | Contacts | contacts | [Contacts](https://ddwiki.reso.org/display/DDW20/Contacts+Resource) |
 | ShowingAppointment | property_viewings | [ShowingAppointment](https://ddwiki.reso.org/display/DDW20/ShowingAppointment+Resource) |
 
