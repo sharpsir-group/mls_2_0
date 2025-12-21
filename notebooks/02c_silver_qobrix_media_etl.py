@@ -112,7 +112,8 @@ WHERE m.id IS NOT NULL AND m.id != ''
 UNION ALL
 
 -- Part 2: Project media linked to properties (property_media with related_model='Projects')
--- First, get unique project media (only with property_id=nan/NULL/empty), then join to all properties in project
+-- Get unique project media IDs (regardless of property_id), then join to all properties in project
+-- Note: Bronze CDC may set property_id on project media, but we link project media to ALL properties in the project
 SELECT DISTINCT
     CAST(m.id AS STRING) AS media_id,
     CAST(p.id AS STRING) AS property_id,  -- Link via property.project = project media related_id
@@ -158,7 +159,9 @@ SELECT DISTINCT
     CONCAT('silver_media_batch_', CURRENT_DATE()) AS etl_batch_id
 
 FROM (
-    -- Subquery: Get unique project media (only with property_id=nan/NULL/empty)
+    -- Subquery: Get unique project media IDs (regardless of property_id)
+    -- The bronze CDC may set property_id on project media, but we want to link
+    -- project media to ALL properties in the project, so we get DISTINCT media IDs
     SELECT DISTINCT
         id,
         related_id,
@@ -175,13 +178,9 @@ FROM (
     WHERE id IS NOT NULL AND id != ''
       AND related_model = 'Projects'
       AND related_id IS NOT NULL AND related_id != ''
-      -- Only use project media that doesn't have a specific property_id (to avoid duplicates)
-      AND (
-        property_id IS NULL 
-        OR TRIM(CAST(property_id AS STRING)) = '' 
-        OR LOWER(TRIM(CAST(property_id AS STRING))) = 'nan'
-        OR LOWER(TRIM(CAST(property_id AS STRING))) = 'none'
-      )
+      -- Note: We don't filter by property_id here because bronze CDC may set
+      -- property_id on project media. We get DISTINCT media IDs and link them
+      -- to all properties in the project via the join below.
 ) m
 INNER JOIN qobrix_bronze.properties p
     ON CAST(m.related_id AS STRING) = CAST(p.project AS STRING)

@@ -659,7 +659,7 @@ for res in resources:
                     project_count = spark.sql(f"SELECT COUNT(*) as c FROM {res['bronze']} WHERE related_model = 'Projects'").collect()[0]["c"]
                     bronze_count = direct_count + project_count
                 else:
-                bronze_count = spark.sql(f"SELECT COUNT(*) as c FROM {res['bronze']}").collect()[0]["c"]
+                    bronze_count = spark.sql(f"SELECT COUNT(*) as c FROM {res['bronze']}").collect()[0]["c"]
             except:
                 bronze_count = 0
         
