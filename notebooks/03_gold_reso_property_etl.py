@@ -227,8 +227,9 @@ SELECT
     -- ═══════════════════════════════════════════════════════════════════════════
     
     -- Building Age (RESO standard)
-    TRY_CAST(b.construction_year AS INT)          AS YearBuilt,
-    TRY_CAST(b.renovation_year AS INT)            AS YearBuiltEffective,
+    -- Fix: Cast decimal strings (e.g., "2023.0") to DOUBLE first, then INT
+    TRY_CAST(TRY_CAST(b.construction_year AS DOUBLE) AS INT)          AS YearBuilt,
+    TRY_CAST(TRY_CAST(b.renovation_year AS DOUBLE) AS INT)            AS YearBuiltEffective,
     
     -- View (RESO standard - multi-value lookup)
     b.view                                        AS View,
@@ -270,8 +271,9 @@ SELECT
     )                                             AS ParkingFeatures,
     
     -- Stories (RESO standard)
-    TRY_CAST(b.floors_building AS INT)            AS StoriesTotal,
-    TRY_CAST(b.floor_number AS INT)               AS Stories,
+    -- Fix: Cast decimal strings (e.g., "4.0", "1.0") to DOUBLE first, then INT
+    TRY_CAST(TRY_CAST(b.floors_building AS DOUBLE) AS INT)            AS StoriesTotal,
+    TRY_CAST(TRY_CAST(b.floor_number AS DOUBLE) AS INT)               AS Stories,
     
     -- Flooring (RESO standard)
     b.flooring                                    AS Flooring,
@@ -332,7 +334,8 @@ SELECT
     b.floor_type                                  AS X_FloorType,
     b.new_build                                   AS X_NewBuild,
     TRY_CAST(b.height AS DECIMAL(10,2))           AS X_Height,
-    TRY_CAST(b.storeys_max_floor AS INT)          AS X_MaxFloor,
+    -- Fix: Cast decimal strings to DOUBLE first, then INT
+    TRY_CAST(TRY_CAST(b.storeys_max_floor AS DOUBLE) AS INT)          AS X_MaxFloor,
     b.unit_number                                 AS X_UnitNumber,
     
     -- Energy & Utilities (Qobrix-specific details)

@@ -162,8 +162,9 @@ SELECT
          ELSE NULL END                            AS ListOfficeKey,
 
     -- RESO STANDARD FIELDS (Mapped from Qobrix)
-    TRY_CAST(b.construction_year AS INT)          AS YearBuilt,
-    TRY_CAST(b.renovation_year AS INT)            AS YearBuiltEffective,
+    -- Fix: Cast decimal strings (e.g., "2023.0") to DOUBLE first, then INT
+    TRY_CAST(TRY_CAST(b.construction_year AS DOUBLE) AS INT)          AS YearBuilt,
+    TRY_CAST(TRY_CAST(b.renovation_year AS DOUBLE) AS INT)            AS YearBuiltEffective,
     b.view                                        AS View,
     b.pool_features                               AS PoolFeatures,
     b.heating                                     AS Heating,
@@ -189,8 +190,9 @@ SELECT
         CASE WHEN COALESCE(b.uncovered_parking, '') != '' AND b.uncovered_parking != '0' THEN 'Uncovered' ELSE NULL END,
         CASE WHEN COALESCE(b.parking, '') != '' THEN b.parking ELSE NULL END
     )                                             AS ParkingFeatures,
-    TRY_CAST(b.floors_building AS INT)            AS StoriesTotal,
-    TRY_CAST(b.floor_number AS INT)               AS Stories,
+    -- Fix: Cast decimal strings (e.g., "4.0", "1.0") to DOUBLE first, then INT
+    TRY_CAST(TRY_CAST(b.floors_building AS DOUBLE) AS INT)            AS StoriesTotal,
+    TRY_CAST(TRY_CAST(b.floor_number AS DOUBLE) AS INT)               AS Stories,
     b.flooring                                    AS Flooring,
     b.fireplace_features                          AS FireplaceFeatures,
     b.waterfront_features                         AS WaterfrontFeatures,
@@ -228,7 +230,8 @@ SELECT
     b.floor_type                                  AS X_FloorType,
     b.new_build                                   AS X_NewBuild,
     TRY_CAST(b.height AS DECIMAL(10,2))           AS X_Height,
-    TRY_CAST(b.storeys_max_floor AS INT)          AS X_MaxFloor,
+    -- Fix: Cast decimal strings to DOUBLE first, then INT
+    TRY_CAST(TRY_CAST(b.storeys_max_floor AS DOUBLE) AS INT)          AS X_MaxFloor,
     b.unit_number                                 AS X_UnitNumber,
     b.energy_efficiency_grade                     AS X_EnergyEfficiencyGrade,
     b.energy_consumption_rating                   AS X_EnergyConsumptionRating,
