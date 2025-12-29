@@ -1,0 +1,29 @@
+# Cursor Rules - Local Configuration
+
+## Auxiliary Files Location
+
+**IMPORTANT**: When generating auxiliary files (scripts, markdown documentation, temporary analysis tools, data exports), place them in the `tmp/` directory:
+
+- Auxiliary Python scripts → `tmp/script_name.py`
+- Temporary markdown files → `tmp/file_name.md`
+- Data export scripts → `tmp/export_name.py`
+- JSON/CSV exports → `tmp/export_name.json` or `tmp/export_name.csv`
+- Analysis scripts → `tmp/analysis_name.py`
+
+## Examples
+
+✅ **Correct**:
+- `tmp/show_developers_projects.py`
+- `tmp/data_analysis.md`
+- `tmp/export_data.py`
+
+❌ **Incorrect**:
+- `scripts/show_developers_projects.py` (scripts/ is for production scripts)
+- `docs/data_analysis.md` (docs/ is for permanent documentation)
+
+## Rationale
+
+The `tmp/` folder keeps auxiliary/temporary files separate from the main project structure, making it easier to:
+- Identify temporary vs. permanent files
+- Clean up generated files
+- Keep the main project structure clean

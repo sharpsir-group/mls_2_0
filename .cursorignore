@@ -4,14 +4,17 @@
 *.md
 !README.md
 !CHANGELOG.md
+!tmp/*.md
 
-# Temporary files and directories (ignore tmp/ directory contents)
+# Temporary files and directories (ignore tmp/ directory contents except scripts and docs)
 tmp/*
 !tmp/.gitkeep
+!tmp/*.md
+!tmp/*.py
+!tmp/README.md
 *.tmp
 *_temp.*
 *_test_temp.*
 
 # But allow if explicitly in path when user requests
 # This prevents automatic creation but allows explicit requests
-

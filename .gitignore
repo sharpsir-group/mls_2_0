@@ -4,3 +4,10 @@ tmp/
 __pycache__/
 *.pyc
 api/logs/
+# Ignore generated files in tmp/
+tmp/*.json
+tmp/*.csv
+tmp/csv_exports/
+tmp/*.log
+tmp/__pycache__/
+tmp/*.pyc
