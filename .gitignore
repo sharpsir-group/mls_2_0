@@ -3,15 +3,5 @@
 __pycache__/
 *.pyc
 api/logs/
-# Ignore generated files in tmp/ (but allow .gitkeep, README.md, and .py/.md files)
-tmp/*
-!tmp/.gitkeep
-!tmp/README.md
-!tmp/*.py
-!tmp/*.md
-tmp/*.json
-tmp/*.csv
-tmp/csv_exports/
-tmp/*.log
-tmp/__pycache__/
-tmp/*.pyc
+# Ignore entire tmp/ directory
+tmp/
