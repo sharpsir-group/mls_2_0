@@ -58,9 +58,11 @@ except Exception as e:
 # COMMAND ----------
 
 if contacts_count > 0:
-    create_contacts_sql = """
-    CREATE OR REPLACE TABLE reso_gold.contacts AS
+    # Use DataFrame API for reliable full table replacement
+    # This avoids Delta Lake transaction issues with CREATE OR REPLACE TABLE
+    print("📊 Building RESO Contacts DataFrame from Silver...")
     
+    contacts_df = spark.sql("""
     SELECT
         -- RESO core identifiers
         CONCAT('QOBRIX_CONTACT_', c.contact_id)      AS ContactKey,
@@ -138,10 +140,15 @@ if contacts_count > 0:
         CONCAT('contacts_batch_', CURRENT_DATE())    AS etl_batch_id
     
     FROM qobrix_silver.contact c
-    """
+    """)
     
-    print("📊 Creating gold RESO Contacts table...")
-    spark.sql(create_contacts_sql)
+    df_count = contacts_df.count()
+    print(f"📊 DataFrame has {df_count} rows")
+    
+    # Write using DataFrame API with overwrite mode (more reliable than CREATE OR REPLACE)
+    print("📊 Writing to Gold RESO Contacts table...")
+    contacts_df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable("reso_gold.contacts")
+    print("✅ Write completed")
 else:
     # Create empty table with correct schema
     print("📊 Creating empty RESO Contacts table (no source data)...")

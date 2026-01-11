@@ -6,12 +6,18 @@
 !CHANGELOG.md
 !tmp/*.md
 
-# Temporary files and directories (ignore tmp/ directory contents except scripts and docs)
+# Temporary files and directories
+# tmp/ folder hosts auxiliary scripts and markdown files - these should be accessible
 tmp/*
 !tmp/.gitkeep
+!tmp/README.md
 !tmp/*.md
 !tmp/*.py
-!tmp/README.md
+!tmp/*.sh
+!tmp/*.json
+!tmp/*.csv
+
+# Other temporary file patterns
 *.tmp
 *_temp.*
 *_test_temp.*

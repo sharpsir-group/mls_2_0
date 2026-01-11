@@ -285,6 +285,11 @@ case "$1" in
     cdc-gold)
         echo "🔄 CDC Mode: Incremental gold sync"
         run_notebook "MLS 2.0 - RESO CDC Gold Property" "/Shared/mls_2_0/03_cdc_gold_reso_property_etl" "false"
+        run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "/Shared/mls_2_0/03d_cdc_gold_reso_contacts_etl" "false"
+        ;;
+    cdc-gold-contacts)
+        echo "🔄 CDC Mode: Incremental gold contacts sync"
+        run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "/Shared/mls_2_0/03d_cdc_gold_reso_contacts_etl" "false"
         ;;
     cdc-all)
         echo "🔄 CDC Mode: Full incremental pipeline (ALL entities - forced)"
@@ -299,12 +304,12 @@ case "$1" in
         run_notebook "MLS 2.0 - Qobrix Silver Media ETL" "/Shared/mls_2_0/02c_silver_qobrix_media_etl" "false"
         run_notebook "MLS 2.0 - Qobrix Silver Viewing ETL" "/Shared/mls_2_0/02d_silver_qobrix_viewing_etl" "false"
         echo ""
-        echo "🏆 Stage 3: Gold (all RESO entities)"
-        run_notebook "MLS 2.0 - RESO Gold Property ETL" "/Shared/mls_2_0/03_gold_reso_property_etl" "false"
+        echo "🏆 Stage 3: Gold (all RESO entities - CDC where available)"
+        run_notebook "MLS 2.0 - RESO CDC Gold Property" "/Shared/mls_2_0/03_cdc_gold_reso_property_etl" "false"
         run_notebook "MLS 2.0 - RESO Gold Member ETL" "/Shared/mls_2_0/03a_gold_reso_member_etl" "false"
         run_notebook "MLS 2.0 - RESO Gold Office ETL" "/Shared/mls_2_0/03b_gold_reso_office_etl" "false"
         run_notebook "MLS 2.0 - RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" "false"
-        run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "/Shared/mls_2_0/03d_gold_reso_contacts_etl" "false"
+        run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "/Shared/mls_2_0/03d_cdc_gold_reso_contacts_etl" "false"
         run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "false"
         echo ""
         SCRIPT_END_TIME=$(date +%s)
@@ -419,7 +424,7 @@ except Exception as ex:
             echo "🏆 Stage 3: Gold (changed entities only)"
             
             if [ "$PROPS_CHANGED" -gt 0 ]; then
-                run_notebook "MLS 2.0 - RESO Gold Property ETL" "/Shared/mls_2_0/03_gold_reso_property_etl" "false"
+                run_notebook "MLS 2.0 - RESO CDC Gold Property" "/Shared/mls_2_0/03_cdc_gold_reso_property_etl" "false"
                 run_notebook "MLS 2.0 - RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" "false"
             fi
             if [ "$AGENTS_CHANGED" -gt 0 ]; then
@@ -427,7 +432,7 @@ except Exception as ex:
                 run_notebook "MLS 2.0 - RESO Gold Office ETL" "/Shared/mls_2_0/03b_gold_reso_office_etl" "false"
             fi
             if [ "$CONTACTS_CHANGED" -gt 0 ]; then
-                run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "/Shared/mls_2_0/03d_gold_reso_contacts_etl" "false"
+                run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "/Shared/mls_2_0/03d_cdc_gold_reso_contacts_etl" "false"
             fi
             if [ "$VIEWINGS_CHANGED" -gt 0 ]; then
                 run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "false"
@@ -503,7 +508,8 @@ except Exception as ex:
         echo "  cdc-all             Force CDC ALL entities (bronze -> silver -> gold)"
         echo "  cdc-bronze          CDC bronze only (fetch changed records from API)"
         echo "  cdc-silver          CDC silver property only (incremental transform)"
-        echo "  cdc-gold            CDC gold property only (incremental RESO transform)"
+        echo "  cdc-gold            CDC gold (property + contacts) incremental RESO transform"
+        echo "  cdc-gold-contacts   CDC gold contacts only (incremental RESO transform)"
         exit 1
         ;;
 esac
