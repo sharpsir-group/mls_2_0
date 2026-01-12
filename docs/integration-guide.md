@@ -1,23 +1,40 @@
-# Integration Guide
+# RESO Web API - Integration Guide
 
-Connect your real estate website to the RESO Web API.
+Connect your real estate application to the RESO Web API.
 
-## API Base URL
+## Quick Start
 
+```javascript
+const API_URL = 'https://your-server.com/reso';
+
+// 1. Get OAuth token
+const tokenResponse = await fetch(`${API_URL}/oauth/token`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  body: `grant_type=client_credentials&client_id=${CLIENT_ID}&client_secret=${CLIENT_SECRET}`
+});
+const { access_token } = await tokenResponse.json();
+
+// 2. Fetch properties
+const response = await fetch(`${API_URL}/odata/Property?$top=20`, {
+  headers: { 'Authorization': `Bearer ${access_token}` }
+});
+const data = await response.json();
+console.log(data.value); // Array of properties
 ```
-https://your-server.com/reso
-```
+
+---
 
 ## Authentication
 
-OAuth 2.0 Client Credentials flow (RESO Web API Core compliant).
+OAuth 2.0 Client Credentials flow.
 
 ### Get Access Token
 
 ```bash
 curl -X POST https://your-server.com/reso/oauth/token \
-  -u "client_id:client_secret" \
-  -d "grant_type=client_credentials"
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials&client_id=YOUR_ID&client_secret=YOUR_SECRET"
 ```
 
 **Response:**
@@ -31,25 +48,28 @@ curl -X POST https://your-server.com/reso/oauth/token \
 
 ### Use Bearer Token
 
-```javascript
-const response = await fetch(`${API_URL}/odata/Property`, {
-  headers: { 'Authorization': `Bearer ${accessToken}` }
-});
+Include in all API requests:
+```
+Authorization: Bearer {access_token}
 ```
 
-## Available Endpoints
+---
+
+## API Endpoints
 
 | Endpoint | Description |
 |----------|-------------|
 | `POST /oauth/token` | Get OAuth access token |
 | `GET /odata/Property` | Property listings |
-| `GET /odata/Property('{key}')` | Single property |
+| `GET /odata/Property('{ListingKey}')` | Single property |
 | `GET /odata/Media` | Property photos |
 | `GET /odata/Member` | Agents |
-| `GET /odata/Office` | Offices/agencies |
+| `GET /odata/Office` | Offices |
 | `GET /odata/Contacts` | Contacts |
-| `GET /odata/ShowingAppointment` | Showing appointments |
+| `GET /odata/ShowingAppointment` | Showings |
 | `GET /docs` | Swagger UI |
+
+---
 
 ## OData Query Parameters
 
@@ -62,315 +82,225 @@ const response = await fetch(`${API_URL}/odata/Property`, {
 | `$skip` | `40` | Pagination offset |
 | `$count` | `true` | Include total count |
 
-## Common Filters
-
-```bash
-# Active properties
-$filter=StandardStatus eq 'Active'
-
-# Price range
-$filter=ListPrice ge 500000 and ListPrice lt 1000000
-
-# Bedrooms
-$filter=BedroomsTotal ge 3
-
-# City search
-$filter=contains(City,'Miami')
-
-# Combined
-$filter=StandardStatus eq 'Active' and ListPrice lt 500000 and BedroomsTotal ge 2
-```
-
-## PropertyClass (Sale vs Lease)
-
-| PropertyClass | Description |
-|---------------|-------------|
-| `RESI` | Residential Sale |
-| `RLSE` | Residential Lease (Rental) |
-| `COMS` | Commercial Sale |
-| `COML` | Commercial Lease |
-| `LAND` | Land |
-
-```bash
-# Rentals only
-$filter=PropertyClass eq 'RLSE'
-
-# For-sale only
-$filter=PropertyClass eq 'RESI' or PropertyClass eq 'COMS' or PropertyClass eq 'LAND'
-```
-
-## Property Fields
-
-### Core Fields
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `ListingKey` | string | Unique ID |
-| `ListPrice` | number | Listing price |
-| `ListPriceCurrencyCode` | string | Currency (EUR, USD) |
-| `StandardStatus` | string | Active, Pending, Closed, Withdrawn |
-| `PropertyType` | string | Apartment, House, Land |
-| `PropertyClass` | string | RESI, RLSE, COMS, COML, LAND |
-| `City` | string | City name |
-| `BedroomsTotal` | integer | Bedrooms |
-| `BathroomsTotalInteger` | integer | Bathrooms |
-| `LivingArea` | number | Interior area (sqm) |
-| `Latitude` / `Longitude` | number | GPS coordinates |
-| `X_MainPhoto` | string | Main photo URL |
-
-### Extension Fields
-
-Fields prefixed with `X_` are Qobrix extensions (e.g., `X_SeaView`, `X_PrivateSwimmingPool`).
-
 ---
 
-## Sync Client Examples
+## Data Sources
 
-For complete implementations with OAuth, pagination, retry logic, and progress tracking:
+Your client may have access to one or both data sources:
 
-| File | Language | Use Case |
-|------|----------|----------|
-| [`sync-client-example.ts`](sync-client-example.ts) | TypeScript | React apps, Node.js |
-| [`sync-client-example.js`](sync-client-example.js) | Vanilla JS | Browser, Node.js 18+ |
-
-### Quick Start
-
-```javascript
-const client = new MLSSyncClient({
-  baseUrl: 'https://your-server.com/reso',
-  clientId: 'your-client-id',
-  clientSecret: 'your-client-secret',
-});
-
-// Sync all active properties
-const properties = await client.syncAllParallel({
-  filter: "StandardStatus eq 'Active'",
-});
-```
-
-### Progress Tracking
-
-Both clients support an `onProgress` callback for UI updates:
-
-```javascript
-await client.syncAllParallel({
-  onProgress: (p) => {
-    console.log(`${p.percent}% (${p.fetched}/${p.total}) - ${p.propertiesPerSecond}/s`);
-  },
-});
-```
-
-**Progress object fields:**
-
-| Field | Description |
-|-------|-------------|
-| `percent` | Completion 0-100 |
-| `fetched` | Items fetched |
-| `total` | Total items |
-| `propertiesPerSecond` | Current speed |
-| `estimatedRemainingMs` | ETA in milliseconds |
-| `elapsedMs` | Time elapsed |
-
-### Progress Bar Examples
-
-See the usage examples section in each client file:
-
-- **Vanilla JS progress bar** → [`sync-client-example.js`](sync-client-example.js) (Section 2)
-- **React component** → [`sync-client-example.ts`](sync-client-example.ts) (Section 3)
-- **React hook** → [`sync-client-example.ts`](sync-client-example.ts) (Section 4)
-- **Two-phase sync (properties + media)** → Both files (Section 5)
-- **Animated CSS progress bar** → Both files (Section 6)
-
-### Incremental Sync
-
-Only fetch changes since last sync:
-
-```javascript
-const lastSync = new Date('2024-12-01T00:00:00Z');
-const updates = await client.syncModifiedSince(lastSync);
-```
-
-### Media (Photos)
-
-```javascript
-// Get photos for single property
-const photos = await client.getPropertyMedia('QOBRIX_123');
-
-// Bulk fetch for multiple properties
-const mediaMap = await client.getMediaForProperties(['KEY1', 'KEY2', 'KEY3']);
-
-// Full sync with media attached
-const propertiesWithMedia = await client.syncAllWithMedia();
-```
-
-**Tip:** Use `X_MainPhoto` for listing pages - no extra request needed!
-
-### Performance
-
-| Mode | Throughput |
-|------|------------|
-| Sequential | ~600 props/s |
-| Parallel (3) | ~1,200 props/s |
-
-**Tips:**
-- Use `$top=1000` for max batch size
-- Use `$select` to reduce payload
-- Use parallel mode with `maxConcurrent: 3`
-
----
-
-## TypeScript Types
-
-Available in [`sync-client-example.ts`](sync-client-example.ts):
-
-- `Property` - Property listing
-- `Media` - Photo/document
-- `SyncProgress` - Progress callback data
-- `SyncOptions` - Sync configuration
-- `ODataResponse<T>` - API response wrapper
-
----
-
-## Environment Variables
-
-```env
-VITE_RESO_API_URL=https://your-server.com/reso
-VITE_RESO_CLIENT_ID=your-client-id
-VITE_RESO_CLIENT_SECRET=your-client-secret
-```
-
----
-
-## Error Handling
-
-| Status | Description |
-|--------|-------------|
-| 401 | Token missing or expired |
-| 429 | Rate limited (retry after) |
-| 500 | Server error (retry with backoff) |
-
-The sync clients include automatic retry with exponential backoff.
-
----
-
-## RESO Compliance
-
-This API implements:
-- **OAuth 2.0 Client Credentials** (RESO Web API Core)
-- **OData 4.0** query syntax
-- **RESO Data Dictionary 2.0** field names
-
----
-
-## Multi-Tenant Data Sources (NEW)
-
-The API aggregates data from multiple sources. Your client is configured for specific office keys.
-
-### Data Sources
-
-| Office Key | Source | Data Type |
-|------------|--------|-----------|
-| `CSIR` | Qobrix CRM | Managed listings |
+| Office Key | Source | Description |
+|------------|--------|-------------|
+| `CSIR` | Qobrix | Managed listings |
 | `HSIR` | Dash/Sotheby's | Luxury listings |
 
-### Filter by Data Source
+### Filter by Source
 
 ```bash
+# All data (default)
+/odata/Property
+
 # Qobrix only
-$filter=OriginatingSystemOfficeKey eq 'CSIR'
+/odata/Property?$filter=OriginatingSystemOfficeKey eq 'CSIR'
 
 # Dash/Sotheby's only
-$filter=OriginatingSystemOfficeKey eq 'HSIR'
-
-# Combined (default if client has access to both)
-# No filter needed - returns all data client has access to
-
-# Active Dash properties
-$filter=StandardStatus eq 'Active' and OriginatingSystemOfficeKey eq 'HSIR'
+/odata/Property?$filter=OriginatingSystemOfficeKey eq 'HSIR'
 ```
 
 ### Identify Source in Results
 
 ```javascript
 properties.forEach(p => {
-  if (p.X_DataSource === 'dash_sothebys') {
-    // Sotheby's listing - has YearBuilt, View, Flooring, etc.
-    console.log(`${p.ListingKey}: ${p.View}, Built: ${p.YearBuilt}`);
-  } else {
-    // Qobrix listing - has DevelopmentStatus
-    console.log(`${p.ListingKey}: ${p.DevelopmentStatus || 'Resale'}`);
-  }
+  console.log(`${p.ListingKey}: ${p.X_DataSource}`);
+  // QOBRIX_abc123: qobrix
+  // DASH_xyz789: dash_sothebys
 });
 ```
 
 ---
 
-## Building Property Listing UI
+## Common Filters
 
-### Recommended Fields for List View
+### Status
 
-```javascript
-const listViewFields = [
-  'ListingKey',           // Unique ID
-  'ListPrice',            // Price
-  'City',                 // Location
-  'BedroomsTotal',        // Beds
-  'BathroomsTotalInteger',// Baths
-  'LivingArea',           // Size
-  'StandardStatus',       // Status badge
-  'X_DataSource',         // Source indicator
-];
+```bash
+# Active listings
+$filter=StandardStatus eq 'Active'
 
-// Fetch with select for performance
-const url = `/odata/Property?$select=${listViewFields.join(',')}&$top=20`;
+# Pending
+$filter=StandardStatus eq 'Pending'
+
+# Sold/Closed
+$filter=StandardStatus eq 'Closed'
 ```
 
-### Getting Main Photos (Batch)
+### Property Type
+
+```bash
+# Residential for sale
+$filter=PropertyClass eq 'RESI'
+
+# Rentals
+$filter=PropertyClass eq 'RLSE'
+
+# Commercial
+$filter=PropertyClass eq 'COMS'
+
+# Land
+$filter=PropertyClass eq 'LAND'
+```
+
+### Price Range
+
+```bash
+# Under 500K
+$filter=ListPrice lt 500000
+
+# 500K - 1M
+$filter=ListPrice ge 500000 and ListPrice lt 1000000
+
+# Over 1M
+$filter=ListPrice ge 1000000
+```
+
+### Bedrooms
+
+```bash
+# 3+ bedrooms
+$filter=BedroomsTotal ge 3
+
+# Exactly 2 bedrooms
+$filter=BedroomsTotal eq 2
+```
+
+### Location
+
+```bash
+# Specific city
+$filter=City eq 'Budapest'
+
+# City contains
+$filter=contains(City, 'Miami')
+
+# Multiple cities
+$filter=City in ('Miami', 'Fort Lauderdale')
+
+# By country
+$filter=Country eq 'HU'
+```
+
+### Features (Dash properties)
+
+```bash
+# Has view
+$filter=View ne null
+
+# Has pool
+$filter=PoolFeatures ne null
+```
+
+### Combined Filters
+
+```bash
+$filter=StandardStatus eq 'Active' and PropertyClass eq 'RESI' and ListPrice lt 1000000 and BedroomsTotal ge 2
+```
+
+---
+
+## Sorting
+
+```bash
+# Price: Low to High
+$orderby=ListPrice asc
+
+# Price: High to Low
+$orderby=ListPrice desc
+
+# Newest first
+$orderby=ModificationTimestamp desc
+
+# By bedrooms
+$orderby=BedroomsTotal desc
+```
+
+---
+
+## Pagination
+
+```bash
+# First 20 results
+$top=20
+
+# Next 20 results
+$top=20&$skip=20
+
+# Get total count
+$count=true
+```
+
+**Response with count:**
+```json
+{
+  "@odata.count": 1500,
+  "value": [...]
+}
+```
+
+---
+
+## Building a Property List
+
+### Recommended Fields
 
 ```javascript
-// After fetching properties, batch-fetch main photos
+const listFields = [
+  'ListingKey',
+  'ListPrice',
+  'City',
+  'Country',
+  'BedroomsTotal',
+  'BathroomsTotalInteger',
+  'LivingArea',
+  'StandardStatus',
+  'PropertyClass',
+  'X_DataSource'
+].join(',');
+
+const url = `/odata/Property?$select=${listFields}&$filter=StandardStatus eq 'Active'&$top=20`;
+```
+
+### Get Main Photos
+
+```javascript
+// After fetching properties, get main photos
 const listingKeys = properties.map(p => p.ListingKey);
-const photoMap = await client.getMainPhotos(listingKeys);
+const keyList = listingKeys.map(k => `'${k}'`).join(',');
+
+const mediaUrl = `/odata/Media?$filter=ResourceRecordKey in (${keyList}) and Order eq 0&$select=ResourceRecordKey,MediaURL&$top=1000`;
+const mediaResponse = await fetch(mediaUrl, { headers });
+const mediaData = await mediaResponse.json();
+
+// Create lookup map
+const photoMap = new Map();
+mediaData.value.forEach(m => photoMap.set(m.ResourceRecordKey, m.MediaURL));
 
 // Attach to properties
 properties.forEach(p => {
-  p.mainPhoto = photoMap.get(p.ListingKey) || '/placeholder.jpg';
+  p.mainPhoto = photoMap.get(p.ListingKey);
 });
 ```
 
-### Property Card Component (React)
+### Property Card Component
 
 ```jsx
 function PropertyCard({ property }) {
-  const formatPrice = (price, currency) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency || 'EUR',
-      maximumFractionDigits: 0,
-    }).format(price);
-  };
-
   return (
     <div className="property-card">
-      <img src={property.mainPhoto} alt={property.City} />
-      
-      <div className="property-info">
-        <h3>{formatPrice(property.ListPrice, property.X_CurrencyCode)}</h3>
+      <img src={property.mainPhoto || '/placeholder.jpg'} alt="" />
+      <div className="info">
+        <h3>${property.ListPrice?.toLocaleString()}</h3>
         <p>{property.City}, {property.Country}</p>
-        
-        <div className="property-stats">
-          {property.BedroomsTotal && <span>{property.BedroomsTotal} beds</span>}
-          {property.BathroomsTotalInteger && <span>{property.BathroomsTotalInteger} baths</span>}
-          {property.LivingArea && <span>{property.LivingArea} m²</span>}
-        </div>
-        
-        {/* Source indicator */}
-        {property.X_DataSource === 'dash_sothebys' && (
-          <span className="badge luxury">Sotheby's</span>
-        )}
-        
-        {/* Status badge */}
-        <span className={`badge ${property.StandardStatus.toLowerCase()}`}>
+        <p>{property.BedroomsTotal} bed • {property.BathroomsTotalInteger} bath • {property.LivingArea} m²</p>
+        <span className={`status ${property.StandardStatus.toLowerCase()}`}>
           {property.StandardStatus}
         </span>
       </div>
@@ -381,81 +311,52 @@ function PropertyCard({ property }) {
 
 ---
 
-## Building Property Detail UI
+## Building a Property Detail Page
 
 ### Full Field Selection
 
 ```javascript
 const detailFields = [
   // Core
-  'ListingKey', 'ListingId', 'ListPrice', 'StandardStatus',
-  'PropertyType', 'PropertySubType',
+  'ListingKey', 'ListingId', 'ListPrice', 'StandardStatus', 'PropertyType',
   
   // Location
-  'UnparsedAddress', 'City', 'StateOrProvince', 'PostalCode', 
-  'Country', 'Latitude', 'Longitude',
+  'UnparsedAddress', 'City', 'StateOrProvince', 'PostalCode', 'Country',
+  'Latitude', 'Longitude',
   
   // Details
   'BedroomsTotal', 'BathroomsTotalInteger', 'BathroomsHalf',
   'LivingArea', 'LotSizeSquareFeet', 'YearBuilt',
   
-  // Features (Dash-rich)
+  // Features
   'View', 'Flooring', 'Heating', 'Cooling', 'PoolFeatures',
   'FireplaceYN', 'ParkingFeatures', 'Appliances',
   
   // Agent
-  'ListAgentFirstName', 'ListAgentLastName', 'ListAgentEmail',
-  'ListOfficeName',
+  'ListAgentFirstName', 'ListAgentLastName', 'ListAgentEmail', 'ListOfficeName',
   
   // Description
   'PublicRemarks',
   
   // Extensions
-  'X_ListingUrl', 'X_CurrencyCode', 'X_DataSource',
-];
+  'X_ListingUrl', 'X_DataSource', 'X_CurrencyCode'
+].join(',');
+
+const url = `/odata/Property('${listingKey}')?$select=${detailFields}`;
 ```
 
-### Feature Display Component
-
-```jsx
-function PropertyFeatures({ property }) {
-  const features = [
-    { label: 'View', value: property.View },
-    { label: 'Flooring', value: property.Flooring },
-    { label: 'Heating', value: property.Heating },
-    { label: 'Cooling', value: property.Cooling },
-    { label: 'Pool', value: property.PoolFeatures },
-    { label: 'Parking', value: property.ParkingFeatures },
-    { label: 'Appliances', value: property.Appliances },
-  ].filter(f => f.value); // Only show non-null
-  
-  if (features.length === 0) return null;
-  
-  return (
-    <div className="property-features">
-      <h3>Features</h3>
-      <dl>
-        {features.map(f => (
-          <div key={f.label}>
-            <dt>{f.label}</dt>
-            <dd>{f.value}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  );
-}
-```
-
-### Photo Gallery
+### Get All Photos
 
 ```javascript
-// Fetch all photos for detail page
-const photos = await client.getPropertyMedia(listingKey);
+const mediaUrl = `/odata/Media?$filter=ResourceRecordKey eq '${listingKey}'&$orderby=Order`;
+const response = await fetch(mediaUrl, { headers });
+const { value: photos } = await response.json();
 
-// photos are sorted by Order (first = main photo)
-// Dash photos include dimensions: ImageWidth, ImageHeight
+// First photo (Order=0) is main photo
+// photos are sorted by Order
 ```
+
+### Photo Gallery Component
 
 ```jsx
 function PhotoGallery({ photos }) {
@@ -465,14 +366,13 @@ function PhotoGallery({ photos }) {
     <div className="gallery">
       <img 
         src={photos[activeIndex]?.MediaURL}
+        alt=""
         style={{
-          // Use dimensions if available (Dash)
           aspectRatio: photos[activeIndex]?.ImageWidth && photos[activeIndex]?.ImageHeight
-            ? `${photos[activeIndex].ImageWidth} / ${photos[activeIndex].ImageHeight}`
-            : '16 / 9'
+            ? `${photos[activeIndex].ImageWidth}/${photos[activeIndex].ImageHeight}`
+            : '16/9'
         }}
       />
-      
       <div className="thumbnails">
         {photos.map((photo, i) => (
           <img
@@ -488,105 +388,51 @@ function PhotoGallery({ photos }) {
 }
 ```
 
----
+### Feature Display
 
-## Search & Filter UI
-
-### Common Filter Combinations
-
-```javascript
-const filters = {
-  // Status
-  active: "StandardStatus eq 'Active'",
-  pending: "StandardStatus eq 'Pending'",
-  sold: "StandardStatus eq 'Closed'",
+```jsx
+function PropertyFeatures({ property }) {
+  const features = [
+    { label: 'View', value: property.View },
+    { label: 'Flooring', value: property.Flooring },
+    { label: 'Heating', value: property.Heating },
+    { label: 'Cooling', value: property.Cooling },
+    { label: 'Pool', value: property.PoolFeatures },
+    { label: 'Parking', value: property.ParkingFeatures },
+    { label: 'Appliances', value: property.Appliances },
+  ].filter(f => f.value);
   
-  // Property type
-  residential: "PropertyClass eq 'RESI'",
-  rental: "PropertyClass eq 'RLSE'",
-  commercial: "PropertyClass eq 'COMS'",
-  land: "PropertyClass eq 'LAND'",
+  if (features.length === 0) return null;
   
-  // Price ranges
-  under500k: "ListPrice lt 500000",
-  '500k-1m': "ListPrice ge 500000 and ListPrice lt 1000000",
-  '1m-5m': "ListPrice ge 1000000 and ListPrice lt 5000000",
-  over5m: "ListPrice ge 5000000",
-  
-  // Bedrooms
-  '1bed': "BedroomsTotal eq 1",
-  '2bed': "BedroomsTotal eq 2",
-  '3bed': "BedroomsTotal eq 3",
-  '4plus': "BedroomsTotal ge 4",
-  
-  // Features (Dash only)
-  withPool: "PoolFeatures ne null",
-  withView: "View ne null",
-  
-  // Source
-  qobrix: "OriginatingSystemOfficeKey eq 'CSIR'",
-  sothebys: "OriginatingSystemOfficeKey eq 'HSIR'",
-};
-
-// Combine filters
-const buildFilter = (selected) => {
-  return Object.entries(selected)
-    .filter(([_, isSelected]) => isSelected)
-    .map(([key]) => filters[key])
-    .join(' and ');
-};
+  return (
+    <div className="features">
+      <h3>Features</h3>
+      <dl>
+        {features.map(f => (
+          <div key={f.label}>
+            <dt>{f.label}</dt>
+            <dd>{f.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
 ```
-
-### Search by City
-
-```bash
-# Exact match
-$filter=City eq 'Budapest'
-
-# Contains (partial match)
-$filter=contains(City, 'Miami')
-
-# Multiple cities
-$filter=City in ('Miami', 'Fort Lauderdale', 'West Palm Beach')
-```
-
-### Sorting Options
-
-```javascript
-const sortOptions = {
-  'Price: Low to High': '$orderby=ListPrice asc',
-  'Price: High to Low': '$orderby=ListPrice desc',
-  'Newest First': '$orderby=ModificationTimestamp desc',
-  'Bedrooms': '$orderby=BedroomsTotal desc',
-  'Size': '$orderby=LivingArea desc',
-};
-```
-
----
-
-## Agent/Office Display
 
 ### Agent Card (Dash properties)
 
 ```jsx
-function AgentCard({ property }) {
-  // Only Dash properties have full agent details
-  if (property.X_DataSource !== 'dash_sothebys') {
-    return null;
-  }
+function AgentInfo({ property }) {
+  if (!property.ListAgentFirstName) return null;
   
   return (
     <div className="agent-card">
-      {property.X_ListAgentPhotoUrl && (
-        <img src={property.X_ListAgentPhotoUrl} alt="Agent" />
+      <h4>{property.ListAgentFirstName} {property.ListAgentLastName}</h4>
+      <p>{property.ListOfficeName}</p>
+      {property.ListAgentEmail && (
+        <a href={`mailto:${property.ListAgentEmail}`}>Contact Agent</a>
       )}
-      <div>
-        <h4>{property.ListAgentFirstName} {property.ListAgentLastName}</h4>
-        <p>{property.ListOfficeName}</p>
-        {property.ListAgentEmail && (
-          <a href={`mailto:${property.ListAgentEmail}`}>Contact Agent</a>
-        )}
-      </div>
     </div>
   );
 }
@@ -594,77 +440,90 @@ function AgentCard({ property }) {
 
 ---
 
-## External Links
+## Incremental Sync
 
-### Link to Original Listing
-
-```jsx
-function OriginalListingLink({ property }) {
-  // Dash properties have direct listing URL
-  if (property.X_ListingUrl) {
-    return (
-      <a href={property.X_ListingUrl} target="_blank" rel="noopener">
-        View on Sotheby's →
-      </a>
-    );
-  }
-  return null;
-}
-```
-
----
-
-## Responsive Image Loading
-
-### Use ImageWidth/ImageHeight for Layout
-
-```jsx
-// Dash photos include dimensions - use for better CLS
-function ResponsiveImage({ photo, className }) {
-  const aspectRatio = photo.ImageWidth && photo.ImageHeight
-    ? photo.ImageWidth / photo.ImageHeight
-    : 16/9;
-    
-  return (
-    <div 
-      className={className}
-      style={{ aspectRatio }}
-    >
-      <img 
-        src={photo.MediaURL}
-        loading="lazy"
-        width={photo.ImageWidth}
-        height={photo.ImageHeight}
-      />
-    </div>
-  );
-}
-```
-
----
-
-## Caching Recommendations
-
-| Data | Cache Duration | Strategy |
-|------|----------------|----------|
-| Property list | 5 minutes | Stale-while-revalidate |
-| Property detail | 15 minutes | Cache with revalidation |
-| Media/Photos | 1 hour | Long cache, CDN |
-| Main photos map | 5 minutes | Memory cache |
-
-### Incremental Sync
+Only fetch changes since last sync:
 
 ```javascript
-// Only fetch changes since last sync
-const lastSync = localStorage.getItem('lastSync');
-const since = lastSync ? new Date(lastSync) : new Date(0);
+const lastSync = localStorage.getItem('lastSync') || '2024-01-01T00:00:00Z';
 
-const updates = await client.syncModifiedSince(since);
+const url = `/odata/Property?$filter=ModificationTimestamp gt ${lastSync}&$orderby=ModificationTimestamp`;
+
+const response = await fetch(url, { headers });
+const { value: updates } = await response.json();
+
+// Update your local cache
+updates.forEach(p => cache.set(p.ListingKey, p));
+
+// Save sync timestamp
 localStorage.setItem('lastSync', new Date().toISOString());
-
-// Merge updates into local cache
-updates.forEach(p => {
-  cache.set(p.ListingKey, p);
-});
 ```
 
+---
+
+## Error Handling
+
+| Status | Description | Action |
+|--------|-------------|--------|
+| 401 | Token expired | Get new token |
+| 403 | Access denied | Check client permissions |
+| 429 | Rate limited | Retry after delay |
+| 500 | Server error | Retry with backoff |
+
+### Retry Logic
+
+```javascript
+async function fetchWithRetry(url, options, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(url, options);
+      if (response.status === 401) {
+        await refreshToken();
+        continue;
+      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      if (i === retries - 1) throw error;
+      await new Promise(r => setTimeout(r, 1000 * Math.pow(2, i)));
+    }
+  }
+}
+```
+
+---
+
+## Performance Tips
+
+1. **Use `$select`** - Only request fields you need
+2. **Use `$top=1000`** - Maximum batch size
+3. **Batch photo requests** - Use `in (...)` filter for multiple properties
+4. **Cache aggressively** - Properties change infrequently
+5. **Use incremental sync** - Only fetch changes after initial load
+
+---
+
+## Sync Client Libraries
+
+Full-featured sync clients with progress tracking:
+
+- **TypeScript:** [`sync-client-example.ts`](sync-client-example.ts)
+- **JavaScript:** [`sync-client-example.js`](sync-client-example.js)
+
+Features:
+- OAuth token auto-refresh
+- Parallel requests
+- Progress callbacks
+- Retry logic
+- React hooks
+
+---
+
+## RESO Compliance
+
+This API implements:
+- **OAuth 2.0 Client Credentials** (RESO Web API Core)
+- **OData 4.0** query syntax
+- **RESO Data Dictionary 2.0** field names
+
+See [`mapping.md`](mapping.md) for complete field reference.
