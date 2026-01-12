@@ -514,3 +514,180 @@ These fields were added to improve RESO compliance from 85% to 92%:
 - `ClosePrice` - Qobrix doesn't track sale price
 - `PrivateRemarks` - No private notes field
 - `BathroomsFull` - Only total bathrooms available
+
+---
+
+## Dash (Sotheby's) → RESO Data Mapping
+
+**NEW: January 2026** - The API now includes data from Dash/Sotheby's International Realty.
+
+### Data Source Identification
+
+| Field | Qobrix Value | Dash Value | Description |
+|-------|--------------|------------|-------------|
+| `OriginatingSystemOfficeKey` | `CSIR` | `HSIR` | Office identifier for multi-tenant filtering |
+| `X_DataSource` | `qobrix` | `dash_sothebys` | Explicit data source tag |
+| `ListingKey` | `QOBRIX_{id}` | `DASH_{listingGuid}` | Unique identifier prefix |
+
+### Dash JSON → Bronze → Silver → Gold Pipeline
+
+```
+dash_hsir_source/*.json → dash_bronze.properties → dash_silver.property → reso_gold.property
+                        → dash_bronze.media      → dash_silver.media    → reso_gold.media
+                                                 → dash_silver.property_features (parsed from JSON)
+```
+
+---
+
+## Dash Property Field Mapping
+
+### Core Identifiers
+
+| Dash JSON Path | Bronze Column | Silver Column | RESO Gold Field |
+|----------------|---------------|---------------|-----------------|
+| `listingGuid` | `id` | `dash_id` | `ListingKey` (DASH_ prefix) |
+| `listingId` | `ref` | `dash_ref` | `ListingId` |
+| `statusCode` | `status` | `status` | `StandardStatus` |
+| `listingUrl` | `listing_url` | `listing_url` | `X_ListingUrl` |
+
+### Status Mapping
+
+| Dash Status | RESO StandardStatus |
+|-------------|---------------------|
+| `AC` | `Active` |
+| `PS` | `Pending` |
+| `CL` | `Closed` |
+| `WD` | `Withdrawn` |
+
+### Property Details
+
+| Dash JSON Path | Bronze Column | RESO Gold Field | Notes |
+|----------------|---------------|-----------------|-------|
+| `propertyDetails.noOfBedrooms` | `bedrooms` | `BedroomsTotal` | INT |
+| `propertyDetails.fullBath` | `bathrooms` | `BathroomsTotalInteger` | INT |
+| `propertyDetails.halfBath` | `half_bath` | `BathroomsHalf` | INT |
+| `propertyDetails.livingArea` | `living_area` | `LivingArea` | Converted to m² |
+| `propertyDetails.lotSize` | `lot_size` | `LotSizeSquareFeet` | Converted to m² |
+| `propertyDetails.yearBuilt` | `year_built` | `YearBuilt` | INT |
+| `listPrice` | `list_selling_price_amount` | `ListPrice` | DECIMAL |
+| `listPriceInUSD` | `list_price_usd` | `X_ListPriceUSD` | DECIMAL |
+| `currencyCode` | `currency_code` | `X_CurrencyCode` | STRING |
+| `daysOnMarket` | `days_on_market` | `DaysOnMarket` | INT |
+
+### Location
+
+| Dash JSON Path | Bronze Column | RESO Gold Field |
+|----------------|---------------|-----------------|
+| `propertyDetails.location.addressLine1` | `street` | `UnparsedAddress` |
+| `propertyDetails.location.city` | `city` | `City` |
+| `propertyDetails.location.stateProvinceCode` | `state` | `StateOrProvince` |
+| `propertyDetails.location.postalCode` | `post_code` | `PostalCode` |
+| `propertyDetails.location.countryCode` | `country` | `Country` |
+| `propertyDetails.location.district` | `district` | `X_District` |
+| `propertyDetails.location.latitude` | `latitude` | `Latitude` |
+| `propertyDetails.location.longitude` | `longitude` | `Longitude` |
+
+### Agent/Office (from primaryAgent)
+
+| Dash JSON Path | Bronze Column | RESO Gold Field |
+|----------------|---------------|-----------------|
+| `primaryAgent.personGuid` | `agent_id` | `ListAgentKey` (DASH_AGENT_ prefix) |
+| `primaryAgent.firstName` | `agent_first_name` | `ListAgentFirstName` |
+| `primaryAgent.lastName` | `agent_last_name` | `ListAgentLastName` |
+| `primaryAgent.primaryEmailAddress` | `agent_email` | `ListAgentEmail` |
+| `primaryAgent.defaultPhotoUrl` | `agent_photo_url` | `X_ListAgentPhotoUrl` |
+| `primaryAgent.company.companyGuid` | `company_id` | `ListOfficeKey` |
+| `primaryAgent.company.companyName` | `company_name` | `ListOfficeName` |
+
+### Features (Parsed from features[] array)
+
+Features are extracted from the `features` JSON array and aggregated by `featureGroupDescription`:
+
+| Feature Group | Silver Column | RESO Gold Field |
+|---------------|---------------|-----------------|
+| `Cooling` | `cooling_features` | `Cooling` |
+| `Heating Type` | `heating_features` | `Heating` |
+| `Heating - Fuel Type` | `heating_fuel` | `X_HeatingFuel` |
+| `Pool Description` | `pool_features` | `PoolFeatures` |
+| `Fireplace Description` | `fireplace_features` | `FireplaceFeatures` |
+| `Garage Description` | `garage_features` | `ParkingFeatures` |
+| `Flooring` | `flooring` | `Flooring` |
+| `Views` | `view` | `View` |
+| `Fencing` | `fencing` | `Fencing` |
+| `Exterior Living Space` | `patio_porch_features` | `PatioAndPorchFeatures` |
+| `Exterior` | `exterior_features` | `ExteriorFeatures` |
+| `Interior` | `interior_features` | `InteriorFeatures` |
+| `Appliances` | `appliances` | `Appliances` |
+| `Kitchen Features` | `kitchen_features` | `X_KitchenFeatures` |
+| `Bath Features` | `bath_features` | `X_BathFeatures` |
+| `Basement` | `basement` | `Basement` |
+| `Roof` | `roof` | `Roof` |
+| `Water` | `water_source` | `WaterSource` |
+| `Sewer` | `sewer` | `Sewer` |
+| `Electrical` | `electric` | `Electric` |
+| `Lot Description` | `lot_features` | `LotFeatures` |
+| `Amenities` | `amenities` | `AssociationAmenities` |
+| `Body of Water` | `waterfront_features` | `WaterfrontFeatures` |
+| `Road Type` | `road_surface` | `RoadSurfaceType` |
+| `Age` | `property_condition` | `PropertyCondition` |
+| `Lifestyles` | `lifestyles` | `X_Lifestyles` |
+| `Special Market` | `special_market` | `X_SpecialMarket` |
+
+### Boolean Fields
+
+| Dash JSON Path | Bronze Column | RESO Gold Field |
+|----------------|---------------|-----------------|
+| `isOffTheMarket` | `is_off_market` | - |
+| `isForAuction` | `is_for_auction` | `X_IsAuction` |
+| `isNewConstruction` | `is_new_construction` | `NewConstructionYN` |
+| `isPriceUponRequest` | `is_price_upon_request` | `X_PriceUponRequest` |
+| (features contains Fireplace) | `has_fireplace` | `FireplaceYN` |
+| (features contains Pool) | `has_pool` | - |
+
+---
+
+## Dash Media Field Mapping
+
+| Dash JSON Path | Bronze Column | RESO Gold Field |
+|----------------|---------------|-----------------|
+| `media[].mediaGuid` | `id` | `MediaKey` (DASH_MEDIA_ prefix) |
+| `listingGuid` | `property_id` | `ResourceRecordKey` |
+| `media[].path` | `url` | `MediaURL` |
+| `media[].formatCode` | `format_code` | `MediaCategory` (IM→Photo) |
+| `media[].sequenceNumber` | `sequence_number` | `Order` |
+| `media[].caption` | `caption` | `ShortDescription` |
+| `media[].description` | `description` | `LongDescription` |
+| `media[].width` | `width` | `ImageWidth` |
+| `media[].height` | `height` | `ImageHeight` |
+| `media[].isDefault` | `is_default` | `PreferredPhotoYN` |
+
+---
+
+## Combined Data Source Summary
+
+### Property Fields Available by Source
+
+| RESO Field | Qobrix | Dash | Notes |
+|------------|--------|------|-------|
+| `ListingKey` | ✅ | ✅ | Different prefix |
+| `ListPrice` | ✅ | ✅ | |
+| `StandardStatus` | ✅ | ✅ | |
+| `BedroomsTotal` | ✅ | ✅ | |
+| `BathroomsTotalInteger` | ✅ | ✅ | |
+| `BathroomsHalf` | ✅ | ✅ | |
+| `LivingArea` | ✅ | ✅ | |
+| `YearBuilt` | ❌ | ✅ | Dash only |
+| `View` | ❌ | ✅ | Dash only (from features) |
+| `Flooring` | ❌ | ✅ | Dash only (from features) |
+| `Heating` | ❌ | ✅ | Dash only (from features) |
+| `Cooling` | ❌ | ✅ | Dash only (from features) |
+| `PoolFeatures` | ❌ | ✅ | Dash only (from features) |
+| `ParkingFeatures` | ❌ | ✅ | Dash only (from features) |
+| `ListAgentKey` | ✅ | ✅ | Different format |
+| `ListAgentFirstName` | ❌ | ✅ | Dash only |
+| `ListAgentLastName` | ❌ | ✅ | Dash only |
+| `PublicRemarks` | ✅ | ✅ | |
+| `DevelopmentStatus` | ✅ | ❌ | Qobrix only |
+| `ImageWidth` | ❌ | ✅ | Dash media only |
+| `ImageHeight` | ❌ | ✅ | Dash media only |
+

@@ -259,3 +259,412 @@ This API implements:
 - **OAuth 2.0 Client Credentials** (RESO Web API Core)
 - **OData 4.0** query syntax
 - **RESO Data Dictionary 2.0** field names
+
+---
+
+## Multi-Tenant Data Sources (NEW)
+
+The API aggregates data from multiple sources. Your client is configured for specific office keys.
+
+### Data Sources
+
+| Office Key | Source | Data Type |
+|------------|--------|-----------|
+| `CSIR` | Qobrix CRM | Managed listings |
+| `HSIR` | Dash/Sotheby's | Luxury listings |
+
+### Filter by Data Source
+
+```bash
+# Qobrix only
+$filter=OriginatingSystemOfficeKey eq 'CSIR'
+
+# Dash/Sotheby's only
+$filter=OriginatingSystemOfficeKey eq 'HSIR'
+
+# Combined (default if client has access to both)
+# No filter needed - returns all data client has access to
+
+# Active Dash properties
+$filter=StandardStatus eq 'Active' and OriginatingSystemOfficeKey eq 'HSIR'
+```
+
+### Identify Source in Results
+
+```javascript
+properties.forEach(p => {
+  if (p.X_DataSource === 'dash_sothebys') {
+    // Sotheby's listing - has YearBuilt, View, Flooring, etc.
+    console.log(`${p.ListingKey}: ${p.View}, Built: ${p.YearBuilt}`);
+  } else {
+    // Qobrix listing - has DevelopmentStatus
+    console.log(`${p.ListingKey}: ${p.DevelopmentStatus || 'Resale'}`);
+  }
+});
+```
+
+---
+
+## Building Property Listing UI
+
+### Recommended Fields for List View
+
+```javascript
+const listViewFields = [
+  'ListingKey',           // Unique ID
+  'ListPrice',            // Price
+  'City',                 // Location
+  'BedroomsTotal',        // Beds
+  'BathroomsTotalInteger',// Baths
+  'LivingArea',           // Size
+  'StandardStatus',       // Status badge
+  'X_DataSource',         // Source indicator
+];
+
+// Fetch with select for performance
+const url = `/odata/Property?$select=${listViewFields.join(',')}&$top=20`;
+```
+
+### Getting Main Photos (Batch)
+
+```javascript
+// After fetching properties, batch-fetch main photos
+const listingKeys = properties.map(p => p.ListingKey);
+const photoMap = await client.getMainPhotos(listingKeys);
+
+// Attach to properties
+properties.forEach(p => {
+  p.mainPhoto = photoMap.get(p.ListingKey) || '/placeholder.jpg';
+});
+```
+
+### Property Card Component (React)
+
+```jsx
+function PropertyCard({ property }) {
+  const formatPrice = (price, currency) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency || 'EUR',
+      maximumFractionDigits: 0,
+    }).format(price);
+  };
+
+  return (
+    <div className="property-card">
+      <img src={property.mainPhoto} alt={property.City} />
+      
+      <div className="property-info">
+        <h3>{formatPrice(property.ListPrice, property.X_CurrencyCode)}</h3>
+        <p>{property.City}, {property.Country}</p>
+        
+        <div className="property-stats">
+          {property.BedroomsTotal && <span>{property.BedroomsTotal} beds</span>}
+          {property.BathroomsTotalInteger && <span>{property.BathroomsTotalInteger} baths</span>}
+          {property.LivingArea && <span>{property.LivingArea} m²</span>}
+        </div>
+        
+        {/* Source indicator */}
+        {property.X_DataSource === 'dash_sothebys' && (
+          <span className="badge luxury">Sotheby's</span>
+        )}
+        
+        {/* Status badge */}
+        <span className={`badge ${property.StandardStatus.toLowerCase()}`}>
+          {property.StandardStatus}
+        </span>
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## Building Property Detail UI
+
+### Full Field Selection
+
+```javascript
+const detailFields = [
+  // Core
+  'ListingKey', 'ListingId', 'ListPrice', 'StandardStatus',
+  'PropertyType', 'PropertySubType',
+  
+  // Location
+  'UnparsedAddress', 'City', 'StateOrProvince', 'PostalCode', 
+  'Country', 'Latitude', 'Longitude',
+  
+  // Details
+  'BedroomsTotal', 'BathroomsTotalInteger', 'BathroomsHalf',
+  'LivingArea', 'LotSizeSquareFeet', 'YearBuilt',
+  
+  // Features (Dash-rich)
+  'View', 'Flooring', 'Heating', 'Cooling', 'PoolFeatures',
+  'FireplaceYN', 'ParkingFeatures', 'Appliances',
+  
+  // Agent
+  'ListAgentFirstName', 'ListAgentLastName', 'ListAgentEmail',
+  'ListOfficeName',
+  
+  // Description
+  'PublicRemarks',
+  
+  // Extensions
+  'X_ListingUrl', 'X_CurrencyCode', 'X_DataSource',
+];
+```
+
+### Feature Display Component
+
+```jsx
+function PropertyFeatures({ property }) {
+  const features = [
+    { label: 'View', value: property.View },
+    { label: 'Flooring', value: property.Flooring },
+    { label: 'Heating', value: property.Heating },
+    { label: 'Cooling', value: property.Cooling },
+    { label: 'Pool', value: property.PoolFeatures },
+    { label: 'Parking', value: property.ParkingFeatures },
+    { label: 'Appliances', value: property.Appliances },
+  ].filter(f => f.value); // Only show non-null
+  
+  if (features.length === 0) return null;
+  
+  return (
+    <div className="property-features">
+      <h3>Features</h3>
+      <dl>
+        {features.map(f => (
+          <div key={f.label}>
+            <dt>{f.label}</dt>
+            <dd>{f.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+```
+
+### Photo Gallery
+
+```javascript
+// Fetch all photos for detail page
+const photos = await client.getPropertyMedia(listingKey);
+
+// photos are sorted by Order (first = main photo)
+// Dash photos include dimensions: ImageWidth, ImageHeight
+```
+
+```jsx
+function PhotoGallery({ photos }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  
+  return (
+    <div className="gallery">
+      <img 
+        src={photos[activeIndex]?.MediaURL}
+        style={{
+          // Use dimensions if available (Dash)
+          aspectRatio: photos[activeIndex]?.ImageWidth && photos[activeIndex]?.ImageHeight
+            ? `${photos[activeIndex].ImageWidth} / ${photos[activeIndex].ImageHeight}`
+            : '16 / 9'
+        }}
+      />
+      
+      <div className="thumbnails">
+        {photos.map((photo, i) => (
+          <img
+            key={photo.MediaKey}
+            src={photo.MediaURL}
+            onClick={() => setActiveIndex(i)}
+            className={i === activeIndex ? 'active' : ''}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## Search & Filter UI
+
+### Common Filter Combinations
+
+```javascript
+const filters = {
+  // Status
+  active: "StandardStatus eq 'Active'",
+  pending: "StandardStatus eq 'Pending'",
+  sold: "StandardStatus eq 'Closed'",
+  
+  // Property type
+  residential: "PropertyClass eq 'RESI'",
+  rental: "PropertyClass eq 'RLSE'",
+  commercial: "PropertyClass eq 'COMS'",
+  land: "PropertyClass eq 'LAND'",
+  
+  // Price ranges
+  under500k: "ListPrice lt 500000",
+  '500k-1m': "ListPrice ge 500000 and ListPrice lt 1000000",
+  '1m-5m': "ListPrice ge 1000000 and ListPrice lt 5000000",
+  over5m: "ListPrice ge 5000000",
+  
+  // Bedrooms
+  '1bed': "BedroomsTotal eq 1",
+  '2bed': "BedroomsTotal eq 2",
+  '3bed': "BedroomsTotal eq 3",
+  '4plus': "BedroomsTotal ge 4",
+  
+  // Features (Dash only)
+  withPool: "PoolFeatures ne null",
+  withView: "View ne null",
+  
+  // Source
+  qobrix: "OriginatingSystemOfficeKey eq 'CSIR'",
+  sothebys: "OriginatingSystemOfficeKey eq 'HSIR'",
+};
+
+// Combine filters
+const buildFilter = (selected) => {
+  return Object.entries(selected)
+    .filter(([_, isSelected]) => isSelected)
+    .map(([key]) => filters[key])
+    .join(' and ');
+};
+```
+
+### Search by City
+
+```bash
+# Exact match
+$filter=City eq 'Budapest'
+
+# Contains (partial match)
+$filter=contains(City, 'Miami')
+
+# Multiple cities
+$filter=City in ('Miami', 'Fort Lauderdale', 'West Palm Beach')
+```
+
+### Sorting Options
+
+```javascript
+const sortOptions = {
+  'Price: Low to High': '$orderby=ListPrice asc',
+  'Price: High to Low': '$orderby=ListPrice desc',
+  'Newest First': '$orderby=ModificationTimestamp desc',
+  'Bedrooms': '$orderby=BedroomsTotal desc',
+  'Size': '$orderby=LivingArea desc',
+};
+```
+
+---
+
+## Agent/Office Display
+
+### Agent Card (Dash properties)
+
+```jsx
+function AgentCard({ property }) {
+  // Only Dash properties have full agent details
+  if (property.X_DataSource !== 'dash_sothebys') {
+    return null;
+  }
+  
+  return (
+    <div className="agent-card">
+      {property.X_ListAgentPhotoUrl && (
+        <img src={property.X_ListAgentPhotoUrl} alt="Agent" />
+      )}
+      <div>
+        <h4>{property.ListAgentFirstName} {property.ListAgentLastName}</h4>
+        <p>{property.ListOfficeName}</p>
+        {property.ListAgentEmail && (
+          <a href={`mailto:${property.ListAgentEmail}`}>Contact Agent</a>
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## External Links
+
+### Link to Original Listing
+
+```jsx
+function OriginalListingLink({ property }) {
+  // Dash properties have direct listing URL
+  if (property.X_ListingUrl) {
+    return (
+      <a href={property.X_ListingUrl} target="_blank" rel="noopener">
+        View on Sotheby's →
+      </a>
+    );
+  }
+  return null;
+}
+```
+
+---
+
+## Responsive Image Loading
+
+### Use ImageWidth/ImageHeight for Layout
+
+```jsx
+// Dash photos include dimensions - use for better CLS
+function ResponsiveImage({ photo, className }) {
+  const aspectRatio = photo.ImageWidth && photo.ImageHeight
+    ? photo.ImageWidth / photo.ImageHeight
+    : 16/9;
+    
+  return (
+    <div 
+      className={className}
+      style={{ aspectRatio }}
+    >
+      <img 
+        src={photo.MediaURL}
+        loading="lazy"
+        width={photo.ImageWidth}
+        height={photo.ImageHeight}
+      />
+    </div>
+  );
+}
+```
+
+---
+
+## Caching Recommendations
+
+| Data | Cache Duration | Strategy |
+|------|----------------|----------|
+| Property list | 5 minutes | Stale-while-revalidate |
+| Property detail | 15 minutes | Cache with revalidation |
+| Media/Photos | 1 hour | Long cache, CDN |
+| Main photos map | 5 minutes | Memory cache |
+
+### Incremental Sync
+
+```javascript
+// Only fetch changes since last sync
+const lastSync = localStorage.getItem('lastSync');
+const since = lastSync ? new Date(lastSync) : new Date(0);
+
+const updates = await client.syncModifiedSince(since);
+localStorage.setItem('lastSync', new Date().toISOString());
+
+// Merge updates into local cache
+updates.forEach(p => {
+  cache.set(p.ListingKey, p);
+});
+```
+
