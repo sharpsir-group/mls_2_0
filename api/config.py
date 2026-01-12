@@ -3,16 +3,33 @@
 # See LICENSE file for details.
 """
 RESO Web API Configuration
+
+Multi-tenant OAuth support with office-based data isolation.
 """
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+import os
 
 
 # Find the .env file in parent directory (mls_2_0/.env)
 API_DIR = Path(__file__).parent
 MLS2_ROOT = API_DIR.parent
 ENV_FILE = MLS2_ROOT / ".env"
+
+
+@dataclass
+class OAuthClient:
+    """OAuth client configuration with office-based access control."""
+    client_id: str
+    client_secret: str
+    offices: list[str]  # List of allowed OriginatingSystemOfficeKey values (e.g., ['CSIR', 'HSIR'])
+    
+    def has_office_access(self, office_key: str) -> bool:
+        """Check if client has access to a specific office."""
+        return office_key in self.offices
 
 
 class Settings(BaseSettings):
@@ -56,15 +73,101 @@ class Settings(BaseSettings):
     
     # OAuth 2.0 Client Credentials (RESO compliant)
     # Generate with: openssl rand -hex 32
-    oauth_client_id: str = ""
-    oauth_client_secret: str = ""
     oauth_jwt_secret: str = ""  # For signing JWT tokens
     oauth_token_expire_minutes: int = 60  # Token expiry (default: 1 hour)
     
+    # Primary OAuth client (OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, OAUTH_CLIENT_OFFICES)
+    # 
+    # BACKWARD COMPATIBILITY:
+    # - If OAUTH_CLIENT_OFFICES is not set (empty), client sees ALL data (no filtering)
+    # - Existing clients can continue without changes to .env
+    # - To enable office filtering, set OAUTH_CLIENT_OFFICES (e.g., "CSIR")
+    # - NOTE: Office filtering requires OriginatingSystemOfficeKey column in tables
+    #   (run ETL notebooks after updating to add this column)
+    oauth_client_id: str = ""
+    oauth_client_secret: str = ""
+    oauth_client_offices: str = ""  # Comma-separated list of offices (e.g., "CSIR" or "CSIR,HSIR")
+    
+    # Additional OAuth clients (OAUTH_CLIENT_2_*, OAUTH_CLIENT_3_*, etc.)
+    oauth_client_2_id: str = ""
+    oauth_client_2_secret: str = ""
+    oauth_client_2_offices: str = ""
+    
+    oauth_client_3_id: str = ""
+    oauth_client_3_secret: str = ""
+    oauth_client_3_offices: str = ""
+    
+    oauth_client_4_id: str = ""
+    oauth_client_4_secret: str = ""
+    oauth_client_4_offices: str = ""
+    
+    oauth_client_5_id: str = ""
+    oauth_client_5_secret: str = ""
+    oauth_client_5_offices: str = ""
+    
     @property
     def oauth_enabled(self) -> bool:
-        """Check if OAuth is configured."""
-        return bool(self.oauth_client_id and self.oauth_client_secret and self.oauth_jwt_secret)
+        """Check if OAuth is configured (at least one client with JWT secret)."""
+        return bool(self.oauth_jwt_secret and self.oauth_client_id and self.oauth_client_secret)
+    
+    def get_oauth_clients(self) -> list[OAuthClient]:
+        """
+        Get all configured OAuth clients.
+        
+        Parses primary client (OAUTH_CLIENT_*) and additional clients (OAUTH_CLIENT_N_*).
+        Returns list of OAuthClient objects with their allowed offices.
+        """
+        clients = []
+        
+        # Primary client
+        if self.oauth_client_id and self.oauth_client_secret:
+            offices = [o.strip() for o in self.oauth_client_offices.split(",") if o.strip()]
+            clients.append(OAuthClient(
+                client_id=self.oauth_client_id,
+                client_secret=self.oauth_client_secret,
+                offices=offices
+            ))
+        
+        # Additional clients (2-5)
+        client_configs = [
+            (self.oauth_client_2_id, self.oauth_client_2_secret, self.oauth_client_2_offices),
+            (self.oauth_client_3_id, self.oauth_client_3_secret, self.oauth_client_3_offices),
+            (self.oauth_client_4_id, self.oauth_client_4_secret, self.oauth_client_4_offices),
+            (self.oauth_client_5_id, self.oauth_client_5_secret, self.oauth_client_5_offices),
+        ]
+        
+        for client_id, client_secret, client_offices in client_configs:
+            if client_id and client_secret:
+                offices = [o.strip() for o in client_offices.split(",") if o.strip()]
+                clients.append(OAuthClient(
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    offices=offices
+                ))
+        
+        return clients
+    
+    def get_client_by_id(self, client_id: str) -> Optional[OAuthClient]:
+        """
+        Look up an OAuth client by client_id.
+        
+        Returns OAuthClient if found, None otherwise.
+        """
+        for client in self.get_oauth_clients():
+            if client.client_id == client_id:
+                return client
+        return None
+    
+    def validate_client_credentials(self, client_id: str, client_secret: str) -> Optional[OAuthClient]:
+        """
+        Validate client credentials and return the client if valid.
+        
+        Returns OAuthClient if credentials match, None otherwise.
+        """
+        for client in self.get_oauth_clients():
+            if client.client_id == client_id and client.client_secret == client_secret:
+                return client
+        return None
 
 
 @lru_cache()

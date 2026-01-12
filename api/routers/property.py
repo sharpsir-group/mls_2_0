@@ -7,14 +7,17 @@ RESO Property Resource Router
 Endpoints:
 - GET /odata/Property - List properties with OData query
 - GET /odata/Property('{key}') - Get single property by ListingKey
+
+Data is filtered by OriginatingSystemOfficeKey based on authenticated client's office access.
 """
 from typing import Optional, Any
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request, Depends
 from .base import execute_odata_query, get_entity_by_key
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import get_settings
+from auth import AuthContext, get_auth_context
 
 
 router = APIRouter(prefix="/odata", tags=["Property"])
@@ -47,6 +50,7 @@ def add_currency_code(data: dict[str, Any]) -> dict[str, Any]:
 @router.get("/Property")
 async def list_properties(
     request: Request,
+    auth: AuthContext = Depends(get_auth_context),
     filter: Optional[str] = Query(None, alias="$filter", description="OData filter expression"),
     select: Optional[str] = Query(None, alias="$select", description="Comma-separated list of fields"),
     orderby: Optional[str] = Query(None, alias="$orderby", description="Sort order (e.g., 'ListPrice desc')"),
@@ -56,6 +60,8 @@ async def list_properties(
 ) -> dict[str, Any]:
     """
     Query RESO Property resources.
+    
+    Data is filtered by client's allowed offices (OriginatingSystemOfficeKey).
     
     ## OData Query Examples
     
@@ -88,7 +94,8 @@ async def list_properties(
         top=top,
         skip=skip,
         count=count,
-        base_url=base_url
+        base_url=base_url,
+        allowed_offices=auth.offices
     )
     return add_currency_code(result)
 
@@ -96,10 +103,13 @@ async def list_properties(
 @router.get("/Property('{listing_key}')")
 async def get_property(
     request: Request,
-    listing_key: str
+    listing_key: str,
+    auth: AuthContext = Depends(get_auth_context)
 ) -> dict[str, Any]:
     """
     Get a single Property by ListingKey.
+    
+    Data access is restricted to client's allowed offices.
     
     ## Example
     
@@ -111,6 +121,7 @@ async def get_property(
         resource_name=RESOURCE_NAME,
         key_column=KEY_COLUMN,
         key_value=listing_key,
-        base_url=base_url
+        base_url=base_url,
+        allowed_offices=auth.offices
     )
     return add_currency_code(result)

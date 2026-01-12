@@ -120,12 +120,13 @@ except Exception as e:
 run_notebook() {
     local name="$1"
     local path="$2"
-    local needs_creds="$3"
+    local notebook_type="$3"  # "bronze" (needs API creds), "gold" (needs office key), or "false" (no params)
     local job_start_time=$(date +%s)
     
     echo "🚀 Running: $name"
     
-    if [ "$needs_creds" = "true" ]; then
+    if [ "$notebook_type" = "true" ] || [ "$notebook_type" = "bronze" ]; then
+        # Bronze notebooks: need Qobrix API credentials
         local json='{
           "run_name": "'"$name"'",
           "tasks": [{
@@ -140,7 +141,25 @@ run_notebook() {
             }
           }]
         }'
+    elif [ "$notebook_type" = "gold" ]; then
+        # Gold notebooks: need OriginatingSystemOfficeKey and LIST_OFFICE_KEY
+        local office_key="${QOBRIX_API_OFFICE_KEY:-CSIR}"
+        local list_office_key="${LIST_OFFICE_KEY:-Sharp_SIR}"
+        local json='{
+          "run_name": "'"$name"'",
+          "tasks": [{
+            "task_key": "task",
+            "notebook_task": {
+              "notebook_path": "'"$path"'",
+              "base_parameters": {
+                "ORIGINATING_SYSTEM_OFFICE_KEY": "'"$office_key"'",
+                "LIST_OFFICE_KEY": "'"$list_office_key"'"
+              }
+            }
+          }]
+        }'
     else
+        # Silver/other notebooks: no parameters
         local json='{
           "run_name": "'"$name"'",
           "tasks": [{
@@ -240,30 +259,30 @@ case "$1" in
         echo "🎉 All Silver tables created!"
         ;;
     gold-property)
-        run_notebook "MLS 2.0 - RESO Gold Property ETL" "/Shared/mls_2_0/03_gold_reso_property_etl" "false"
+        run_notebook "MLS 2.0 - RESO Gold Property ETL" "/Shared/mls_2_0/03_gold_reso_property_etl" "gold"
         ;;
     gold-member)
-        run_notebook "MLS 2.0 - RESO Gold Member ETL" "/Shared/mls_2_0/03a_gold_reso_member_etl" "false"
+        run_notebook "MLS 2.0 - RESO Gold Member ETL" "/Shared/mls_2_0/03a_gold_reso_member_etl" "gold"
         ;;
     gold-office)
-        run_notebook "MLS 2.0 - RESO Gold Office ETL" "/Shared/mls_2_0/03b_gold_reso_office_etl" "false"
+        run_notebook "MLS 2.0 - RESO Gold Office ETL" "/Shared/mls_2_0/03b_gold_reso_office_etl" "gold"
         ;;
     gold-media)
-        run_notebook "MLS 2.0 - RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" "false"
+        run_notebook "MLS 2.0 - RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" "gold"
         ;;
     gold-contacts)
-        run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "/Shared/mls_2_0/03d_gold_reso_contacts_etl" "false"
+        run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "/Shared/mls_2_0/03d_gold_reso_contacts_etl" "gold"
         ;;
     gold-showing)
-        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "false"
+        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "gold"
         ;;
     gold|gold-all)
-        run_notebook "MLS 2.0 - RESO Gold Property ETL" "/Shared/mls_2_0/03_gold_reso_property_etl" "false"
-        run_notebook "MLS 2.0 - RESO Gold Member ETL" "/Shared/mls_2_0/03a_gold_reso_member_etl" "false"
-        run_notebook "MLS 2.0 - RESO Gold Office ETL" "/Shared/mls_2_0/03b_gold_reso_office_etl" "false"
-        run_notebook "MLS 2.0 - RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" "false"
-        run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "/Shared/mls_2_0/03d_gold_reso_contacts_etl" "false"
-        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "false"
+        run_notebook "MLS 2.0 - RESO Gold Property ETL" "/Shared/mls_2_0/03_gold_reso_property_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Member ETL" "/Shared/mls_2_0/03a_gold_reso_member_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Office ETL" "/Shared/mls_2_0/03b_gold_reso_office_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "/Shared/mls_2_0/03d_gold_reso_contacts_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "gold"
         echo ""
         echo "🎉 All RESO Gold tables created!"
         ;;
@@ -284,12 +303,12 @@ case "$1" in
         ;;
     cdc-gold)
         echo "🔄 CDC Mode: Incremental gold sync"
-        run_notebook "MLS 2.0 - RESO CDC Gold Property" "/Shared/mls_2_0/03_cdc_gold_reso_property_etl" "false"
-        run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "/Shared/mls_2_0/03d_cdc_gold_reso_contacts_etl" "false"
+        run_notebook "MLS 2.0 - RESO CDC Gold Property" "/Shared/mls_2_0/03_cdc_gold_reso_property_etl" "gold"
+        run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "/Shared/mls_2_0/03d_cdc_gold_reso_contacts_etl" "gold"
         ;;
     cdc-gold-contacts)
         echo "🔄 CDC Mode: Incremental gold contacts sync"
-        run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "/Shared/mls_2_0/03d_cdc_gold_reso_contacts_etl" "false"
+        run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "/Shared/mls_2_0/03d_cdc_gold_reso_contacts_etl" "gold"
         ;;
     cdc-all)
         echo "🔄 CDC Mode: Full incremental pipeline (ALL entities - forced)"
@@ -305,12 +324,12 @@ case "$1" in
         run_notebook "MLS 2.0 - Qobrix Silver Viewing ETL" "/Shared/mls_2_0/02d_silver_qobrix_viewing_etl" "false"
         echo ""
         echo "🏆 Stage 3: Gold (all RESO entities - CDC where available)"
-        run_notebook "MLS 2.0 - RESO CDC Gold Property" "/Shared/mls_2_0/03_cdc_gold_reso_property_etl" "false"
-        run_notebook "MLS 2.0 - RESO Gold Member ETL" "/Shared/mls_2_0/03a_gold_reso_member_etl" "false"
-        run_notebook "MLS 2.0 - RESO Gold Office ETL" "/Shared/mls_2_0/03b_gold_reso_office_etl" "false"
-        run_notebook "MLS 2.0 - RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" "false"
-        run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "/Shared/mls_2_0/03d_cdc_gold_reso_contacts_etl" "false"
-        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "false"
+        run_notebook "MLS 2.0 - RESO CDC Gold Property" "/Shared/mls_2_0/03_cdc_gold_reso_property_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Member ETL" "/Shared/mls_2_0/03a_gold_reso_member_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Office ETL" "/Shared/mls_2_0/03b_gold_reso_office_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" "gold"
+        run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "/Shared/mls_2_0/03d_cdc_gold_reso_contacts_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "gold"
         echo ""
         SCRIPT_END_TIME=$(date +%s)
         TOTAL_DURATION=$((SCRIPT_END_TIME - SCRIPT_START_TIME))
@@ -426,20 +445,20 @@ except Exception as ex:
             echo "🏆 Stage 3: Gold (changed entities only)"
             
             if [ "$PROPS_CHANGED" -gt 0 ]; then
-                run_notebook "MLS 2.0 - RESO CDC Gold Property" "/Shared/mls_2_0/03_cdc_gold_reso_property_etl" "false"
+                run_notebook "MLS 2.0 - RESO CDC Gold Property" "/Shared/mls_2_0/03_cdc_gold_reso_property_etl" "gold"
             fi
             if [ "$PROPS_CHANGED" -gt 0 ] || [ "$MEDIA_CHANGED" -gt 0 ]; then
-                run_notebook "MLS 2.0 - RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" "false"
+                run_notebook "MLS 2.0 - RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" "gold"
             fi
             if [ "$AGENTS_CHANGED" -gt 0 ]; then
-                run_notebook "MLS 2.0 - RESO Gold Member ETL" "/Shared/mls_2_0/03a_gold_reso_member_etl" "false"
-                run_notebook "MLS 2.0 - RESO Gold Office ETL" "/Shared/mls_2_0/03b_gold_reso_office_etl" "false"
+                run_notebook "MLS 2.0 - RESO Gold Member ETL" "/Shared/mls_2_0/03a_gold_reso_member_etl" "gold"
+                run_notebook "MLS 2.0 - RESO Gold Office ETL" "/Shared/mls_2_0/03b_gold_reso_office_etl" "gold"
             fi
             if [ "$CONTACTS_CHANGED" -gt 0 ]; then
-                run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "/Shared/mls_2_0/03d_cdc_gold_reso_contacts_etl" "false"
+                run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "/Shared/mls_2_0/03d_cdc_gold_reso_contacts_etl" "gold"
             fi
             if [ "$VIEWINGS_CHANGED" -gt 0 ]; then
-                run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "false"
+                run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "gold"
             fi
             
             SCRIPT_END_TIME=$(date +%s)
@@ -466,12 +485,12 @@ except Exception as ex:
         run_notebook "MLS 2.0 - Qobrix Silver Viewing ETL" "/Shared/mls_2_0/02d_silver_qobrix_viewing_etl" "false"
         echo ""
         echo "🏆 Stage 3: Gold (RESO-compliant)"
-        run_notebook "MLS 2.0 - RESO Gold Property ETL" "/Shared/mls_2_0/03_gold_reso_property_etl" "false"
-        run_notebook "MLS 2.0 - RESO Gold Member ETL" "/Shared/mls_2_0/03a_gold_reso_member_etl" "false"
-        run_notebook "MLS 2.0 - RESO Gold Office ETL" "/Shared/mls_2_0/03b_gold_reso_office_etl" "false"
-        run_notebook "MLS 2.0 - RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" "false"
-        run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "/Shared/mls_2_0/03d_gold_reso_contacts_etl" "false"
-        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "false"
+        run_notebook "MLS 2.0 - RESO Gold Property ETL" "/Shared/mls_2_0/03_gold_reso_property_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Member ETL" "/Shared/mls_2_0/03a_gold_reso_member_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Office ETL" "/Shared/mls_2_0/03b_gold_reso_office_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "/Shared/mls_2_0/03d_gold_reso_contacts_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "gold"
         echo ""
         echo "✅ Stage 4: Integrity verification"
         run_notebook "MLS 2.0 - Qobrix vs RESO Integrity Test" "/Shared/mls_2_0/10_verify_data_integrity_qobrix_vs_reso" "true"

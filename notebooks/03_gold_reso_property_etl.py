@@ -54,10 +54,22 @@
 
 # COMMAND ----------
 
+import os
+
 catalog = "mls2"
 spark.sql(f"USE CATALOG {catalog}")
 
+# Widget for OriginatingSystemOfficeKey (passed via job parameters)
+dbutils.widgets.text("ORIGINATING_SYSTEM_OFFICE_KEY", "CSIR")
+originating_office_key = os.getenv("ORIGINATING_SYSTEM_OFFICE_KEY") or dbutils.widgets.get("ORIGINATING_SYSTEM_OFFICE_KEY") or "CSIR"
+
+# Widget for ListOfficeKey (brokerage identity for third-party exports)
+dbutils.widgets.text("LIST_OFFICE_KEY", "Sharp_SIR")
+list_office_key = os.getenv("LIST_OFFICE_KEY") or dbutils.widgets.get("LIST_OFFICE_KEY") or "Sharp_SIR"
+
 print("Using catalog:", catalog)
+print("OriginatingSystemOfficeKey:", originating_office_key)
+print("ListOfficeKey:", list_office_key)
 
 # COMMAND ----------
 
@@ -89,7 +101,7 @@ print(f"📋 Bronze table has {len(bronze_cols)} columns")
 # Build the SQL with all Qobrix extension fields (X_ prefix per RESO convention)
 # We join bronze for additional fields not in silver
 
-transform_silver_to_reso_sql = """
+transform_silver_to_reso_sql = f"""
 CREATE OR REPLACE TABLE reso_gold.property AS
 SELECT
     -- ═══════════════════════════════════════════════════════════════════════════
@@ -217,10 +229,8 @@ SELECT
     CASE WHEN b.salesperson IS NOT NULL AND b.salesperson != '' 
          THEN CONCAT('QOBRIX_AGENT_', b.salesperson) 
          ELSE NULL END                            AS CoListAgentKey,
-    -- ListOfficeKey: Link to office (agent's agency or agent itself as office)
-    CASE WHEN b.agent IS NOT NULL AND b.agent != '' 
-         THEN CONCAT('QOBRIX_OFFICE_', b.agent) 
-         ELSE NULL END                            AS ListOfficeKey,
+    -- ListOfficeKey: Brokerage identity for RESO exports (Sharp SIR for all data)
+    '{list_office_key}'                           AS ListOfficeKey,
 
     -- ═══════════════════════════════════════════════════════════════════════════
     -- RESO STANDARD FIELDS (Mapped from Qobrix)
@@ -467,6 +477,11 @@ SELECT
     b.legacy_id                                   AS X_QobrixLegacyId,
     b.seller                                      AS X_QobrixSellerId,
     s.modified_ts                                 AS X_QobrixModified,
+
+    -- Multi-tenant access control: Data source office
+    -- CSIR = Cyprus SIR (Qobrix data source)
+    -- HSIR = Hungary SIR (JSON loader data source)
+    '{originating_office_key}'                    AS OriginatingSystemOfficeKey,
 
     -- ETL metadata (gold layer)
     CURRENT_TIMESTAMP()                           AS etl_timestamp,

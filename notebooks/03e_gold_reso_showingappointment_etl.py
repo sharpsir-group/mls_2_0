@@ -32,11 +32,18 @@
 
 # COMMAND ----------
 
+import os
+
 catalog = "mls2"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS reso_gold")
 
+# Widget for OriginatingSystemOfficeKey (passed via job parameters)
+dbutils.widgets.text("ORIGINATING_SYSTEM_OFFICE_KEY", "CSIR")
+originating_office_key = os.getenv("ORIGINATING_SYSTEM_OFFICE_KEY") or dbutils.widgets.get("ORIGINATING_SYSTEM_OFFICE_KEY") or "CSIR"
+
 print("Using catalog:", catalog)
+print("OriginatingSystemOfficeKey:", originating_office_key)
 
 # COMMAND ----------
 
@@ -59,7 +66,7 @@ except Exception as e:
 # COMMAND ----------
 
 if viewings_count > 0:
-    create_showing_sql = """
+    create_showing_sql = f"""
     CREATE OR REPLACE TABLE reso_gold.showing_appointment AS
     
     SELECT
@@ -141,6 +148,11 @@ if viewings_count > 0:
         v.created_by                                 AS X_QobrixCreatedBy,
         v.modified_by                                AS X_QobrixModifiedBy,
         
+        -- Multi-tenant access control: Data source office
+        -- CSIR = Cyprus SIR (Qobrix data source)
+        -- HSIR = Hungary SIR (JSON loader data source)
+        '{originating_office_key}'                   AS OriginatingSystemOfficeKey,
+        
         -- ETL metadata
         CURRENT_TIMESTAMP()                          AS etl_timestamp,
         CONCAT('showing_batch_', CURRENT_DATE())     AS etl_batch_id
@@ -180,6 +192,7 @@ else:
         X_QobrixModified STRING,
         X_QobrixCreatedBy STRING,
         X_QobrixModifiedBy STRING,
+        OriginatingSystemOfficeKey STRING,
         etl_timestamp TIMESTAMP,
         etl_batch_id STRING
     )

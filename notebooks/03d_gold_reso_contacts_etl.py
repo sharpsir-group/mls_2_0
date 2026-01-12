@@ -31,11 +31,18 @@
 
 # COMMAND ----------
 
+import os
+
 catalog = "mls2"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS reso_gold")
 
+# Widget for OriginatingSystemOfficeKey (passed via job parameters)
+dbutils.widgets.text("ORIGINATING_SYSTEM_OFFICE_KEY", "CSIR")
+originating_office_key = os.getenv("ORIGINATING_SYSTEM_OFFICE_KEY") or dbutils.widgets.get("ORIGINATING_SYSTEM_OFFICE_KEY") or "CSIR"
+
 print("Using catalog:", catalog)
+print("OriginatingSystemOfficeKey:", originating_office_key)
 
 # COMMAND ----------
 
@@ -62,7 +69,7 @@ if contacts_count > 0:
     # This avoids Delta Lake transaction issues with CREATE OR REPLACE TABLE
     print("📊 Building RESO Contacts DataFrame from Silver...")
     
-    contacts_df = spark.sql("""
+    contacts_df = spark.sql(f"""
     SELECT
         -- RESO core identifiers
         CONCAT('QOBRIX_CONTACT_', c.contact_id)      AS ContactKey,
@@ -135,6 +142,11 @@ if contacts_count > 0:
         c.created_by                                 AS X_QobrixCreatedBy,
         c.modified_by                                AS X_QobrixModifiedBy,
         
+        -- Multi-tenant access control: Data source office
+        -- CSIR = Cyprus SIR (Qobrix data source)
+        -- HSIR = Hungary SIR (JSON loader data source)
+        '{originating_office_key}'                   AS OriginatingSystemOfficeKey,
+        
         -- ETL metadata
         CURRENT_TIMESTAMP()                          AS etl_timestamp,
         CONCAT('contacts_batch_', CURRENT_DATE())    AS etl_batch_id
@@ -176,6 +188,7 @@ else:
         ContactWebsite STRING,
         ContactEntityType STRING,
         ContactCompanyRegistrationNumber STRING,
+        ContactCompanyName STRING,
         ContactAssignedToKey STRING,
         X_QobrixContactId STRING,
         X_QobrixContactRef STRING,
@@ -188,6 +201,7 @@ else:
         X_QobrixModified STRING,
         X_QobrixCreatedBy STRING,
         X_QobrixModifiedBy STRING,
+        OriginatingSystemOfficeKey STRING,
         etl_timestamp TIMESTAMP,
         etl_batch_id STRING
     )

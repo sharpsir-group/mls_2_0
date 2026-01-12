@@ -31,13 +31,19 @@
 # COMMAND ----------
 
 from datetime import datetime
+import os
 
 catalog = "mls2"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS reso_gold")
 
+# Widget for OriginatingSystemOfficeKey (passed via job parameters)
+dbutils.widgets.text("ORIGINATING_SYSTEM_OFFICE_KEY", "CSIR")
+originating_office_key = os.getenv("ORIGINATING_SYSTEM_OFFICE_KEY") or dbutils.widgets.get("ORIGINATING_SYSTEM_OFFICE_KEY") or "CSIR"
+
 print("=" * 80)
 print("🔄 CDC MODE - Gold RESO Contacts ETL")
+print(f"OriginatingSystemOfficeKey: {originating_office_key}")
 print("=" * 80)
 
 # COMMAND ----------
@@ -85,7 +91,7 @@ except Exception as e:
 # COMMAND ----------
 
 # Define the transformation SELECT (same as full refresh)
-transform_select = """
+transform_select = f"""
 SELECT
     -- RESO core identifiers
     CONCAT('QOBRIX_CONTACT_', c.contact_id)      AS ContactKey,
@@ -157,6 +163,11 @@ SELECT
     CAST(c.modified_ts AS STRING)                AS X_QobrixModified,
     c.created_by                                 AS X_QobrixCreatedBy,
     c.modified_by                                AS X_QobrixModifiedBy,
+    
+    -- Multi-tenant access control: Data source office
+    -- CSIR = Cyprus SIR (Qobrix data source)
+    -- HSIR = Hungary SIR (JSON loader data source)
+    '{originating_office_key}'                   AS OriginatingSystemOfficeKey,
     
     -- ETL metadata
     CURRENT_TIMESTAMP()                          AS etl_timestamp,

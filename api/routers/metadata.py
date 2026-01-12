@@ -5,13 +5,17 @@
 OData $metadata Endpoint
 
 Returns service metadata and entity schemas.
+Requires authentication for access.
 """
 from typing import Any
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import Response
 import sys
-sys.path.insert(0, '..')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 from services.databricks import get_databricks_connector
+from auth import AuthContext, get_auth_context
+from .base import build_office_filter
 
 
 router = APIRouter(tags=["Metadata"])
@@ -29,7 +33,10 @@ RESOURCES = {
 
 
 @router.get("/odata/$metadata")
-async def get_metadata(request: Request) -> Response:
+async def get_metadata(
+    request: Request,
+    auth: AuthContext = Depends(get_auth_context)
+) -> Response:
     """
     Returns OData service metadata document.
     
@@ -70,7 +77,10 @@ async def get_metadata(request: Request) -> Response:
 
 
 @router.get("/odata")
-async def get_service_document(request: Request) -> dict[str, Any]:
+async def get_service_document(
+    request: Request,
+    auth: AuthContext = Depends(get_auth_context)
+) -> dict[str, Any]:
     """
     Returns OData service document listing available resources.
     """
@@ -86,8 +96,15 @@ async def get_service_document(request: Request) -> dict[str, Any]:
 
 
 @router.get("/odata/{resource}/$count")
-async def get_resource_count(resource: str) -> int:
-    """Get count of records in a resource."""
+async def get_resource_count(
+    resource: str,
+    auth: AuthContext = Depends(get_auth_context)
+) -> int:
+    """
+    Get count of records in a resource.
+    
+    Count is filtered by client's allowed offices.
+    """
     if resource not in RESOURCES:
         return 0
     
@@ -97,7 +114,13 @@ async def get_resource_count(resource: str) -> int:
     from config import get_settings
     settings = get_settings()
     
+    # Build office filter
+    office_filter = build_office_filter(auth.offices)
+    
     sql = f"SELECT COUNT(*) FROM {settings.databricks_catalog}.{settings.databricks_schema}.{table_name}"
+    if office_filter:
+        sql += f" WHERE {office_filter}"
+    
     result = await connector.execute_query(sql)
     
     return int(result["data"][0][0]) if result["data"] else 0

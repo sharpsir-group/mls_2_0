@@ -34,11 +34,18 @@
 
 # COMMAND ----------
 
+import os
+
 catalog = "mls2"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS reso_gold")
 
+# Widget for OriginatingSystemOfficeKey (passed via job parameters)
+dbutils.widgets.text("ORIGINATING_SYSTEM_OFFICE_KEY", "CSIR")
+originating_office_key = os.getenv("ORIGINATING_SYSTEM_OFFICE_KEY") or dbutils.widgets.get("ORIGINATING_SYSTEM_OFFICE_KEY") or "CSIR"
+
 print("Using catalog:", catalog)
+print("OriginatingSystemOfficeKey:", originating_office_key)
 
 # COMMAND ----------
 
@@ -61,7 +68,7 @@ except Exception as e:
 # We identify "offices" as agents that are referenced by other agents' parent_agent_id field
 # or agents without a parent (top-level)
 
-create_office_sql = """
+create_office_sql = f"""
 CREATE OR REPLACE TABLE reso_gold.office AS
 
 SELECT DISTINCT
@@ -118,6 +125,11 @@ SELECT DISTINCT
     CAST(NULL AS STRING)                             AS X_QobrixPrimaryContactId,
     CAST(a.created_ts AS STRING)                     AS X_QobrixCreated,
     CAST(a.modified_ts AS STRING)                    AS X_QobrixModified,
+    
+    -- Multi-tenant access control: Data source office
+    -- CSIR = Cyprus SIR (Qobrix data source)
+    -- HSIR = Hungary SIR (JSON loader data source)
+    '{originating_office_key}'                       AS OriginatingSystemOfficeKey,
     
     -- ETL metadata
     CURRENT_TIMESTAMP()                              AS etl_timestamp,

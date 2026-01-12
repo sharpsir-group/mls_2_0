@@ -5,7 +5,9 @@
 RESO Web API Authentication
 
 OAuth 2.0 Client Credentials flow as required by RESO Web API Core.
+Supports multi-tenant access with office-based data isolation.
 """
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -23,12 +25,30 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/oauth/token", auto_error=False)
 ALGORITHM = "HS256"
 
 
+@dataclass
+class AuthContext:
+    """Authentication context with office access control."""
+    method: str  # "oauth" or "none"
+    client_id: str
+    offices: list[str]  # List of allowed OriginatingSystemOfficeKey values
+    scope: str = ""
+    
+    def to_dict(self) -> dict:
+        """Convert to dictionary for backward compatibility."""
+        return {
+            "method": self.method,
+            "client_id": self.client_id,
+            "offices": self.offices,
+            "scope": self.scope
+        }
+
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """
     Create a JWT access token.
     
     Args:
-        data: Payload to encode in the token
+        data: Payload to encode in the token (should include 'sub' and 'offices')
         expires_delta: Token expiry time
         
     Returns:
@@ -61,7 +81,7 @@ def verify_token(token: str) -> dict:
         token: JWT token string
         
     Returns:
-        Decoded token payload
+        Decoded token payload (includes 'sub', 'offices', 'scope')
         
     Raises:
         HTTPException: If token is invalid or expired
@@ -91,30 +111,48 @@ def verify_token(token: str) -> dict:
 
 async def authenticate(
     bearer_token: Optional[str] = Security(oauth2_scheme)
-) -> dict:
+) -> AuthContext:
     """
     Authenticate request using OAuth 2.0 Bearer Token.
     
-    If OAuth is not configured, all requests are allowed.
+    If OAuth is not configured, all requests are allowed with no office filtering.
     
     Returns:
-        dict with auth info: {"method": "oauth"|"none", "client_id": ...}
+        AuthContext with client_id and allowed offices for data filtering
     """
     settings = get_settings()
     
     # Check if OAuth is configured
     if not settings.oauth_enabled:
-        # No auth configured - allow all requests
-        return {"method": "none", "client_id": "anonymous"}
+        # No auth configured - allow all requests with no office filter
+        return AuthContext(
+            method="none",
+            client_id="anonymous",
+            offices=[],  # Empty = no filtering (all data visible)
+            scope=""
+        )
     
     # Require Bearer token
     if bearer_token:
         payload = verify_token(bearer_token)
-        return {
-            "method": "oauth",
-            "client_id": payload.get("sub"),
-            "scope": payload.get("scope", "")
-        }
+        
+        # Extract offices from JWT (stored as comma-separated string or list)
+        # BACKWARD COMPATIBILITY:
+        # - Tokens issued before multi-tenant support won't have 'offices' claim
+        # - Default to empty list → no office filtering → all data visible
+        # - This ensures existing tokens continue to work without re-authentication
+        offices_claim = payload.get("offices", [])
+        if isinstance(offices_claim, str):
+            offices = [o.strip() for o in offices_claim.split(",") if o.strip()]
+        else:
+            offices = offices_claim if offices_claim else []
+        
+        return AuthContext(
+            method="oauth",
+            client_id=payload.get("sub", ""),
+            offices=offices,
+            scope=payload.get("scope", "")
+        )
     
     # No token provided
     raise HTTPException(
@@ -129,5 +167,13 @@ async def authenticate(
     )
 
 
-# Dependency to use in routers
+# Dependency to use in routers - returns AuthContext
+async def get_auth_context(
+    bearer_token: Optional[str] = Security(oauth2_scheme)
+) -> AuthContext:
+    """Get authentication context for the current request."""
+    return await authenticate(bearer_token)
+
+
+# Backward compatible dependency
 require_auth = Depends(authenticate)

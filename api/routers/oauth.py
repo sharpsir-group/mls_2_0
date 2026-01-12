@@ -5,6 +5,7 @@
 OAuth 2.0 Token Endpoint - RESO Web API Compliant
 
 Implements OAuth 2.0 Client Credentials flow as required by RESO Web API Core.
+Supports multiple OAuth clients with office-based access control.
 https://transport.reso.org/proposals/web-api-core.html
 """
 from datetime import timedelta
@@ -51,6 +52,9 @@ class TokenError(BaseModel):
     
     **RESO Web API Core Compliant**
     
+    **Multi-tenant Support**: Each client is configured with specific office access.
+    The returned token includes the client's allowed offices for data filtering.
+    
     ## Authentication Methods
     
     ### Method 1: HTTP Basic Auth (Recommended)
@@ -80,6 +84,11 @@ class TokenError(BaseModel):
       "expires_in": 3600
     }
     ```
+    
+    ## Office Access
+    
+    The access token contains the client's allowed offices (e.g., CSIR, HSIR).
+    API queries are automatically filtered to only return data from allowed offices.
     """
 )
 async def token(
@@ -95,6 +104,8 @@ async def token(
     Supports client authentication via:
     1. HTTP Basic Authentication header (recommended)
     2. Form body parameters (client_id, client_secret)
+    
+    Returns JWT token with embedded office access permissions.
     """
     settings = get_settings()
     
@@ -137,8 +148,10 @@ async def token(
             headers={"WWW-Authenticate": "Basic"}
         )
     
-    # Validate credentials
-    if auth_client_id != settings.oauth_client_id or auth_client_secret != settings.oauth_client_secret:
+    # Validate credentials against all configured clients
+    oauth_client = settings.validate_client_credentials(auth_client_id, auth_client_secret)
+    
+    if not oauth_client:
         raise HTTPException(
             status_code=HTTP_401_UNAUTHORIZED,
             detail={
@@ -148,10 +161,11 @@ async def token(
             headers={"WWW-Authenticate": "Basic"}
         )
     
-    # Create access token
+    # Create access token with office access embedded
     token_data = {
-        "sub": auth_client_id,
-        "scope": scope or "odata"
+        "sub": oauth_client.client_id,
+        "scope": scope or "odata",
+        "offices": ",".join(oauth_client.offices)  # Embed allowed offices in JWT
     }
     
     expires_delta = timedelta(minutes=settings.oauth_token_expire_minutes)

@@ -33,11 +33,18 @@
 
 # COMMAND ----------
 
+import os
+
 catalog = "mls2"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS reso_gold")
 
+# Widget for OriginatingSystemOfficeKey (passed via job parameters)
+dbutils.widgets.text("ORIGINATING_SYSTEM_OFFICE_KEY", "CSIR")
+originating_office_key = os.getenv("ORIGINATING_SYSTEM_OFFICE_KEY") or dbutils.widgets.get("ORIGINATING_SYSTEM_OFFICE_KEY") or "CSIR"
+
 print("Using catalog:", catalog)
+print("OriginatingSystemOfficeKey:", originating_office_key)
 
 # COMMAND ----------
 
@@ -60,7 +67,7 @@ except Exception as e:
 # COMMAND ----------
 
 if media_count > 0:
-    create_media_sql = """
+    create_media_sql = f"""
     CREATE OR REPLACE TABLE reso_gold.media AS
     
     SELECT
@@ -110,6 +117,11 @@ if media_count > 0:
         CAST(m.created_ts AS STRING)                     AS X_QobrixCreated,
         CAST(m.modified_ts AS STRING)                    AS X_QobrixModified,
         
+        -- Multi-tenant access control: Data source office
+        -- CSIR = Cyprus SIR (Qobrix data source)
+        -- HSIR = Hungary SIR (JSON loader data source)
+        '{originating_office_key}'                       AS OriginatingSystemOfficeKey,
+        
         -- ETL metadata
         CURRENT_TIMESTAMP()                              AS etl_timestamp,
         CONCAT('media_batch_', CURRENT_DATE())           AS etl_batch_id
@@ -136,6 +148,7 @@ else:
         ImageWidth INT,
         ImageHeight INT,
         ImageSizeBytes BIGINT,
+        X_IsPrimary BOOLEAN,
         X_QobrixMediaId STRING,
         X_QobrixPropertyId STRING,
         X_QobrixMediaCategory STRING,
@@ -145,6 +158,7 @@ else:
         X_QobrixCategoryId STRING,
         X_QobrixCreated STRING,
         X_QobrixModified STRING,
+        OriginatingSystemOfficeKey STRING,
         etl_timestamp TIMESTAMP,
         etl_batch_id STRING
     )

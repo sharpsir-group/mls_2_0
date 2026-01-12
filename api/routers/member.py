@@ -7,10 +7,16 @@ RESO Member Resource Router
 Endpoints:
 - GET /odata/Member - List members with OData query
 - GET /odata/Member('{key}') - Get single member by MemberKey
+
+Data is filtered by OriginatingSystemOfficeKey based on authenticated client's office access.
 """
 from typing import Optional, Any
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request, Depends
 from .base import execute_odata_query, get_entity_by_key
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from auth import AuthContext, get_auth_context
 
 
 router = APIRouter(prefix="/odata", tags=["Member"])
@@ -23,6 +29,7 @@ KEY_COLUMN = "MemberKey"
 @router.get("/Member")
 async def list_members(
     request: Request,
+    auth: AuthContext = Depends(get_auth_context),
     filter: Optional[str] = Query(None, alias="$filter"),
     select: Optional[str] = Query(None, alias="$select"),
     orderby: Optional[str] = Query(None, alias="$orderby"),
@@ -32,6 +39,8 @@ async def list_members(
 ) -> dict[str, Any]:
     """
     Query RESO Member resources.
+    
+    Data is filtered by client's allowed offices (OriginatingSystemOfficeKey).
     
     ## RESO Fields
     
@@ -49,14 +58,16 @@ async def list_members(
         top=top,
         skip=skip,
         count=count,
-        base_url=base_url
+        base_url=base_url,
+        allowed_offices=auth.offices
     )
 
 
 @router.get("/Member('{member_key}')")
 async def get_member(
     request: Request,
-    member_key: str
+    member_key: str,
+    auth: AuthContext = Depends(get_auth_context)
 ) -> dict[str, Any]:
     """Get a single Member by MemberKey."""
     base_url = str(request.base_url).rstrip("/")
@@ -65,6 +76,7 @@ async def get_member(
         resource_name=RESOURCE_NAME,
         key_column=KEY_COLUMN,
         key_value=member_key,
-        base_url=base_url
+        base_url=base_url,
+        allowed_offices=auth.offices
     )
 

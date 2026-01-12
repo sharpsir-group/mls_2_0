@@ -31,12 +31,23 @@
 # COMMAND ----------
 
 from datetime import datetime
+import os
 
 catalog = "mls2"
 spark.sql(f"USE CATALOG {catalog}")
 
+# Widget for OriginatingSystemOfficeKey (passed via job parameters)
+dbutils.widgets.text("ORIGINATING_SYSTEM_OFFICE_KEY", "CSIR")
+originating_office_key = os.getenv("ORIGINATING_SYSTEM_OFFICE_KEY") or dbutils.widgets.get("ORIGINATING_SYSTEM_OFFICE_KEY") or "CSIR"
+
+# Widget for ListOfficeKey (brokerage identity for third-party exports)
+dbutils.widgets.text("LIST_OFFICE_KEY", "Sharp_SIR")
+list_office_key = os.getenv("LIST_OFFICE_KEY") or dbutils.widgets.get("LIST_OFFICE_KEY") or "Sharp_SIR"
+
 print("=" * 80)
 print("🔄 CDC MODE - Gold RESO Property ETL")
+print(f"OriginatingSystemOfficeKey: {originating_office_key}")
+print(f"ListOfficeKey: {list_office_key}")
 print("=" * 80)
 
 # COMMAND ----------
@@ -84,7 +95,7 @@ except Exception as e:
 # COMMAND ----------
 
 # Define the transformation SELECT (same as full refresh, but can filter)
-transform_select = """
+transform_select = f"""
 SELECT
     -- RESO STANDARD FIELDS (Core)
     CONCAT('QOBRIX_', s.qobrix_id)               AS ListingKey,
@@ -157,9 +168,8 @@ SELECT
     CASE WHEN b.salesperson IS NOT NULL AND b.salesperson != '' 
          THEN CONCAT('QOBRIX_AGENT_', b.salesperson) 
          ELSE NULL END                            AS CoListAgentKey,
-    CASE WHEN b.agent IS NOT NULL AND b.agent != '' 
-         THEN CONCAT('QOBRIX_OFFICE_', b.agent) 
-         ELSE NULL END                            AS ListOfficeKey,
+    -- ListOfficeKey: Brokerage identity for RESO exports (Sharp SIR for all data)
+    '{list_office_key}'                           AS ListOfficeKey,
 
     -- RESO STANDARD FIELDS (Mapped from Qobrix)
     -- Fix: Cast decimal strings (e.g., "2023.0") to DOUBLE first, then INT
@@ -333,6 +343,11 @@ SELECT
     b.legacy_id                                   AS X_QobrixLegacyId,
     b.seller                                      AS X_QobrixSellerId,
     s.modified_ts                                 AS X_QobrixModified,
+
+    -- Multi-tenant access control: Data source office
+    -- CSIR = Cyprus SIR (Qobrix data source)
+    -- HSIR = Hungary SIR (JSON loader data source)
+    '{originating_office_key}'                    AS OriginatingSystemOfficeKey,
 
     CURRENT_TIMESTAMP()                           AS etl_timestamp,
     CONCAT('gold_cdc_', CURRENT_DATE())           AS etl_batch_id

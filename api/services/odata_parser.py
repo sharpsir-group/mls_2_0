@@ -146,12 +146,24 @@ class ODataParser:
         orderby_expr: Optional[str] = None,
         top: Optional[int] = None,
         skip: Optional[int] = None,
-        default_columns: list[str] = None
+        default_columns: list[str] = None,
+        additional_where: Optional[str] = None
     ) -> str:
         """
         Build complete SQL query from OData parameters.
         
-        Returns fully formed SQL query string.
+        Args:
+            table_name: Table name in Databricks
+            filter_expr: OData $filter expression
+            select_expr: OData $select expression
+            orderby_expr: OData $orderby expression
+            top: OData $top value
+            skip: OData $skip value
+            default_columns: Default columns if no $select
+            additional_where: Additional SQL WHERE condition (e.g., office filter)
+        
+        Returns:
+            Fully formed SQL query string.
         """
         catalog = self.settings.databricks_catalog
         schema = self.settings.databricks_schema
@@ -162,8 +174,17 @@ class ODataParser:
         # Build FROM clause
         from_clause = f"{catalog}.{schema}.{table_name}"
         
-        # Build WHERE clause
-        where_clause = self.parse_filter(filter_expr)
+        # Build WHERE clause from OData filter
+        odata_where = self.parse_filter(filter_expr)
+        
+        # Combine OData filter with additional WHERE (e.g., office filter)
+        where_parts = []
+        if odata_where:
+            where_parts.append(f"({odata_where})")
+        if additional_where:
+            where_parts.append(f"({additional_where})")
+        
+        where_clause = " AND ".join(where_parts) if where_parts else ""
         
         # Build ORDER BY clause
         orderby_clause = self.parse_orderby(orderby_expr)
@@ -191,13 +212,34 @@ class ODataParser:
     def build_count_query(
         self,
         table_name: str,
-        filter_expr: Optional[str] = None
+        filter_expr: Optional[str] = None,
+        additional_where: Optional[str] = None
     ) -> str:
-        """Build COUNT query for $count parameter."""
+        """
+        Build COUNT query for $count parameter.
+        
+        Args:
+            table_name: Table name in Databricks
+            filter_expr: OData $filter expression
+            additional_where: Additional SQL WHERE condition (e.g., office filter)
+            
+        Returns:
+            SQL COUNT query string.
+        """
         catalog = self.settings.databricks_catalog
         schema = self.settings.databricks_schema
         
-        where_clause = self.parse_filter(filter_expr)
+        # Build WHERE clause from OData filter
+        odata_where = self.parse_filter(filter_expr)
+        
+        # Combine OData filter with additional WHERE
+        where_parts = []
+        if odata_where:
+            where_parts.append(f"({odata_where})")
+        if additional_where:
+            where_parts.append(f"({additional_where})")
+        
+        where_clause = " AND ".join(where_parts) if where_parts else ""
         
         sql = f"SELECT COUNT(*) as count FROM {catalog}.{schema}.{table_name}"
         

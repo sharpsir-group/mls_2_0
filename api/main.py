@@ -5,10 +5,12 @@
 RESO Web API - FastAPI Application
 
 A RESO Data Dictionary 2.0 compliant OData API backed by Databricks.
+Supports multi-tenant access with office-based data isolation.
 
 Authentication:
     - OAuth 2.0 Client Credentials (RESO compliant)
-    - API Key (legacy support)
+    - Each client has configured office access (CSIR, HSIR, etc.)
+    - Data is filtered by OriginatingSystemOfficeKey
 
 Usage:
     uvicorn main:app --host 0.0.0.0 --port 8000 --reload
@@ -33,11 +35,10 @@ from pathlib import Path
 # Add api directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from config import get_settings
-from auth import require_auth
 
 # Import routers
 from routers import property, member, office, media, contacts, showing, metadata, oauth
@@ -69,16 +70,15 @@ def create_app() -> FastAPI:
     # OAuth 2.0 token endpoint (no auth required)
     app.include_router(oauth.router)
     
-    # OData endpoints with authentication (OAuth Bearer or API Key)
-    auth_dependency = [require_auth]
-    
-    app.include_router(metadata.router, dependencies=auth_dependency)
-    app.include_router(property.router, dependencies=auth_dependency)
-    app.include_router(member.router, dependencies=auth_dependency)
-    app.include_router(office.router, dependencies=auth_dependency)
-    app.include_router(media.router, dependencies=auth_dependency)
-    app.include_router(contacts.router, dependencies=auth_dependency)
-    app.include_router(showing.router, dependencies=auth_dependency)
+    # OData endpoints (auth handled by individual routers via get_auth_context)
+    # Each router applies office-based filtering via AuthContext
+    app.include_router(metadata.router)
+    app.include_router(property.router)
+    app.include_router(member.router)
+    app.include_router(office.router)
+    app.include_router(media.router)
+    app.include_router(contacts.router)
+    app.include_router(showing.router)
     
     return app
 
