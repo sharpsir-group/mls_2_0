@@ -390,8 +390,8 @@ except Exception as ex:
         echo "   Opportunities: $OPPS_CHANGED changed"
         echo "   Media: $MEDIA_CHANGED changed"
         
-        # Calculate if anything changed
-        TOTAL_CHANGES=$((PROPS_CHANGED + AGENTS_CHANGED + CONTACTS_CHANGED + VIEWINGS_CHANGED + OPPS_CHANGED))
+        # Calculate if anything changed (include media in total)
+        TOTAL_CHANGES=$((PROPS_CHANGED + AGENTS_CHANGED + CONTACTS_CHANGED + VIEWINGS_CHANGED + OPPS_CHANGED + MEDIA_CHANGED))
         
         if [ "$TOTAL_CHANGES" -eq 0 ]; then
             echo ""
@@ -408,6 +408,8 @@ except Exception as ex:
             
             if [ "$PROPS_CHANGED" -gt 0 ]; then
                 run_notebook "MLS 2.0 - Qobrix Silver Property ETL" "/Shared/mls_2_0/02_silver_qobrix_property_etl" "false"
+            fi
+            if [ "$PROPS_CHANGED" -gt 0 ] || [ "$MEDIA_CHANGED" -gt 0 ]; then
                 run_notebook "MLS 2.0 - Qobrix Silver Media ETL" "/Shared/mls_2_0/02c_silver_qobrix_media_etl" "false"
             fi
             if [ "$AGENTS_CHANGED" -gt 0 ]; then
@@ -425,6 +427,8 @@ except Exception as ex:
             
             if [ "$PROPS_CHANGED" -gt 0 ]; then
                 run_notebook "MLS 2.0 - RESO CDC Gold Property" "/Shared/mls_2_0/03_cdc_gold_reso_property_etl" "false"
+            fi
+            if [ "$PROPS_CHANGED" -gt 0 ] || [ "$MEDIA_CHANGED" -gt 0 ]; then
                 run_notebook "MLS 2.0 - RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" "false"
             fi
             if [ "$AGENTS_CHANGED" -gt 0 ]; then
