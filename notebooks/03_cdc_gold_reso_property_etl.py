@@ -38,11 +38,11 @@ spark.sql(f"USE CATALOG {catalog}")
 
 # Widget for OriginatingSystemOfficeKey (passed via job parameters)
 dbutils.widgets.text("ORIGINATING_SYSTEM_OFFICE_KEY", "CSIR")
-originating_office_key = os.getenv("ORIGINATING_SYSTEM_OFFICE_KEY") or dbutils.widgets.get("ORIGINATING_SYSTEM_OFFICE_KEY") or "CSIR"
+originating_office_key = os.getenv("QOBRIX_API_OFFICE_KEY") or dbutils.widgets.get("ORIGINATING_SYSTEM_OFFICE_KEY") or "CSIR"
 
-# Widget for ListOfficeKey (brokerage identity for third-party exports)
-dbutils.widgets.text("LIST_OFFICE_KEY", "Sharp_SIR")
-list_office_key = os.getenv("LIST_OFFICE_KEY") or dbutils.widgets.get("LIST_OFFICE_KEY") or "Sharp_SIR"
+# MLS List Office Key (brokerage identity for third-party exports)
+# Hardcoded to SHARP_SIR for all data
+list_office_key = os.getenv("MLS_LIST_OFFICE_KEY") or "SHARP_SIR"
 
 print("=" * 80)
 print("🔄 CDC MODE - Gold RESO Property ETL")

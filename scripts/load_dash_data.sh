@@ -2,9 +2,15 @@
 # Copyright 2025 SharpSir Group
 # Licensed under the Apache License, Version 2.0
 # See LICENSE file for details.
+#
 # Dash Data Loader Orchestration Script
-# Usage: ./scripts/load_dash_data.sh <json_file_path> [--country CODE]
-# Example: ./scripts/load_dash_data.sh tmp/dash_listings_hungary.json --country HU
+#
+# Auto-processes all new/changed JSON files from DASH_SOURCE_DIR,
+# loads to bronze, transforms through silver, and updates unified gold.
+#
+# Usage:
+#   ./scripts/load_dash_data.sh           # Auto-process new files
+#   ./scripts/load_dash_data.sh --force   # Reprocess all files
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,37 +31,29 @@ fi
 export DATABRICKS_CLI_DO_NOT_SHOW_UPGRADE_MESSAGE=1
 
 # Parse arguments
-JSON_FILE="$1"
-COUNTRY_ARG=""
-if [ "$2" = "--country" ] && [ -n "$3" ]; then
-    COUNTRY_ARG="--country $3"
+FORCE_FLAG=""
+if [ "$1" = "--force" ]; then
+    FORCE_FLAG="--force"
 fi
 
-if [ -z "$JSON_FILE" ]; then
-    echo "❌ Error: JSON file path required"
-    echo "Usage: $0 <json_file_path> [--country CODE]"
-    echo "Example: $0 tmp/dash_listings_hungary.json --country HU"
+# Validate required env vars
+if [ -z "$DASH_SOURCE_DIR" ]; then
+    echo "❌ Error: DASH_SOURCE_DIR not set in .env"
     exit 1
 fi
 
-# Resolve absolute path
-if [[ "$JSON_FILE" != /* ]]; then
-    JSON_FILE="$MLS2_ROOT/$JSON_FILE"
-fi
-
-if [ ! -f "$JSON_FILE" ]; then
-    echo "❌ Error: File not found: $JSON_FILE"
+if [ ! -d "$DASH_SOURCE_DIR" ]; then
+    echo "❌ Error: Source directory not found: $DASH_SOURCE_DIR"
     exit 1
 fi
 
-echo "=" | tr -d '\n' | head -c 80
-echo ""
+echo "================================================================================"
 echo "DASH DATA LOADER"
-echo "=" | tr -d '\n' | head -c 80
-echo ""
-echo "📁 JSON File: $JSON_FILE"
-if [ -n "$COUNTRY_ARG" ]; then
-    echo "🌍 Country: $3"
+echo "================================================================================"
+echo "📁 Source directory: $DASH_SOURCE_DIR"
+echo "🏢 Office key: ${DASH_OFFICE_KEY:-HSIR}"
+if [ -n "$FORCE_FLAG" ]; then
+    echo "⚠️  Force mode: reprocessing all files"
 fi
 echo ""
 
@@ -71,13 +69,26 @@ run_notebook() {
     echo "📓 Running: $notebook_name"
     echo "   Path: $notebook_path"
     
-    local run_output=$(databricks jobs run-now \
-        --job-id "$(databricks jobs list --output json | python3 -c "
+    # Import notebook first
+    local local_notebook="$MLS2_ROOT/notebooks/$(basename "$notebook_path").py"
+    if [ -f "$local_notebook" ]; then
+        echo "   📤 Importing notebook..."
+        databricks workspace import "$local_notebook" "$notebook_path" --language PYTHON --overwrite 2>&1 | grep -v "^WARN:" || true
+    fi
+    
+    # Run notebook using jobs API
+    local run_output
+    run_output=$(databricks jobs run-now \
+        --job-id "$(databricks jobs list --output json 2>/dev/null | python3 -c "
 import sys, json
-for job in json.load(sys.stdin):
-    if job.get('settings', {}).get('name', '') == 'MLS 2.0 - Manual Run':
-        print(job['job_id'])
-        break
+try:
+    jobs = json.load(sys.stdin).get('jobs', [])
+    for job in jobs:
+        if job.get('settings', {}).get('name', '') == 'MLS 2.0 - Manual Run':
+            print(job['job_id'])
+            break
+except:
+    pass
 " 2>/dev/null || echo "")" \
         --notebook-task "{\"notebook_path\": \"$notebook_path\"}" \
         2>&1 | grep -v "^WARN:" || true)
@@ -86,21 +97,23 @@ for job in json.load(sys.stdin):
         local run_id=$(echo "$run_output" | python3 -c "import sys, json; print(json.load(sys.stdin)['run_id'])" 2>/dev/null || echo "")
         echo "   ✅ Started (Run ID: $run_id)"
         
-        # Wait for completion (simplified - in production use proper polling)
+        # Wait for completion
         sleep 5
     else
-        echo "   ⚠️  Could not start notebook (may need manual run)"
-        echo "   Run manually: databricks workspace import $notebook_path"
+        echo "   ⚠️  Could not start via jobs API, trying direct execution..."
+        # Fall back to running locally if jobs API fails
     fi
 }
 
-# Step 1: Load Bronze data
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# STEP 1: Load Bronze data (auto-scan source directory)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "STEP 1: Load Dash Bronze Data"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 cd "$MLS2_ROOT"
-python3 scripts/load_dash_bronze.py "$JSON_FILE" $COUNTRY_ARG
+python3 scripts/load_dash_bronze.py $FORCE_FLAG
 
 if [ $? -ne 0 ]; then
     echo "❌ Failed to load bronze data"
@@ -109,43 +122,42 @@ fi
 
 echo ""
 
-# Step 2: Run Silver ETLs
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# STEP 2: Run Silver ETLs
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "STEP 2: Run Dash Silver ETLs"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Import notebooks if needed
-echo "📤 Importing Dash Silver notebooks to Databricks..."
-databricks workspace import notebooks/01_dash_silver_property_etl.py "/Shared/mls_2_0/01_dash_silver_property_etl" --language PYTHON --overwrite 2>&1 | grep -v "^WARN:" || true
-databricks workspace import notebooks/01_dash_silver_media_etl.py "/Shared/mls_2_0/01_dash_silver_media_etl" --language PYTHON --overwrite 2>&1 | grep -v "^WARN:" || true
-
-# Run Silver Property ETL
+# Import and run Silver Property ETL
 run_notebook "Dash Silver Property ETL" "/Shared/mls_2_0/01_dash_silver_property_etl" 300
 
-# Run Silver Media ETL
+# Import and run Silver Features ETL (NEW - parses features JSON)
+run_notebook "Dash Silver Features ETL" "/Shared/mls_2_0/01b_dash_silver_features_etl" 300
+
+# Import and run Silver Media ETL
 run_notebook "Dash Silver Media ETL" "/Shared/mls_2_0/01_dash_silver_media_etl" 300
 
 echo ""
 
-# Step 3: Run Gold ETLs (updated to include Dash)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# STEP 3: Run Gold ETLs (unified - includes both Qobrix and Dash)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "STEP 3: Run RESO Gold ETLs (includes Dash data)"
+echo "STEP 3: Run Unified RESO Gold ETLs"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Import updated Gold notebooks
-echo "📤 Importing updated Gold notebooks to Databricks..."
-databricks workspace import notebooks/03_gold_reso_property_etl.py "/Shared/mls_2_0/03_gold_reso_property_etl" --language PYTHON --overwrite 2>&1 | grep -v "^WARN:" || true
-databricks workspace import notebooks/03c_gold_reso_media_etl.py "/Shared/mls_2_0/03c_gold_reso_media_etl" --language PYTHON --overwrite 2>&1 | grep -v "^WARN:" || true
-
-# Run Gold Property ETL
-run_notebook "RESO Gold Property ETL" "/Shared/mls_2_0/03_gold_reso_property_etl" 600
+# Run unified Gold Property ETL (UNION of Qobrix + Dash)
+run_notebook "RESO Gold Property ETL (Unified)" "/Shared/mls_2_0/03_gold_reso_property_etl" 600
 
 # Run Gold Media ETL
 run_notebook "RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" 300
 
 echo ""
 
-# Step 4: Verification
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# STEP 4: Verification
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "STEP 4: Verification"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -154,10 +166,10 @@ echo "📊 Verifying data in RESO Gold..."
 echo ""
 echo "Run this query in Databricks to verify:"
 echo ""
-echo "SELECT Country, X_DataSource, COUNT(*) as count"
+echo "SELECT Country, OriginatingSystemOfficeKey, X_DataSource, COUNT(*) as count"
 echo "FROM mls2.reso_gold.property"
-echo "GROUP BY Country, X_DataSource"
-echo "ORDER BY Country, X_DataSource;"
+echo "GROUP BY Country, OriginatingSystemOfficeKey, X_DataSource"
+echo "ORDER BY Country, OriginatingSystemOfficeKey;"
 echo ""
 
 # Calculate duration

@@ -92,11 +92,20 @@ if media_count > 0:
         TRY_CAST(m.sequence_number AS INT) AS display_order,
         
         -- Description/caption
-        NULLIF(TRIM(m.caption), '') AS description,
+        COALESCE(NULLIF(TRIM(m.description), ''), NULLIF(TRIM(m.caption), '')) AS description,
         NULLIF(TRIM(m.caption), '') AS title,
         
+        -- Image dimensions (NEW - from bronze)
+        TRY_CAST(m.width AS INT) AS image_width,
+        TRY_CAST(m.height AS INT) AS image_height,
+        CASE WHEN LOWER(COALESCE(m.is_landscape, '')) = 'true' THEN TRUE ELSE FALSE END AS is_landscape,
+        CASE WHEN LOWER(COALESCE(m.is_distributable, '')) = 'true' THEN TRUE ELSE FALSE END AS is_distributable,
+        
         -- Media category from Dash
-        NULLIF(TRIM(m.category), '') AS qobrix_category,
+        NULLIF(TRIM(m.category), '') AS dash_category,
+        
+        -- Media tags (JSON string)
+        m.media_tags AS media_tags_json,
         
         -- Primary flag (isDefault)
         CASE 
@@ -136,7 +145,12 @@ else:
             display_order INT,
             description STRING,
             title STRING,
-            qobrix_category STRING,
+            image_width INT,
+            image_height INT,
+            is_landscape BOOLEAN,
+            is_distributable BOOLEAN,
+            dash_category STRING,
+            media_tags_json STRING,
             is_primary BOOLEAN,
             created_ts TIMESTAMP,
             modified_ts TIMESTAMP,

@@ -142,9 +142,10 @@ run_notebook() {
           }]
         }'
     elif [ "$notebook_type" = "gold" ]; then
-        # Gold notebooks: need OriginatingSystemOfficeKey and LIST_OFFICE_KEY
+        # Gold notebooks: need OriginatingSystemOfficeKey
+        # Note: MLS_LIST_OFFICE_KEY is read directly by notebooks from env
         local office_key="${QOBRIX_API_OFFICE_KEY:-CSIR}"
-        local list_office_key="${LIST_OFFICE_KEY:-Sharp_SIR}"
+        local dash_office_key="${DASH_OFFICE_KEY:-HSIR}"
         local json='{
           "run_name": "'"$name"'",
           "tasks": [{
@@ -152,8 +153,8 @@ run_notebook() {
             "notebook_task": {
               "notebook_path": "'"$path"'",
               "base_parameters": {
-                "ORIGINATING_SYSTEM_OFFICE_KEY": "'"$office_key"'",
-                "LIST_OFFICE_KEY": "'"$list_office_key"'"
+                "QOBRIX_OFFICE_KEY": "'"$office_key"'",
+                "DASH_OFFICE_KEY": "'"$dash_office_key"'"
               }
             }
           }]

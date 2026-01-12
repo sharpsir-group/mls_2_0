@@ -5,3 +5,5 @@ __pycache__/
 api/logs/
 # Ignore entire tmp/ directory
 tmp/
+# Ignore Dash source data files
+dash_hsir_source/

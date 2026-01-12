@@ -71,6 +71,16 @@ class Settings(BaseSettings):
     # Qobrix default currency (ISO 4217 code) - set in .env
     qobrix_default_currency: str = ""
     
+    # Qobrix API office key (e.g., CSIR for Cyprus SIR)
+    qobrix_api_office_key: str = "CSIR"
+    
+    # MLS List Office Key (brokerage identity for RESO exports)
+    mls_list_office_key: str = "SHARP_SIR"
+    
+    # Dash Loader Settings
+    dash_source_dir: str = ""  # Directory containing Dash JSON source files
+    dash_office_key: str = "HSIR"  # OriginatingSystemOfficeKey for Dash data
+    
     # OAuth 2.0 Client Credentials (RESO compliant)
     # Generate with: openssl rand -hex 32
     oauth_jwt_secret: str = ""  # For signing JWT tokens
