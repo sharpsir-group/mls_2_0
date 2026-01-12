@@ -8,6 +8,17 @@
  * - Retry logic with exponential backoff
  * - Progress tracking with UI integration examples
  * - TypeScript types
+ * - Multi-tenant support (Qobrix + Dash data sources)
+ * 
+ * Data Sources:
+ *   This API aggregates data from multiple sources:
+ *   - Qobrix (OriginatingSystemOfficeKey = 'CSIR', X_DataSource = 'qobrix')
+ *   - Dash/Sotheby's (OriginatingSystemOfficeKey = 'HSIR', X_DataSource = 'dash_sothebys')
+ * 
+ *   Your OAuth client is configured for specific office keys. Filter by:
+ *   $filter=OriginatingSystemOfficeKey eq 'CSIR'  // Qobrix only
+ *   $filter=OriginatingSystemOfficeKey eq 'HSIR'  // Dash only
+ *   (no filter) // All data your client has access to
  * 
  * PropertyClass Values:
  *   RESI = Residential Sale
@@ -21,6 +32,18 @@
  *   Under Construction = Currently being built
  *   Complete = Finished construction
  *   null = Unknown/not specified
+ * 
+ * Property Fields (RESO DD 2.0):
+ *   Core: ListingKey, ListingId, ListPrice, StandardStatus, PropertyType, PropertyClass
+ *   Location: City, StateOrProvince, PostalCode, Country, Latitude, Longitude
+ *   Details: BedroomsTotal, BathroomsTotalInteger, BathroomsHalf, LivingArea, LotSizeSquareFeet
+ *   Features: YearBuilt, View, Flooring, Heating, Cooling, PoolFeatures, FireplaceYN, ParkingFeatures
+ *   Agent: ListAgentKey, ListAgentFirstName, ListAgentLastName, ListAgentEmail, ListOfficeName
+ *   Extensions: X_DataSource, X_ListingUrl, X_CurrencyCode, X_ListPriceUSD
+ * 
+ * Media Fields:
+ *   MediaKey, ResourceRecordKey, MediaURL, MediaCategory, Order
+ *   ImageWidth, ImageHeight (available for Dash photos)
  */
 
 // =============================================================================
@@ -31,7 +54,7 @@ export interface Property {
   ListingKey: string;
   ListingId?: string;
   ListPrice: number;
-  ListPriceCurrencyCode: string;
+  ListPriceCurrencyCode?: string;
   StandardStatus: 'Active' | 'Pending' | 'Closed' | 'Withdrawn';
   PropertyType: string;
   PropertyClass: 'RESI' | 'RLSE' | 'COMS' | 'COML' | 'LAND';
@@ -39,12 +62,50 @@ export interface Property {
   City: string;
   StateOrProvince?: string;
   PostalCode?: string;
+  Country?: string;
   BedroomsTotal?: number;
   BathroomsTotalInteger?: number;
+  BathroomsHalf?: number;
   LivingArea?: number;
+  LotSizeSquareFeet?: number;
   Latitude?: number;
   Longitude?: number;
   ModificationTimestamp?: string;
+  PublicRemarks?: string;
+  
+  // RESO DD 2.0 Feature Fields (populated from Dash data)
+  YearBuilt?: number;
+  View?: string;
+  Flooring?: string;
+  Heating?: string;
+  Cooling?: string;
+  PoolFeatures?: string;
+  FireplaceYN?: boolean;
+  FireplaceFeatures?: string;
+  ParkingFeatures?: string;
+  Fencing?: string;
+  
+  // Agent/Office Fields
+  ListAgentKey?: string;
+  ListAgentFirstName?: string;
+  ListAgentLastName?: string;
+  ListAgentEmail?: string;
+  ListOfficeName?: string;
+  ListOfficeKey?: string;
+  
+  // Multi-tenant Fields
+  /** Office key: 'CSIR' (Qobrix) or 'HSIR' (Dash) */
+  OriginatingSystemOfficeKey: 'CSIR' | 'HSIR';
+  /** Data source: 'qobrix' or 'dash_sothebys' */
+  X_DataSource: 'qobrix' | 'dash_sothebys';
+  
+  // Extension Fields (X_ prefix)
+  X_ListingUrl?: string;
+  X_CurrencyCode?: string;
+  X_ListPriceUSD?: number;
+  X_QobrixId?: string;
+  X_QobrixRef?: string;
+  
   /** Main photo URL - populated via getMainPhotos() from Media where Order=0 */
   mainPhoto?: string;
   /** All media - populated via syncAllWithMedia() or getPropertyMedia() */
@@ -59,7 +120,16 @@ export interface Media {
   MediaCategory: 'Photo' | 'Floorplan' | 'Document' | 'Video' | string;
   Order: number;
   ShortDescription?: string;
+  LongDescription?: string;
   MediaModificationTimestamp?: string;
+  /** Image width in pixels (available for Dash photos) */
+  ImageWidth?: number;
+  /** Image height in pixels (available for Dash photos) */
+  ImageHeight?: number;
+  /** Office key: 'CSIR' (Qobrix) or 'HSIR' (Dash) */
+  OriginatingSystemOfficeKey: 'CSIR' | 'HSIR';
+  /** Data source: 'qobrix' or 'dash_sothebys' */
+  X_DataSource: 'qobrix' | 'dash_sothebys';
   [key: string]: unknown;
 }
 
@@ -550,8 +620,36 @@ const mlsClient = new MLSSyncClient({
   clientSecret: 'your-client-secret',
 });
 
+// Sync all active properties (from all data sources your client has access to)
 const properties = await mlsClient.syncAllParallel({
   filter: "StandardStatus eq 'Active'",
+});
+
+
+// ---------------------------------------------------------------------------
+// 1a. FILTER BY DATA SOURCE
+// ---------------------------------------------------------------------------
+
+// Sync only Qobrix data
+const qobrixProperties = await mlsClient.syncAllParallel({
+  filter: "OriginatingSystemOfficeKey eq 'CSIR'",
+});
+
+// Sync only Dash/Sotheby's data
+const dashProperties = await mlsClient.syncAllParallel({
+  filter: "OriginatingSystemOfficeKey eq 'HSIR'",
+});
+
+// Combine filters
+const activeDashProperties = await mlsClient.syncAllParallel({
+  filter: "StandardStatus eq 'Active' and OriginatingSystemOfficeKey eq 'HSIR'",
+});
+
+// Check data source in results
+properties.forEach(p => {
+  console.log(`${p.ListingKey}: ${p.X_DataSource} (${p.OriginatingSystemOfficeKey})`);
+  // Output: QOBRIX_abc123: qobrix (CSIR)
+  // Output: DASH_xyz789: dash_sothebys (HSIR)
 });
 
 

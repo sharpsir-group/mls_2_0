@@ -7,8 +7,19 @@
  * - Parallel requests for maximum throughput
  * - Retry logic with exponential backoff
  * - Progress tracking with UI integration examples
+ * - Multi-tenant support (Qobrix + Dash data sources)
  * 
  * No dependencies - works in browser and Node.js (18+)
+ * 
+ * Data Sources:
+ *   This API aggregates data from multiple sources:
+ *   - Qobrix (OriginatingSystemOfficeKey = 'CSIR', X_DataSource = 'qobrix')
+ *   - Dash/Sotheby's (OriginatingSystemOfficeKey = 'HSIR', X_DataSource = 'dash_sothebys')
+ * 
+ *   Your OAuth client is configured for specific office keys. Filter by:
+ *   $filter=OriginatingSystemOfficeKey eq 'CSIR'  // Qobrix only
+ *   $filter=OriginatingSystemOfficeKey eq 'HSIR'  // Dash only
+ *   (no filter) // All data your client has access to
  * 
  * PropertyClass Values:
  *   RESI = Residential Sale
@@ -22,6 +33,18 @@
  *   Under Construction = Currently being built
  *   Complete = Finished construction
  *   null = Unknown/not specified
+ * 
+ * Property Fields (RESO DD 2.0):
+ *   Core: ListingKey, ListingId, ListPrice, StandardStatus, PropertyType, PropertyClass
+ *   Location: City, StateOrProvince, PostalCode, Country, Latitude, Longitude
+ *   Details: BedroomsTotal, BathroomsTotalInteger, BathroomsHalf, LivingArea, LotSizeSquareFeet
+ *   Features: YearBuilt, View, Flooring, Heating, Cooling, PoolFeatures, FireplaceYN, ParkingFeatures
+ *   Agent: ListAgentKey, ListAgentFirstName, ListAgentLastName, ListAgentEmail, ListOfficeName
+ *   Extensions: X_DataSource, X_ListingUrl, X_CurrencyCode, X_ListPriceUSD
+ * 
+ * Media Fields:
+ *   MediaKey, ResourceRecordKey, MediaURL, MediaCategory, Order
+ *   ImageWidth, ImageHeight (available for Dash photos)
  */
 
 // =============================================================================
@@ -433,11 +456,39 @@ const client = new MLSSyncClient({
   clientSecret: 'your-client-secret',
 });
 
+// Sync all active properties (from all data sources your client has access to)
 const properties = await client.syncAllParallel({
   filter: "StandardStatus eq 'Active'",
   onProgress: (p) => {
     console.log(`${p.percent}% (${p.fetched}/${p.total}) - ${p.propertiesPerSecond} items/sec`);
   },
+});
+
+
+// ---------------------------------------------------------------------------
+// 1a. FILTER BY DATA SOURCE
+// ---------------------------------------------------------------------------
+
+// Sync only Qobrix data
+const qobrixProperties = await client.syncAllParallel({
+  filter: "OriginatingSystemOfficeKey eq 'CSIR'",
+});
+
+// Sync only Dash/Sotheby's data
+const dashProperties = await client.syncAllParallel({
+  filter: "OriginatingSystemOfficeKey eq 'HSIR'",
+});
+
+// Combine filters
+const activeDashProperties = await client.syncAllParallel({
+  filter: "StandardStatus eq 'Active' and OriginatingSystemOfficeKey eq 'HSIR'",
+});
+
+// Check data source in results
+properties.forEach(p => {
+  console.log(`${p.ListingKey}: ${p.X_DataSource} (${p.OriginatingSystemOfficeKey})`);
+  // Output: QOBRIX_abc123: qobrix (CSIR)
+  // Output: DASH_xyz789: dash_sothebys (HSIR)
 });
 
 
