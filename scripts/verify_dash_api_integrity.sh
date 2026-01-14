@@ -120,8 +120,18 @@ print("Loading Dash source files...")
 dash_listings = load_dash_source()
 print(f"  Total: {len(dash_listings)} listings from source\n")
 
-# Build lookup by listingGuid
+# Build lookup by listingGuid (takes last occurrence)
 dash_by_guid = {l['listingGuid']: l for l in dash_listings}
+
+# Build unique media count per listing (aggregates across all source files)
+def get_unique_media_count(guid):
+    """Get unique media count for a listing across all source files"""
+    unique_media = set()
+    for l in dash_listings:
+        if l.get('listingGuid') == guid:
+            for m in l.get('media', []):
+                unique_media.add(m.get('mediaGuid'))
+    return len(unique_media)
 
 print("=" * 60)
 print("TEST 1: Property Count Verification")
@@ -231,9 +241,8 @@ for rprop in reso_sample.get('value', [])[:5]:
     if not source_listing:
         continue
     
-    # Count media in source
-    source_media = source_listing.get('media', [])
-    source_media_count = len(source_media)
+    # Count UNIQUE media in source (across all files for this listing)
+    source_media_count = get_unique_media_count(guid)
     
     # Count media in RESO API
     reso_media = reso_get(f"/odata/Media?$filter=ResourceRecordKey eq '{listing_key}'&$count=true")
