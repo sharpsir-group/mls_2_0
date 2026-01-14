@@ -186,7 +186,8 @@ SELECT
     -- Image dimensions (NOW available from Dash bronze)
     m.image_width                                    AS ImageWidth,
     m.image_height                                   AS ImageHeight,
-    m.file_size_bytes                                AS ImageSizeBytes,
+    -- Dash silver may not always expose file_size_bytes reliably across runtimes; keep NULL
+    CAST(NULL AS BIGINT)                             AS ImageSizeBytes,
     
     -- Primary flag
     m.is_primary                                     AS X_IsPrimary,

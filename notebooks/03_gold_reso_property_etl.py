@@ -197,7 +197,8 @@ SELECT
 
     -- Dates
     s.created_ts                                 AS OriginalEntryTimestamp,
-    s.listing_date                               AS ListingContractDate,
+    -- qobrix_silver.property.listing_date is STRING and may be empty; ensure DATE-typed output
+    TRY_CAST(NULLIF(TRIM(CAST(s.listing_date AS STRING)), '') AS DATE) AS ListingContractDate,
     s.modified_ts                                AS ModificationTimestamp,
 
     -- Address / location
@@ -358,8 +359,9 @@ SELECT
     TRY_CAST(b.previous_list_rental_price AS DECIMAL(18,2))  AS X_PreviousLeasePrice,
     b.list_selling_price_modified                 AS X_ListPriceModified,
     b.list_rental_price_modified                  AS X_LeasePriceModified,
-    b.auction_start_date                          AS X_AuctionStartDate,
-    b.auction_end_date                            AS X_AuctionEndDate,
+    -- Auction dates can be empty strings in bronze; use TRY_CAST to avoid failures
+    TRY_CAST(NULLIF(TRIM(b.auction_start_date), '') AS DATE) AS X_AuctionStartDate,
+    TRY_CAST(NULLIF(TRIM(b.auction_end_date), '') AS DATE)   AS X_AuctionEndDate,
     TRY_CAST(b.reserve_price_amount AS DECIMAL(18,2))      AS X_ReservePrice,
     TRY_CAST(b.starting_bidding_amount AS DECIMAL(18,2))   AS X_StartingBid,
     b.project                                     AS X_ProjectId,
@@ -625,7 +627,8 @@ SELECT
     NULL AS X_PreviousLeasePrice,
     NULL AS X_ListPriceModified,
     NULL AS X_LeasePriceModified,
-    CASE WHEN d.is_for_auction THEN 'true' ELSE NULL END AS X_AuctionStartDate,
+    -- Dash doesn't provide auction start/end dates; keep NULL (avoid invalid DATE casts)
+    NULL AS X_AuctionStartDate,
     NULL AS X_AuctionEndDate,
     NULL AS X_ReservePrice,
     NULL AS X_StartingBid,
