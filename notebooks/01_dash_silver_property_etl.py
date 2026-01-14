@@ -64,8 +64,10 @@ spark.sql("CREATE SCHEMA IF NOT EXISTS dash_silver")
 bronze_cols = set([c.lower() for c in spark.table("dash_bronze.properties").columns])
 print(f"📋 Dash Bronze table has {len(bronze_cols)} columns")
 
+# Use ROW_NUMBER to deduplicate by property id (same listing may appear in multiple source files)
 transform_dash_to_silver_sql = """
 CREATE OR REPLACE TABLE dash_silver.property AS
+WITH ranked AS (
 SELECT
     -- ═══════════════════════════════════════════════════════════════════════════
     -- IDENTIFIERS (Dash-specific naming)
@@ -249,13 +251,38 @@ SELECT
     NULLIF(TRIM(p.listing_office_code), '') AS listing_office_code,
 
     -- ═══════════════════════════════════════════════════════════════════════════
-    -- ETL METADATA
+    -- DEDUPLICATION: keep one row per listing (prefer newer records)
     -- ═══════════════════════════════════════════════════════════════════════════
-    CURRENT_TIMESTAMP()                     AS etl_timestamp,
-    CONCAT('dash_silver_batch_', CURRENT_DATE()) AS etl_batch_id
+    ROW_NUMBER() OVER (
+        PARTITION BY p.id 
+        ORDER BY p.last_update_on DESC NULLS LAST, p.id
+    ) AS rn
 
 FROM dash_bronze.properties p
 WHERE p.id IS NOT NULL AND p.id != ''
+)
+SELECT
+    dash_id, dash_ref, dash_source, office_key,
+    name, description, status, status_description, sale_rent,
+    property_type, property_subtype, property_type_code, property_subtype_code, style_code, style_description,
+    bedrooms, bathrooms, half_bath,
+    country, country_name, state, state_name, city, district, post_code, street,
+    coordinates, latitude, longitude,
+    living_area, living_area_unit, building_area, building_area_unit, lot_size, lot_size_unit,
+    list_price, list_price_usd, currency_code, currency_name,
+    listing_date, created_ts, modified_ts, days_on_market, expiration_date,
+    year_built,
+    is_off_market, is_for_auction, is_new_construction, is_price_upon_request,
+    has_ac, has_pool, has_fireplace, has_garage, has_security,
+    features_json, remarks_json, additional_details_json, public_remarks,
+    listing_url,
+    agent_id, agent_first_name, agent_last_name, agent_email, agent_vanity_email, agent_photo_url,
+    company_id, company_name, company_code,
+    agent_office_id, agent_office_code, listing_office_id, listing_office_code,
+    CURRENT_TIMESTAMP() AS etl_timestamp,
+    CONCAT('dash_silver_batch_', CURRENT_DATE()) AS etl_batch_id
+FROM ranked
+WHERE rn = 1
 """
 
 print("📊 Creating Dash silver table from bronze...")

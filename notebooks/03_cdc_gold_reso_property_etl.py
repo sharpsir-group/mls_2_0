@@ -152,7 +152,8 @@ SELECT
         ELSE b.rent_frequency
     END                                           AS LeaseAmountFrequency,
     s.created_ts                                 AS OriginalEntryTimestamp,
-    s.listing_date                               AS ListingContractDate,
+    -- listing_date may be empty STRING; use TRY_CAST to avoid failures
+    TRY_CAST(NULLIF(TRIM(CAST(s.listing_date AS STRING)), '') AS DATE) AS ListingContractDate,
     s.modified_ts                                AS ModificationTimestamp,
     s.street                                      AS UnparsedAddress,
     s.city                                        AS City,

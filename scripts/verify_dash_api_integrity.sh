@@ -137,8 +137,9 @@ print("=" * 60)
 print("TEST 1: Property Count Verification")
 print("=" * 60)
 
-# Source count
-source_count = len(dash_listings)
+# Source count (unique listings - same listing may appear in multiple files)
+unique_listing_guids = set(l['listingGuid'] for l in dash_listings)
+source_count = len(unique_listing_guids)
 
 # RESO property count (HSIR only)
 reso_props = reso_get('/odata/Property?$count=true&$top=1&$filter=OriginatingSystemOfficeKey eq \'HSIR\'')
