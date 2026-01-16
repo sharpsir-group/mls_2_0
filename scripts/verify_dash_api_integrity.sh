@@ -5,6 +5,7 @@
 # ============================================================
 # Dash → RESO Web API Integrity Test
 # Two-way verification: Dash JSON Source ↔ RESO API
+# Only processes HSIR_Listings_readable.json (ignores old files)
 # ============================================================
 
 set -e
@@ -99,24 +100,27 @@ def reso_get(endpoint):
     return resp.json()
 
 def load_dash_source():
-    """Load all Dash JSON source files"""
+    """Load only HSIR_Listings_readable.json (ignore old files)"""
     all_listings = []
-    json_files = glob.glob(os.path.join(DASH_SOURCE_DIR, '*.json'))
+    json_file = os.path.join(DASH_SOURCE_DIR, 'HSIR_Listings_readable.json')
     
-    for json_file in json_files:
-        with open(json_file, 'r') as f:
-            data = json.load(f)
-            # Handle both formats: direct list or dict with 'listings' key
-            if isinstance(data, list):
-                listings = data
-            else:
-                listings = data.get('listings', [])
-            all_listings.extend(listings)
-            print(f"  📁 {os.path.basename(json_file)}: {len(listings)} listings")
+    if not os.path.exists(json_file):
+        print(f"  ❌ File not found: {json_file}")
+        return all_listings
+    
+    with open(json_file, 'r') as f:
+        data = json.load(f)
+        # Handle both formats: direct list or dict with 'listings' key
+        if isinstance(data, list):
+            listings = data
+        else:
+            listings = data.get('listings', [])
+        all_listings.extend(listings)
+        print(f"  📁 {os.path.basename(json_file)}: {len(listings)} listings")
     
     return all_listings
 
-print("Loading Dash source files...")
+print("Loading Dash source file (HSIR_Listings_readable.json only)...")
 dash_listings = load_dash_source()
 print(f"  Total: {len(dash_listings)} listings from source\n")
 
@@ -445,10 +449,148 @@ for media in media_data.get('value', []):
 
 print("")
 print("=" * 60)
+print("TEST 9: Agent & Geolocation Completeness")
+print("=" * 60)
+
+agent_geo_issues = []
+
+total_listings = len(dash_listings)
+with_agent_guid = 0
+with_agent_name = 0
+with_agent_email = 0
+with_geolocation = 0
+with_both = 0
+
+for listing in dash_listings:
+    # Check agent completeness
+    agent = listing.get('primaryAgent', {})
+    has_agent_guid = bool(agent.get('personGuid'))
+    has_agent_name = bool(agent.get('firstName') or agent.get('lastName'))
+    has_agent_email = bool(agent.get('primaryEmailAddress') or agent.get('vanityEmailAddress'))
+    
+    # Check geolocation
+    location = listing.get('propertyDetails', {}).get('location', {})
+    lat = location.get('latitude')
+    lon = location.get('longitude')
+    has_geolocation = False
+    
+    if lat is not None and lon is not None:
+        try:
+            lat_f = float(lat)
+            lon_f = float(lon)
+            if -90 <= lat_f <= 90 and -180 <= lon_f <= 180 and (lat_f != 0 or lon_f != 0):
+                has_geolocation = True
+        except (ValueError, TypeError):
+            pass
+    
+    # Count completions
+    if has_agent_guid:
+        with_agent_guid += 1
+    if has_agent_name:
+        with_agent_name += 1
+    if has_agent_email:
+        with_agent_email += 1
+    if has_geolocation:
+        with_geolocation += 1
+    if has_agent_guid and has_agent_name and has_agent_email and has_geolocation:
+        with_both += 1
+    
+    # Track issues
+    listing_guid = listing.get('listingGuid', 'UNKNOWN')
+    issues = []
+    if not has_agent_guid:
+        issues.append("missing agent GUID")
+    if not has_agent_name:
+        issues.append("missing agent name")
+    if not has_agent_email:
+        issues.append("missing agent email")
+    if not has_geolocation:
+        issues.append("missing/invalid geolocation")
+    
+    if issues:
+        agent_geo_issues.append(f"{listing_guid}: {', '.join(issues)}")
+
+# Print summary
+print(f"  Total listings: {total_listings}")
+print(f"  With agent GUID: {with_agent_guid} ({with_agent_guid*100/total_listings:.1f}%)")
+print(f"  With agent name: {with_agent_name} ({with_agent_name*100/total_listings:.1f}%)")
+print(f"  With agent email: {with_agent_email} ({with_agent_email*100/total_listings:.1f}%)")
+print(f"  With geolocation: {with_geolocation} ({with_geolocation*100/total_listings:.1f}%)")
+print(f"  Complete (agent + geo): {with_both} ({with_both*100/total_listings:.1f}%)")
+
+if agent_geo_issues:
+    print(f"  ⚠️  {len(agent_geo_issues)} listings with issues:")
+    for issue in agent_geo_issues[:5]:
+        print(f"     {issue}")
+    if len(agent_geo_issues) > 5:
+        print(f"     ... and {len(agent_geo_issues) - 5} more")
+else:
+    print(f"  ✅ All listings have complete agent and geolocation data")
+
+print("")
+print("  Checking RESO API data...")
+# Verify in RESO API
+reso_all_props = reso_get('/odata/Property?$filter=OriginatingSystemOfficeKey eq \'HSIR\'&$select=ListingKey,ListAgentKey,Latitude,Longitude')
+reso_props_list = reso_all_props.get('value', [])
+
+reso_with_agent = 0
+reso_with_geo = 0
+reso_complete = 0
+reso_issues = []
+
+for rprop in reso_props_list:
+    listing_key = rprop.get('ListingKey', '')
+    has_agent = bool(rprop.get('ListAgentKey'))
+    lat = rprop.get('Latitude')
+    lon = rprop.get('Longitude')
+    has_geo = False
+    
+    if lat is not None and lon is not None:
+        try:
+            lat_f = float(lat)
+            lon_f = float(lon)
+            if -90 <= lat_f <= 90 and -180 <= lon_f <= 180 and (lat_f != 0 or lon_f != 0):
+                has_geo = True
+        except (ValueError, TypeError):
+            pass
+    
+    if has_agent:
+        reso_with_agent += 1
+    if has_geo:
+        reso_with_geo += 1
+    if has_agent and has_geo:
+        reso_complete += 1
+    
+    if not has_agent or not has_geo:
+        issues = []
+        if not has_agent:
+            issues.append("missing agent")
+        if not has_geo:
+            issues.append("missing geolocation")
+        reso_issues.append(f"{listing_key[:40]}...: {', '.join(issues)}")
+
+reso_total = len(reso_props_list)
+print(f"  RESO API - Total listings: {reso_total}")
+print(f"  RESO API - With agent: {reso_with_agent} ({reso_with_agent*100/reso_total:.1f}%)" if reso_total > 0 else "  RESO API - With agent: 0")
+print(f"  RESO API - With geolocation: {reso_with_geo} ({reso_with_geo*100/reso_total:.1f}%)" if reso_total > 0 else "  RESO API - With geolocation: 0")
+print(f"  RESO API - Complete (agent + geo): {reso_complete} ({reso_complete*100/reso_total:.1f}%)" if reso_total > 0 else "  RESO API - Complete: 0")
+
+if reso_issues:
+    print(f"  ⚠️  {len(reso_issues)} RESO listings with issues:")
+    for issue in reso_issues[:5]:
+        print(f"     {issue}")
+    if len(reso_issues) > 5:
+        print(f"     ... and {len(reso_issues) - 5} more")
+    agent_geo_issues.extend([f"RESO: {i}" for i in reso_issues])
+else:
+    print(f"  ✅ All RESO API listings have complete agent and geolocation data")
+
+print("")
+print("=" * 60)
 print("SUMMARY")
 print("=" * 60)
 
-total_issues = len(count_issues) + len(data_issues) + len(media_issues) + len(feature_issues) + len(agent_issues) + len(source_issues) + len(type_issues) + len(url_issues)
+total_issues = len(count_issues) + len(data_issues) + len(media_issues) + len(feature_issues) + len(agent_issues) + len(source_issues) + len(type_issues) + len(url_issues) + len(agent_geo_issues)
 
 print(f"  Property Count:         {'✅ PASS' if not count_issues else '❌ FAIL (' + str(len(count_issues)) + ')'}")
 print(f"  Property Data:          {'✅ PASS' if not data_issues else '❌ FAIL (' + str(len(data_issues)) + ')'}")
@@ -458,6 +600,7 @@ print(f"  Agent/Office Data:      {'✅ PASS' if not agent_issues else '⚠️  
 print(f"  Data Source Tags:       {'✅ PASS' if not source_issues else '❌ FAIL (' + str(len(source_issues)) + ')'}")
 print(f"  RESO Type Compliance:   {'✅ PASS' if not type_issues else '❌ FAIL (' + str(len(type_issues)) + ')'}")
 print(f"  Media URL/Dimensions:   {'✅ PASS' if not url_issues else '❌ FAIL (' + str(len(url_issues)) + ')'}")
+print(f"  Agent/Geo Completeness: {'✅ PASS' if not agent_geo_issues else '❌ FAIL (' + str(len(agent_geo_issues)) + ')'}")
 print("")
 
 if total_issues == 0:

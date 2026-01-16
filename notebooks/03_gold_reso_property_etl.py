@@ -428,6 +428,7 @@ SELECT
     -- Status mapping (Dash -> RESO)
     CASE UPPER(d.status)
         WHEN 'AC' THEN 'Active'
+        WHEN 'AV' THEN 'Active'  -- Available -> Active
         WHEN 'PS' THEN 'Pending'
         WHEN 'CL' THEN 'Closed'
         WHEN 'WD' THEN 'Withdrawn'

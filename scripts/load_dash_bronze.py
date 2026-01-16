@@ -477,8 +477,61 @@ class DashBronzeLoader:
         
         print(f"✅ Loaded {len(media_items)} media items into {self.catalog}.{self.schema}.media")
     
-    async def load_file(self, json_file: Path, country_code: Optional[str] = None, append: bool = False) -> int:
-        """Load Dash JSON file into Databricks Bronze. Returns record count."""
+    async def delete_by_office_key(self, office_key: str):
+        """Delete all records for a specific office_key from bronze tables."""
+        print(f"🗑️  Deleting old data for office_key: {office_key}")
+        
+        # Delete from properties table
+        try:
+            delete_properties_sql = f"""
+                DELETE FROM {self.catalog}.{self.schema}.properties
+                WHERE office_key = '{office_key}'
+            """
+            await self.execute_query(delete_properties_sql)
+            print(f"✅ Deleted properties with office_key = '{office_key}'")
+        except Exception as e:
+            if "TABLE_OR_VIEW_NOT_FOUND" in str(e) or "does not exist" in str(e).lower():
+                print(f"⚠️  Properties table doesn't exist yet, skipping delete")
+            else:
+                raise
+        
+        # Delete from media table
+        try:
+            delete_media_sql = f"""
+                DELETE FROM {self.catalog}.{self.schema}.media
+                WHERE office_key = '{office_key}'
+            """
+            await self.execute_query(delete_media_sql)
+            print(f"✅ Deleted media with office_key = '{office_key}'")
+        except Exception as e:
+            if "TABLE_OR_VIEW_NOT_FOUND" in str(e) or "does not exist" in str(e).lower():
+                print(f"⚠️  Media table doesn't exist yet, skipping delete")
+            else:
+                raise
+        
+        # Delete from processed_files table
+        try:
+            delete_files_sql = f"""
+                DELETE FROM {self.catalog}.{self.schema}.processed_files
+                WHERE office_key = '{office_key}'
+            """
+            await self.execute_query(delete_files_sql)
+            print(f"✅ Deleted processed_files tracking for office_key = '{office_key}'")
+        except Exception as e:
+            if "TABLE_OR_VIEW_NOT_FOUND" in str(e) or "does not exist" in str(e).lower():
+                print(f"⚠️  Processed_files table doesn't exist yet, skipping delete")
+            else:
+                raise
+    
+    async def load_file(self, json_file: Path, country_code: Optional[str] = None, append: bool = False, delete_old: bool = False) -> int:
+        """Load Dash JSON file into Databricks Bronze. Returns record count.
+        
+        Args:
+            json_file: Path to JSON file to load
+            country_code: Optional country code override
+            append: If True, append to existing data. If False, full refresh (drops table).
+            delete_old: If True, delete old data for this office_key before loading (safer than full refresh).
+        """
         print(f"📥 Loading Dash data from: {json_file}")
         
         if not json_file.exists():
@@ -499,6 +552,12 @@ class DashBronzeLoader:
         
         # Ensure schema exists
         await self.ensure_schema_exists()
+        
+        # Delete old data for this office_key if requested
+        if delete_old:
+            await self.delete_by_office_key(self.office_key)
+            # After deleting, we should append (not full refresh) to preserve other office_keys
+            append = True
         
         # Transform data
         print("\n🔄 Transforming properties...")
@@ -590,6 +649,7 @@ async def main():
     parser.add_argument("--file", type=str, help="Specific JSON file to load (optional)")
     parser.add_argument("--country", type=str, help="Country code override (e.g., HU, CY)")
     parser.add_argument("--force", action="store_true", help="Force reprocess all files")
+    parser.add_argument("--delete-old", action="store_true", help="Delete old data for office_key before loading (use with --file)")
     
     args = parser.parse_args()
     
@@ -605,7 +665,7 @@ async def main():
             else:
                 json_path = Path(__file__).parent.parent / json_path
         
-        await loader.load_file(json_path, args.country)
+        await loader.load_file(json_path, args.country, delete_old=args.delete_old)
     else:
         # Auto-scan and process all new files
         await loader.load_all_new_files(force=args.force)
