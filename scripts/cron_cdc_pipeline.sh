@@ -1,7 +1,10 @@
 #!/bin/bash
 # MLS 2.0 CDC Pipeline - Cron Job Wrapper
-# Runs daily at 2:00 AM, sends HTML email report with Sharp Sotheby's branding
+# Runs daily at 3:00 AM MSK (0:00 UTC), sends HTML email report
 # Usage: Called by cron, not manually
+
+# Set PATH for cron environment (databricks CLI is in ~/.local/bin)
+export PATH="/home/bitnami/.local/bin:/home/bitnami/.nvm/versions/node/v20.19.5/bin:/opt/bitnami/python/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 set -e
 

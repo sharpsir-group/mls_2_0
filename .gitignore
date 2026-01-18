@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 api/logs/
+logs/
 # Ignore entire tmp/ directory
 tmp/
 # Ignore Dash source data files
