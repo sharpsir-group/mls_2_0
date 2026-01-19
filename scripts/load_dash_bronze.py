@@ -6,17 +6,17 @@ Loads Dash/Sotheby's JSON files from local filesystem into Databricks Bronze tab
 Supports auto-scanning source directory for new/unprocessed files.
 
 Usage:
-    # Auto-process all new files from DASH_SOURCE_DIR
-    python3 scripts/load_dash_bronze.py
+    # Load for a specific source (by office key)
+    python3 scripts/load_dash_bronze.py --source SHARPSIR-HU-001
     
-    # Process specific file
-    python3 scripts/load_dash_bronze.py --file dash_listings_hungary.json
+    # Process specific file for a source
+    python3 scripts/load_dash_bronze.py --source SHARPSIR-HU-001 --file listings.json
     
-    # Process specific file with country override
-    python3 scripts/load_dash_bronze.py --file dash_listings_hungary.json --country HU
+    # Force reprocess all files
+    python3 scripts/load_dash_bronze.py --source SHARPSIR-HU-001 --force
     
-    # Force reprocess all files (ignore tracking)
-    python3 scripts/load_dash_bronze.py --force
+    # List available DASH sources
+    python3 scripts/load_dash_bronze.py --list-sources
 """
 import json
 import sys
@@ -28,15 +28,39 @@ from datetime import datetime
 import httpx
 from typing import Any, Optional
 
+# Load .env from project root
+from dotenv import load_dotenv
+MLS2_ROOT = Path(__file__).parent.parent
+load_dotenv(MLS2_ROOT / ".env")
+
 # Add api directory to path for config
-sys.path.insert(0, str(Path(__file__).parent.parent / "api"))
-from config import get_settings
+sys.path.insert(0, str(MLS2_ROOT / "api"))
+from config import get_settings, DataSource
 
 
 class DashBronzeLoader:
     """Load Dash JSON data into Databricks Bronze tables with file tracking."""
     
-    def __init__(self):
+    def __init__(self, source: DataSource):
+        """
+        Initialize loader with a DataSource configuration.
+        
+        Args:
+            source: DataSource object (DASH_JSON or DASH_API type)
+        """
+        if source.source_type not in ("DASH_JSON", "DASH_API"):
+            raise ValueError(f"Source {source.office_key} is not a DASH type (got {source.source_type})")
+        
+        self.source = source
+        self.office_key = source.office_key
+        self.system_name = source.system_name
+        self.system_id = source.system_id
+        self.country = source.country
+        
+        # Source directory for DASH_JSON
+        self.source_dir = Path(source.source_dir) if source.source_dir else None
+        
+        # Settings for Databricks connection
         self.settings = get_settings()
         host = self.settings.databricks_host
         if host.startswith("https://"):
@@ -49,10 +73,6 @@ class DashBronzeLoader:
         }
         self.catalog = "mls2"
         self.schema = "dash_bronze"
-        
-        # Get source directory from settings
-        self.source_dir = Path(self.settings.dash_source_dir) if self.settings.dash_source_dir else None
-        self.office_key = self.settings.dash_office_key or "HSIR"
     
     async def execute_query(self, sql: str) -> dict[str, Any]:
         """Execute SQL query against Databricks."""
@@ -121,10 +141,10 @@ class DashBronzeLoader:
         try:
             result = await self.execute_query(f"""
                 SELECT filename, file_hash FROM {self.catalog}.{self.schema}.processed_files
+                WHERE office_key = '{self.office_key}'
             """)
             
             processed = {}
-            manifest = result.get("manifest", {})
             data = result.get("result", {}).get("data_array", [])
             
             for row in data:
@@ -133,7 +153,6 @@ class DashBronzeLoader:
             
             return processed
         except Exception as e:
-            # Table might not exist yet
             if "TABLE_OR_VIEW_NOT_FOUND" in str(e) or "does not exist" in str(e).lower():
                 return {}
             raise
@@ -170,9 +189,9 @@ class DashBronzeLoader:
             if filename not in processed or processed[filename] != file_hash:
                 new_files.append(json_file)
         
-        return sorted(new_files)  # Sort for consistent ordering
+        return sorted(new_files)
     
-    def transform_dash_to_bronze_properties(self, listings: list, country_code: str) -> list[dict]:
+    def transform_dash_to_bronze_properties(self, listings: list) -> list[dict]:
         """Transform Dash listings to bronze properties format."""
         properties = []
         
@@ -218,7 +237,7 @@ class DashBronzeLoader:
             prop["lot_size_unit"] = prop_details.get("lotSizeUnitCode", "")
             
             # Location
-            prop["country"] = location.get("countryCode", country_code)
+            prop["country"] = location.get("countryCode", self.country)
             prop["country_name"] = location.get("countryName", "")
             prop["state"] = location.get("stateProvinceCode", "")
             prop["state_name"] = location.get("stateProvinceName", "")
@@ -250,29 +269,20 @@ class DashBronzeLoader:
             
             # Remarks (store as JSON string)
             remarks = listing.get("remarks", [])
-            if remarks:
-                prop["remarks"] = json.dumps(remarks)
-            else:
-                prop["remarks"] = ""
+            prop["remarks"] = json.dumps(remarks) if remarks else ""
             
             # Features (store as JSON string)
             features = prop_details.get("features", [])
-            if features:
-                prop["features"] = json.dumps(features)
-            else:
-                prop["features"] = ""
+            prop["features"] = json.dumps(features) if features else ""
             
             # Additional details
             additional = listing.get("additionalDetails", {})
-            if additional:
-                prop["additional_details"] = json.dumps(additional)
-            else:
-                prop["additional_details"] = ""
+            prop["additional_details"] = json.dumps(additional) if additional else ""
             
-            # Year built (from propertyDetails)
+            # Year built
             prop["year_built"] = str(prop_details.get("yearBuilt", ""))
             
-            # Expiration date (from additionalDetails)
+            # Expiration date
             prop["expires_on"] = additional.get("expiresOn", "") if additional else ""
             
             # Contingencies
@@ -283,7 +293,7 @@ class DashBronzeLoader:
             websites = listing.get("websites", [])
             prop["websites"] = json.dumps(websites) if websites else ""
             
-            # Primary Agent info (denormalized into properties for simplicity)
+            # Primary Agent info
             primary_agent = listing.get("primaryAgent", {})
             prop["agent_id"] = primary_agent.get("personGuid", "")
             prop["agent_first_name"] = primary_agent.get("firstName", "")
@@ -303,16 +313,18 @@ class DashBronzeLoader:
             prop["agent_office_id"] = agent_office.get("officeGuid", "")
             prop["agent_office_code"] = agent_office.get("officeId", "")
             
-            # Listing office (direct from listing)
+            # Listing office
             listing_office = listing.get("office", {})
             prop["listing_office_id"] = listing_office.get("officeGuid", "")
             prop["listing_office_code"] = listing_office.get("officeId", "")
             
-            # Source identifier and office key
-            prop["source"] = "dash_sothebys"
-            prop["office_key"] = self.office_key
+            # RESO-aligned source identifiers
+            prop["office_key"] = self.office_key  # OriginatingSystemOfficeKey
+            prop["system_name"] = self.system_name  # OriginatingSystemName
+            prop["system_id"] = self.system_id  # OriginatingSystemID
+            prop["source"] = self.source.source_type  # DASH_JSON or DASH_API
             
-            # Convert all values to strings (bronze layer requirement)
+            # Convert all values to strings
             for key, value in prop.items():
                 if value is None:
                     prop[key] = ""
@@ -351,30 +363,23 @@ class DashBronzeLoader:
                 media["is_landscape"] = str(media_item.get("isLandscape", False))
                 media["is_distributable"] = str(media_item.get("isDistributable", False))
                 
-                # Resolution URLs (store as JSON)
+                # Resolution URLs
                 resolution_urls = media_item.get("resolutionUrls", [])
-                if resolution_urls:
-                    media["resolution_urls"] = json.dumps(resolution_urls)
-                else:
-                    media["resolution_urls"] = ""
+                media["resolution_urls"] = json.dumps(resolution_urls) if resolution_urls else ""
                 
-                # Additional annotations (store as JSON)
+                # Additional annotations
                 annotations = media_item.get("additionalAnnotations", [])
-                if annotations:
-                    media["additional_annotations"] = json.dumps(annotations)
-                else:
-                    media["additional_annotations"] = ""
+                media["additional_annotations"] = json.dumps(annotations) if annotations else ""
                 
-                # Media tags (store as JSON)
+                # Media tags
                 tags = media_item.get("mediaTags", [])
-                if tags:
-                    media["media_tags"] = json.dumps(tags)
-                else:
-                    media["media_tags"] = ""
+                media["media_tags"] = json.dumps(tags) if tags else ""
                 
-                # Source identifier and office key
-                media["source"] = "dash_sothebys"
+                # RESO-aligned source identifiers
                 media["office_key"] = self.office_key
+                media["system_name"] = self.system_name
+                media["system_id"] = self.system_id
+                media["source"] = self.source.source_type
                 
                 # Convert all values to strings
                 for key, value in media.items():
@@ -417,10 +422,8 @@ class DashBronzeLoader:
         await self.execute_query(create_table_sql)
         
         if not append:
-            # Drop and recreate (full refresh mode)
-            drop_table_sql = f"DROP TABLE IF EXISTS {self.catalog}.{self.schema}.properties"
-            await self.execute_query(drop_table_sql)
-            await self.execute_query(create_table_sql)
+            # Delete existing data for this office_key only
+            await self.delete_by_office_key(self.office_key)
         
         # Insert in batches
         batch_size = 50
@@ -461,9 +464,7 @@ class DashBronzeLoader:
         await self.execute_query(create_table_sql)
         
         if not append:
-            drop_table_sql = f"DROP TABLE IF EXISTS {self.catalog}.{self.schema}.media"
-            await self.execute_query(drop_table_sql)
-            await self.execute_query(create_table_sql)
+            await self.delete_media_by_office_key(self.office_key)
         
         batch_size = 50
         for i in range(0, len(values_clauses), batch_size):
@@ -478,61 +479,39 @@ class DashBronzeLoader:
         print(f"✅ Loaded {len(media_items)} media items into {self.catalog}.{self.schema}.media")
     
     async def delete_by_office_key(self, office_key: str):
-        """Delete all records for a specific office_key from bronze tables."""
-        print(f"🗑️  Deleting old data for office_key: {office_key}")
-        
-        # Delete from properties table
+        """Delete properties for a specific office_key."""
         try:
-            delete_properties_sql = f"""
+            sql = f"""
                 DELETE FROM {self.catalog}.{self.schema}.properties
                 WHERE office_key = '{office_key}'
             """
-            await self.execute_query(delete_properties_sql)
+            await self.execute_query(sql)
             print(f"✅ Deleted properties with office_key = '{office_key}'")
         except Exception as e:
             if "TABLE_OR_VIEW_NOT_FOUND" in str(e) or "does not exist" in str(e).lower():
-                print(f"⚠️  Properties table doesn't exist yet, skipping delete")
-            else:
-                raise
-        
-        # Delete from media table
-        try:
-            delete_media_sql = f"""
-                DELETE FROM {self.catalog}.{self.schema}.media
-                WHERE office_key = '{office_key}'
-            """
-            await self.execute_query(delete_media_sql)
-            print(f"✅ Deleted media with office_key = '{office_key}'")
-        except Exception as e:
-            if "TABLE_OR_VIEW_NOT_FOUND" in str(e) or "does not exist" in str(e).lower():
-                print(f"⚠️  Media table doesn't exist yet, skipping delete")
-            else:
-                raise
-        
-        # Delete from processed_files table
-        try:
-            delete_files_sql = f"""
-                DELETE FROM {self.catalog}.{self.schema}.processed_files
-                WHERE office_key = '{office_key}'
-            """
-            await self.execute_query(delete_files_sql)
-            print(f"✅ Deleted processed_files tracking for office_key = '{office_key}'")
-        except Exception as e:
-            if "TABLE_OR_VIEW_NOT_FOUND" in str(e) or "does not exist" in str(e).lower():
-                print(f"⚠️  Processed_files table doesn't exist yet, skipping delete")
+                print(f"⚠️  Properties table doesn't exist yet")
             else:
                 raise
     
-    async def load_file(self, json_file: Path, country_code: Optional[str] = None, append: bool = False, delete_old: bool = False) -> int:
-        """Load Dash JSON file into Databricks Bronze. Returns record count.
-        
-        Args:
-            json_file: Path to JSON file to load
-            country_code: Optional country code override
-            append: If True, append to existing data. If False, full refresh (drops table).
-            delete_old: If True, delete old data for this office_key before loading (safer than full refresh).
-        """
+    async def delete_media_by_office_key(self, office_key: str):
+        """Delete media for a specific office_key."""
+        try:
+            sql = f"""
+                DELETE FROM {self.catalog}.{self.schema}.media
+                WHERE office_key = '{office_key}'
+            """
+            await self.execute_query(sql)
+            print(f"✅ Deleted media with office_key = '{office_key}'")
+        except Exception as e:
+            if "TABLE_OR_VIEW_NOT_FOUND" in str(e) or "does not exist" in str(e).lower():
+                print(f"⚠️  Media table doesn't exist yet")
+            else:
+                raise
+    
+    async def load_file(self, json_file: Path, append: bool = False) -> int:
+        """Load Dash JSON file into Databricks Bronze. Returns record count."""
         print(f"📥 Loading Dash data from: {json_file}")
+        print(f"🏢 Source: {self.office_key} ({self.system_name})")
         
         if not json_file.exists():
             raise FileNotFoundError(f"File not found: {json_file}")
@@ -541,27 +520,14 @@ class DashBronzeLoader:
             listings = json.load(f)
         
         print(f"📊 Found {len(listings)} listings")
-        
-        # Determine country code
-        if not country_code and listings:
-            first_listing = listings[0]
-            country_code = first_listing.get("propertyDetails", {}).get("location", {}).get("countryCode", "HU")
-        
-        print(f"🌍 Country code: {country_code}")
-        print(f"🏢 Office key: {self.office_key}")
+        print(f"🌍 Country: {self.country}")
         
         # Ensure schema exists
         await self.ensure_schema_exists()
         
-        # Delete old data for this office_key if requested
-        if delete_old:
-            await self.delete_by_office_key(self.office_key)
-            # After deleting, we should append (not full refresh) to preserve other office_keys
-            append = True
-        
         # Transform data
         print("\n🔄 Transforming properties...")
-        properties = self.transform_dash_to_bronze_properties(listings, country_code or "HU")
+        properties = self.transform_dash_to_bronze_properties(listings)
         
         print("🔄 Transforming media...")
         media_items = self.transform_dash_to_bronze_media(listings)
@@ -577,12 +543,9 @@ class DashBronzeLoader:
         return len(listings)
     
     async def load_all_new_files(self, force: bool = False) -> int:
-        """
-        Auto-scan source directory and load all new/changed files.
-        Returns total number of records processed.
-        """
+        """Auto-scan source directory and load all new/changed files."""
         if not self.source_dir:
-            print("❌ DASH_SOURCE_DIR not configured in .env")
+            print(f"❌ No source directory configured for {self.office_key}")
             return 0
         
         if not self.source_dir.exists():
@@ -590,7 +553,7 @@ class DashBronzeLoader:
             return 0
         
         print(f"📁 Source directory: {self.source_dir}")
-        print(f"🏢 Office key: {self.office_key}")
+        print(f"🏢 Source: {self.office_key} ({self.system_name})")
         
         # Ensure schema and tracking table exist
         await self.ensure_schema_exists()
@@ -611,11 +574,11 @@ class DashBronzeLoader:
             print("✅ No new files to process")
             return 0
         
-        print(f"📥 Found {len(new_files)} new/changed files to process:")
+        print(f"📥 Found {len(new_files)} new/changed files:")
         for f in new_files:
             print(f"   - {f.name}")
         
-        # Process files - first file does full refresh, subsequent append
+        # Process files
         total_records = 0
         for i, json_file in enumerate(new_files):
             print(f"\n{'='*60}")
@@ -623,8 +586,7 @@ class DashBronzeLoader:
             print(f"{'='*60}")
             
             try:
-                # First file = full refresh, rest = append
-                append = (i > 0)
+                append = (i > 0)  # First file replaces, rest append
                 record_count = await self.load_file(json_file, append=append)
                 total_records += record_count
                 
@@ -644,28 +606,70 @@ class DashBronzeLoader:
         return total_records
 
 
+def list_dash_sources():
+    """List all configured DASH sources (JSON and API)."""
+    settings = get_settings()
+    json_sources = settings.get_sources_by_type("DASH_JSON")
+    api_sources = settings.get_sources_by_type("DASH_API")
+    
+    all_sources = json_sources + api_sources
+    
+    if not all_sources:
+        print("No DASH sources configured in .env")
+        return
+    
+    print("Available DASH sources:")
+    for src in all_sources:
+        print(f"  {src.office_key} ({src.source_type})")
+        print(f"    Name: {src.system_name}")
+        print(f"    Country: {src.country}")
+        if src.source_type == "DASH_JSON":
+            print(f"    Dir: {src.source_dir}")
+        print()
+
+
 async def main():
     parser = argparse.ArgumentParser(description="Load Dash JSON data into Databricks Bronze")
-    parser.add_argument("--file", type=str, help="Specific JSON file to load (optional)")
-    parser.add_argument("--country", type=str, help="Country code override (e.g., HU, CY)")
+    parser.add_argument("--source", "-s", type=str, help="Source office key (e.g., SHARPSIR-HU-001)")
+    parser.add_argument("--file", type=str, help="Specific JSON file to load")
     parser.add_argument("--force", action="store_true", help="Force reprocess all files")
-    parser.add_argument("--delete-old", action="store_true", help="Delete old data for office_key before loading (use with --file)")
+    parser.add_argument("--list-sources", action="store_true", help="List available DASH sources")
     
     args = parser.parse_args()
     
-    loader = DashBronzeLoader()
+    if args.list_sources:
+        list_dash_sources()
+        return
+    
+    if not args.source:
+        print("Error: --source is required. Use --list-sources to see available sources.")
+        return
+    
+    # Get source configuration
+    settings = get_settings()
+    source = settings.get_source_by_office_key(args.source)
+    
+    if not source:
+        print(f"Error: Source '{args.source}' not found.")
+        list_dash_sources()
+        return
+    
+    if source.source_type not in ("DASH_JSON", "DASH_API"):
+        print(f"Error: Source '{args.source}' is type '{source.source_type}', not DASH")
+        return
+    
+    loader = DashBronzeLoader(source)
     
     if args.file:
         # Process specific file
         json_path = Path(args.file)
         if not json_path.is_absolute():
-            # Check source dir first, then relative to script
             if loader.source_dir and (loader.source_dir / json_path).exists():
                 json_path = loader.source_dir / json_path
             else:
                 json_path = Path(__file__).parent.parent / json_path
         
-        await loader.load_file(json_path, args.country, delete_old=args.delete_old)
+        await loader.load_file(json_path)
     else:
         # Auto-scan and process all new files
         await loader.load_all_new_files(force=args.force)

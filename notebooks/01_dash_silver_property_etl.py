@@ -75,7 +75,7 @@ SELECT
     p.id                                    AS dash_id,           -- listingGuid
     p.ref                                   AS dash_ref,          -- listingId
     p.source                                AS dash_source,       -- "dash_sothebys"
-    p.office_key                            AS office_key,        -- "HSIR"
+    p.office_key                            AS office_key,        -- e.g. "SHARPSIR-HU-001"
 
     -- ═══════════════════════════════════════════════════════════════════════════
     -- CORE ATTRIBUTES

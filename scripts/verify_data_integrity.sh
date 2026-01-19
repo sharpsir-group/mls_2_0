@@ -25,6 +25,11 @@ fi
 DB_HOST="${DATABRICKS_HOST#https://}"
 WAREHOUSE_ID="${DATABRICKS_HTTP_PATH##*/}"
 
+# Use new SRC_1 format (Cyprus = Qobrix)
+QOBRIX_API_BASE_URL="${SRC_1_API_URL:-$QOBRIX_API_BASE_URL}"
+QOBRIX_API_USER="${SRC_1_API_USER:-$QOBRIX_API_USER}"
+QOBRIX_API_KEY="${SRC_1_API_KEY:-$QOBRIX_API_KEY}"
+
 echo "================================================================================"
 echo "🔍 COMPREHENSIVE DATA INTEGRITY TEST - Qobrix API vs MLS 2.0 RESO"
 echo "================================================================================"

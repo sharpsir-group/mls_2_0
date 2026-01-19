@@ -18,15 +18,17 @@ if [ -f "$MLS2_ROOT/.env" ]; then
 fi
 
 RESO_API="${RESO_API_URL:-http://localhost:3900}"
-DASH_SOURCE_DIR="${DASH_SOURCE_DIR:-$MLS2_ROOT/dash_hsir_source}"
+# Use new SRC_2 format (Hungary = DASH_JSON)
+DASH_SOURCE_DIR="${SRC_2_DIR:-${DASH_SOURCE_DIR:-$MLS2_ROOT/dash_hsir_source}}"
+DASH_OFFICE_KEY="${SRC_2_OFFICE_KEY:-SHARPSIR-HU-001}"
 
 echo "=============================================="
 echo "  Dash → RESO API One-by-One Verification"
 echo "=============================================="
 echo ""
-echo "Dash Source: $DASH_SOURCE_DIR/HSIR_Listings_readable.json"
+echo "Dash Source: $DASH_SOURCE_DIR"
 echo "RESO API:    $RESO_API"
-echo "Office Key:  HSIR (Dash/Sotheby's)"
+echo "Office Key:  $DASH_OFFICE_KEY (Hungary)"
 echo ""
 
 # Python script for one-by-one testing
@@ -45,7 +47,8 @@ except ImportError:
     HTTP_CLIENT = 'requests'
 
 RESO_API = os.environ.get('RESO_API_URL', 'http://localhost:3900')
-DASH_SOURCE_DIR = os.environ.get('DASH_SOURCE_DIR', '')
+DASH_SOURCE_DIR = os.environ.get('SRC_2_DIR', os.environ.get('DASH_SOURCE_DIR', ''))
+DASH_OFFICE_KEY = os.environ.get('SRC_2_OFFICE_KEY', 'SHARPSIR-HU-001')
 OAUTH_CLIENT_ID = os.environ.get('OAUTH_CLIENT_2_ID', '')
 OAUTH_CLIENT_SECRET = os.environ.get('OAUTH_CLIENT_2_SECRET', '')
 
@@ -53,7 +56,7 @@ OAUTH_CLIENT_SECRET = os.environ.get('OAUTH_CLIENT_2_SECRET', '')
 _oauth_token = None
 
 def get_oauth_token():
-    """Get OAuth token for RESO API (HSIR client)"""
+    """Get OAuth token for RESO API (Hungary client)"""
     global _oauth_token
     if _oauth_token:
         return _oauth_token
@@ -100,8 +103,14 @@ def reso_get(endpoint):
     return resp.json()
 
 def load_dash_source():
-    """Load only HSIR_Listings_readable.json"""
+    """Load listing JSON file from source directory"""
+    # Try HSIR_Listings_readable.json first, then any .json file
     json_file = os.path.join(DASH_SOURCE_DIR, 'HSIR_Listings_readable.json')
+    if not os.path.exists(json_file):
+        # Find any JSON file
+        import glob
+        json_files = glob.glob(os.path.join(DASH_SOURCE_DIR, '*.json'))
+        json_file = json_files[0] if json_files else json_file
     
     if not os.path.exists(json_file):
         print(f"  ❌ File not found: {json_file}")

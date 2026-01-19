@@ -37,12 +37,11 @@ catalog = "mls2"
 spark.sql(f"USE CATALOG {catalog}")
 
 # Widget for OriginatingSystemOfficeKey (passed via job parameters)
-dbutils.widgets.text("ORIGINATING_SYSTEM_OFFICE_KEY", "CSIR")
-originating_office_key = os.getenv("QOBRIX_API_OFFICE_KEY") or dbutils.widgets.get("ORIGINATING_SYSTEM_OFFICE_KEY") or "CSIR"
+dbutils.widgets.text("ORIGINATING_SYSTEM_OFFICE_KEY", "SHARPSIR-CY-001")
+originating_office_key = os.getenv("SRC_1_OFFICE_KEY") or dbutils.widgets.get("ORIGINATING_SYSTEM_OFFICE_KEY") or "SHARPSIR-CY-001"
 
 # MLS List Office Key (brokerage identity for third-party exports)
-# Hardcoded to SHARP_SIR for all data
-list_office_key = os.getenv("MLS_LIST_OFFICE_KEY") or "SHARP_SIR"
+list_office_key = os.getenv("LIST_OFFICE_KEY") or "SHARPSIR-HQ-001"
 
 print("=" * 80)
 print("🔄 CDC MODE - Gold RESO Property ETL")
@@ -125,6 +124,28 @@ SELECT
         WHEN 'other'         THEN 'Other'
         ELSE 'Other'
     END                                           AS PropertyType,
+
+    -- PropertyClass (RESO standard: Residential, Commercial, Land, etc.)
+    CASE LOWER(COALESCE(s.property_type, ''))
+        WHEN 'apartment'     THEN 'Residential'
+        WHEN 'house'         THEN 'Residential'
+        WHEN 'villa'         THEN 'Residential'
+        WHEN 'penthouse'     THEN 'Residential'
+        WHEN 'bungalow'      THEN 'Residential'
+        WHEN 'maisonette'    THEN 'Residential'
+        WHEN 'studio'        THEN 'Residential'
+        WHEN 'land'          THEN 'Land'
+        WHEN 'plot'          THEN 'Land'
+        WHEN 'commercial'    THEN 'Commercial'
+        WHEN 'office'        THEN 'Commercial'
+        WHEN 'warehouse'     THEN 'Commercial'
+        WHEN 'building'      THEN 'Commercial'
+        WHEN 'hotel'         THEN 'Commercial'
+        WHEN 'parking_lot'   THEN 'Parking'
+        WHEN 'retail'        THEN 'Commercial'
+        WHEN 'industrial'    THEN 'Commercial'
+        ELSE 'Other'
+    END                                           AS PropertyClass,
 
     COALESCE(
         CAST(ps.label AS STRING),
@@ -346,8 +367,8 @@ SELECT
     s.modified_ts                                 AS X_QobrixModified,
 
     -- Multi-tenant access control: Data source office
-    -- CSIR = Cyprus SIR (Qobrix data source)
-    -- HSIR = Hungary SIR (JSON loader data source)
+    -- SHARPSIR-CY-001 = Cyprus (Qobrix data source)
+    -- SHARPSIR-HU-001 = Hungary (Dash JSON data source)
     '{originating_office_key}'                    AS OriginatingSystemOfficeKey,
 
     CURRENT_TIMESTAMP()                           AS etl_timestamp,
@@ -385,15 +406,30 @@ else:
         {cdc_filter}
     """)
     
-    # MERGE into gold
-    merge_sql = """
+    # MERGE into gold - use intersection of source and target columns
+    source_cols = set(spark.table("_cdc_gold_property").columns)
+    target_cols = set(spark.table("reso_gold.property").columns)
+    
+    # Use only columns that exist in both (excluding ListingKey which is the join key)
+    common_cols = sorted(source_cols & target_cols - {"ListingKey"})
+    
+    # Build explicit UPDATE SET clause
+    update_set = ", ".join([f"target.{c} = source.{c}" for c in common_cols])
+    
+    # Build explicit INSERT columns and values (include ListingKey for insert)
+    insert_cols = ["ListingKey"] + common_cols
+    insert_cols_str = ", ".join(insert_cols)
+    insert_vals = ", ".join([f"source.{c}" for c in insert_cols])
+    
+    merge_sql = f"""
         MERGE INTO reso_gold.property AS target
         USING _cdc_gold_property AS source
         ON target.ListingKey = source.ListingKey
-        WHEN MATCHED THEN UPDATE SET *
-        WHEN NOT MATCHED THEN INSERT *
+        WHEN MATCHED THEN UPDATE SET {update_set}
+        WHEN NOT MATCHED THEN INSERT ({insert_cols_str}) VALUES ({insert_vals})
     """
     
+    print(f"📊 MERGE using {len(common_cols)} common columns")
     spark.sql(merge_sql)
     print(f"✅ Merged {changed_count} records into reso_gold.property")
 

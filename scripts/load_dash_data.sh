@@ -36,9 +36,12 @@ if [ "$1" = "--force" ]; then
     FORCE_FLAG="--force"
 fi
 
-# Validate required env vars
+# Validate required env vars - Use new SRC_2_* format (Hungary = DASH_JSON)
+DASH_SOURCE_DIR="${SRC_2_DIR:-$DASH_SOURCE_DIR}"
+DASH_OFFICE_KEY="${SRC_2_OFFICE_KEY:-SHARPSIR-HU-001}"
+
 if [ -z "$DASH_SOURCE_DIR" ]; then
-    echo "❌ Error: DASH_SOURCE_DIR not set in .env"
+    echo "❌ Error: SRC_2_DIR (or DASH_SOURCE_DIR) not set in .env"
     exit 1
 fi
 
@@ -51,7 +54,7 @@ echo "==========================================================================
 echo "DASH DATA LOADER"
 echo "================================================================================"
 echo "📁 Source directory: $DASH_SOURCE_DIR"
-echo "🏢 Office key: ${DASH_OFFICE_KEY:-HSIR}"
+echo "🏢 Office key: $DASH_OFFICE_KEY"
 if [ -n "$FORCE_FLAG" ]; then
     echo "⚠️  Force mode: reprocessing all files"
 fi

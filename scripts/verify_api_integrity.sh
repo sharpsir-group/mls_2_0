@@ -19,12 +19,18 @@ fi
 
 RESO_API="${RESO_API_URL:-https://humaticai.com/reso}"
 
+# Use new SRC_1 format (Cyprus = Qobrix)
+QOBRIX_API_URL="${SRC_1_API_URL:-$QOBRIX_API_BASE_URL}"
+QOBRIX_API_USER="${SRC_1_API_USER:-$QOBRIX_API_USER}"
+QOBRIX_API_KEY="${SRC_1_API_KEY:-$QOBRIX_API_KEY}"
+
 echo "=============================================="
 echo "  Qobrix → RESO API Two-Way Integrity Test"
 echo "=============================================="
 echo ""
-echo "Qobrix API: $QOBRIX_API_BASE_URL"
-echo "RESO API:   $RESO_API"
+echo "Qobrix API:  $QOBRIX_API_URL"
+echo "RESO API:    $RESO_API"
+echo "Office Key:  ${SRC_1_OFFICE_KEY:-SHARPSIR-CY-001}"
 echo ""
 
 # Python script for comprehensive testing
@@ -34,12 +40,16 @@ import sys
 import json
 import httpx
 
-QOBRIX_API = os.environ['QOBRIX_API_BASE_URL']
-QOBRIX_USER = os.environ['QOBRIX_API_USER']
-QOBRIX_KEY = os.environ['QOBRIX_API_KEY']
+# Use new SRC_1 format (Cyprus = Qobrix)
+QOBRIX_API = os.environ.get('SRC_1_API_URL', os.environ.get('QOBRIX_API_BASE_URL', ''))
+QOBRIX_USER = os.environ.get('SRC_1_API_USER', os.environ.get('QOBRIX_API_USER', ''))
+QOBRIX_KEY = os.environ.get('SRC_1_API_KEY', os.environ.get('QOBRIX_API_KEY', ''))
 RESO_API = os.environ.get('RESO_API_URL', 'https://humaticai.com/reso')
-OAUTH_CLIENT_ID = os.environ.get('OAUTH_CLIENT_ID', '')
-OAUTH_CLIENT_SECRET = os.environ.get('OAUTH_CLIENT_SECRET', '')
+# Cyprus office key for filtering RESO queries
+OFFICE_KEY = os.environ.get('SRC_1_OFFICE_KEY', 'SHARPSIR-CY-001')
+# Use first OAuth client (Cyprus access)
+OAUTH_CLIENT_ID = os.environ.get('OAUTH_CLIENT_1_ID', os.environ.get('OAUTH_CLIENT_ID', ''))
+OAUTH_CLIENT_SECRET = os.environ.get('OAUTH_CLIENT_1_SECRET', os.environ.get('OAUTH_CLIENT_SECRET', ''))
 
 # OAuth token cache
 _oauth_token = None
@@ -83,8 +93,13 @@ def reso_get(endpoint):
     token = get_oauth_token()
     if token:
         headers['Authorization'] = f'Bearer {token}'
-    resp = httpx.get(f"{RESO_API}{endpoint}", headers=headers, timeout=60)
-    return resp.json()
+    try:
+        resp = httpx.get(f"{RESO_API}{endpoint}", headers=headers, timeout=60)
+        if resp.status_code != 200:
+            return {'error': f'HTTP {resp.status_code}', 'value': [], '@odata.count': 0}
+        return resp.json()
+    except Exception as e:
+        return {'error': str(e), 'value': [], '@odata.count': 0}
 
 print("=" * 60)
 print("TEST 1: Property Count Verification")
@@ -94,8 +109,8 @@ print("=" * 60)
 qobrix_props = qobrix_get('/properties', {'limit': 1, 'page': 1})
 qobrix_count = qobrix_props.get('pagination', {}).get('count', 0)
 
-# RESO property count
-reso_props = reso_get('/odata/Property?$count=true&$top=1')
+# RESO property count (filter by office key)
+reso_props = reso_get(f"/odata/Property?$filter=OriginatingSystemOfficeKey eq '{OFFICE_KEY}'&$count=true&$top=1")
 reso_count = reso_props.get('@odata.count', 0)
 
 # Allow small tolerance for recently added/deleted records
@@ -244,8 +259,8 @@ q_user_count = qobrix_users.get('pagination', {}).get('count', 0)
 
 q_combined = q_agent_count + q_user_count
 
-# Get members from RESO
-reso_members = reso_get('/odata/Member?$count=true&$top=1')
+# Get members from RESO (filter by office key)
+reso_members = reso_get(f"/odata/Member?$filter=OriginatingSystemOfficeKey eq '{OFFICE_KEY}'&$count=true&$top=1")
 r_member_count = reso_members.get('@odata.count', 0)
 
 match = "✅" if q_combined == r_member_count else "⚠️"
@@ -265,8 +280,8 @@ print("=" * 60)
 qobrix_contacts = qobrix_get('/contacts', {'limit': 1, 'page': 1})
 q_contact_count = qobrix_contacts.get('pagination', {}).get('count', 0)
 
-# Get contacts from RESO
-reso_contacts = reso_get('/odata/Contacts?$count=true&$top=1')
+# Get contacts from RESO (filter by office key)
+reso_contacts = reso_get(f"/odata/Contacts?$filter=OriginatingSystemOfficeKey eq '{OFFICE_KEY}'&$count=true&$top=1")
 r_contact_count = reso_contacts.get('@odata.count', 0)
 
 # Allow small tolerance for recently added/deleted records
@@ -287,72 +302,85 @@ print("TEST 6: Field Transformation Verification")
 print("=" * 60)
 
 # Get one property and check transformations
-q_sample = qobrix_get('/properties', {'limit': 1, 'page': 1})['data'][0]
-qid = q_sample['id']
-r_sample = reso_get(f"/odata/Property?$filter=ListingKey eq 'QOBRIX_{qid}'")['value'][0]
+q_data = qobrix_get('/properties', {'limit': 1, 'page': 1}).get('data', [])
+if not q_data:
+    print("  ⚠️ No Qobrix properties found for transformation test")
+    transform_issues = []
+else:
+    q_sample = q_data[0]
+    qid = q_sample['id']
+    r_data = reso_get(f"/odata/Property?$filter=ListingKey eq 'QOBRIX_{qid}'").get('value', [])
+    if not r_data:
+        print(f"  ⚠️ Property QOBRIX_{qid} not found in RESO API")
+        transform_issues = ['Property not found in RESO']
+    else:
+        r_sample = r_data[0]
 
-transform_checks = []
+        transform_checks = []
 
-# ListingKey transformation
-transform_checks.append(('ListingKey', f"QOBRIX_{qid}", r_sample.get('ListingKey')))
+        # ListingKey transformation
+        transform_checks.append(('ListingKey', f"QOBRIX_{qid}", r_sample.get('ListingKey')))
 
-# PropertyType mapping (Qobrix property_type -> RESO PropertyType, title case)
-q_type = q_sample.get('property_type')
-r_type = r_sample.get('PropertyType')
-expected_type = q_type.title() if q_type else None
-transform_checks.append(('PropertyType', expected_type, r_type))
+        # PropertyType mapping (Qobrix property_type -> RESO PropertyType, title case)
+        q_type = q_sample.get('property_type')
+        r_type = r_sample.get('PropertyType')
+        expected_type = q_type.title() if q_type else None
+        transform_checks.append(('PropertyType', expected_type, r_type))
 
-# StandardStatus mapping  
-q_status = q_sample.get('status')
-r_status = r_sample.get('StandardStatus')
-status_map = {'available': 'Active', 'sold': 'Closed', 'let': 'Leased', 'pending': 'Pending'}
-expected_status = status_map.get(q_status, q_status)
-transform_checks.append(('StandardStatus', expected_status, r_status))
+        # StandardStatus mapping  
+        q_status = q_sample.get('status')
+        r_status = r_sample.get('StandardStatus')
+        status_map = {'available': 'Active', 'sold': 'Closed', 'let': 'Leased', 'pending': 'Pending'}
+        expected_status = status_map.get(q_status, q_status)
+        transform_checks.append(('StandardStatus', expected_status, r_status))
 
-# Currency Code
-r_currency = r_sample.get('ListPriceCurrencyCode')
-transform_checks.append(('ListPriceCurrencyCode', 'EUR', r_currency))  # Assuming EUR
+        # Currency Code
+        r_currency = r_sample.get('ListPriceCurrencyCode')
+        transform_checks.append(('ListPriceCurrencyCode', 'EUR', r_currency))  # Assuming EUR
 
-transform_issues = []
-for field, expected, actual in transform_checks:
-    match = "✅" if expected == actual else "❌"
-    if expected != actual:
-        transform_issues.append(f"{field}: expected={expected}, got={actual}")
-    print(f"  {match} {field}: {expected} → {actual}")
+        transform_issues = []
+        for field, expected, actual in transform_checks:
+            match = "✅" if expected == actual else "❌"
+            if expected != actual:
+                transform_issues.append(f"{field}: expected={expected}, got={actual}")
+            print(f"  {match} {field}: {expected} → {actual}")
 
 print("")
 print("=" * 60)
 print("TEST 7: RESO Type Compliance")
 print("=" * 60)
 
-# Check that RESO API returns correct types
-type_checks = [
-    ('ListPrice', (int, float), r_sample.get('ListPrice')),
-    ('BedroomsTotal', (int, type(None)), r_sample.get('BedroomsTotal')),
-    ('BathroomsTotalInteger', (int, type(None)), r_sample.get('BathroomsTotalInteger')),
-    ('Latitude', (int, float, type(None)), r_sample.get('Latitude')),
-    ('Longitude', (int, float, type(None)), r_sample.get('Longitude')),
-    ('LivingArea', (int, float, type(None)), r_sample.get('LivingArea')),
-    ('City', (str, type(None)), r_sample.get('City')),
-    ('ListingKey', (str,), r_sample.get('ListingKey')),
-]
-
 type_issues = []
-for field, expected_types, value in type_checks:
-    actual_type = type(value)
-    ok = actual_type in expected_types
-    if not ok:
-        type_issues.append(f"{field}: expected {expected_types}, got {actual_type}")
-    status = "✅" if ok else "❌"
-    print(f"  {status} {field:<25} {actual_type.__name__:<10} = {str(value)[:25]}")
+if 'r_sample' not in dir() or not r_sample:
+    print("  ⚠️ No sample property available for type compliance test")
+else:
+    # Check that RESO API returns correct types
+    type_checks = [
+        ('ListPrice', (int, float), r_sample.get('ListPrice')),
+        ('BedroomsTotal', (int, type(None)), r_sample.get('BedroomsTotal')),
+        ('BathroomsTotalInteger', (int, type(None)), r_sample.get('BathroomsTotalInteger')),
+        ('Latitude', (int, float, type(None)), r_sample.get('Latitude')),
+        ('Longitude', (int, float, type(None)), r_sample.get('Longitude')),
+        ('LivingArea', (int, float, type(None)), r_sample.get('LivingArea')),
+        ('City', (str, type(None)), r_sample.get('City')),
+        ('ListingKey', (str,), r_sample.get('ListingKey')),
+    ]
+
+    for field, expected_types, value in type_checks:
+        actual_type = type(value)
+        ok = actual_type in expected_types
+        if not ok:
+            type_issues.append(f"{field}: expected {expected_types}, got {actual_type}")
+        status = "✅" if ok else "❌"
+        print(f"  {status} {field:<25} {actual_type.__name__:<10} = {str(value)[:25]}")
 
 print("")
 print("=" * 60)
 print("TEST 8: Media URL Full Path")
 print("=" * 60)
 
-# Check that media URLs are full paths
-media_data = reso_get("/odata/Media?$top=3&$select=MediaKey,MediaURL")
+# Check that media URLs are full paths (filter by office key)
+media_data = reso_get(f"/odata/Media?$filter=OriginatingSystemOfficeKey eq '{OFFICE_KEY}'&$top=3&$select=MediaKey,MediaURL")
 url_issues = []
 for media in media_data.get('value', []):
     url = media.get('MediaURL', '')

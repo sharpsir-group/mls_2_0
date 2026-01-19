@@ -24,8 +24,8 @@
 # MAGIC - `Order` - Display order
 # MAGIC 
 # MAGIC **Multi-Tenant Access Control:**
-# MAGIC - `OriginatingSystemOfficeKey` = CSIR for Qobrix media
-# MAGIC - `OriginatingSystemOfficeKey` = HSIR for Dash media
+# MAGIC - `OriginatingSystemOfficeKey` = SHARPSIR-CY-001 for Qobrix (Cyprus)
+# MAGIC - `OriginatingSystemOfficeKey` = SHARPSIR-HU-001 for Dash (Hungary)
 # MAGIC 
 # MAGIC **RESO Data Dictionary 2.0:** https://ddwiki.reso.org/display/DDW20/Media+Resource
 # MAGIC 
@@ -44,17 +44,21 @@ catalog = "mls2"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS reso_gold")
 
-# Widget for Qobrix OriginatingSystemOfficeKey
-dbutils.widgets.text("QOBRIX_OFFICE_KEY", "CSIR")
-qobrix_office_key = os.getenv("QOBRIX_API_OFFICE_KEY") or dbutils.widgets.get("QOBRIX_OFFICE_KEY") or "CSIR"
+# Widget for Qobrix OriginatingSystemOfficeKey (Cyprus)
+dbutils.widgets.text("QOBRIX_OFFICE_KEY", "SHARPSIR-CY-001")
+qobrix_office_key = os.getenv("SRC_1_OFFICE_KEY") or dbutils.widgets.get("QOBRIX_OFFICE_KEY") or "SHARPSIR-CY-001"
 
-# Widget for Dash OriginatingSystemOfficeKey
-dbutils.widgets.text("DASH_OFFICE_KEY", "HSIR")
-dash_office_key = os.getenv("DASH_OFFICE_KEY") or dbutils.widgets.get("DASH_OFFICE_KEY") or "HSIR"
+# Widget for Dash OriginatingSystemOfficeKey (Hungary)
+dbutils.widgets.text("DASH_HU_OFFICE_KEY", "SHARPSIR-HU-001")
+dash_hu_office_key = os.getenv("SRC_2_OFFICE_KEY") or dbutils.widgets.get("DASH_HU_OFFICE_KEY") or "SHARPSIR-HU-001"
+
+# Widget for Dash API OriginatingSystemOfficeKey (Kazakhstan)
+dbutils.widgets.text("DASH_KZ_OFFICE_KEY", "SHARPSIR-KZ-001")
+dash_kz_office_key = os.getenv("SRC_3_OFFICE_KEY") or dbutils.widgets.get("DASH_KZ_OFFICE_KEY") or "SHARPSIR-KZ-001"
 
 print("Using catalog:", catalog)
 print("Qobrix OriginatingSystemOfficeKey:", qobrix_office_key)
-print("Dash OriginatingSystemOfficeKey:", dash_office_key)
+print("Dash OriginatingSystemOfficeKey (HU):", dash_hu_office_key)
 
 # COMMAND ----------
 
@@ -204,7 +208,7 @@ SELECT
     CAST(m.modified_ts AS STRING)                    AS X_QobrixModified,
     
     -- Multi-tenant access control
-    '{dash_office_key}'                              AS OriginatingSystemOfficeKey,
+    '{dash_hu_office_key}'                           AS OriginatingSystemOfficeKey,
     'dash_sothebys'                                  AS X_DataSource,
     
     -- ETL metadata

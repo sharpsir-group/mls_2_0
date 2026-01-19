@@ -126,7 +126,10 @@ run_notebook() {
     echo "🚀 Running: $name"
     
     if [ "$notebook_type" = "true" ] || [ "$notebook_type" = "bronze" ]; then
-        # Bronze notebooks: need Qobrix API credentials
+        # Bronze notebooks: need Qobrix API credentials (SRC_1 = Cyprus)
+        local api_user="${SRC_1_API_USER:-$QOBRIX_API_USER}"
+        local api_key="${SRC_1_API_KEY:-$QOBRIX_API_KEY}"
+        local api_url="${SRC_1_API_URL:-$QOBRIX_API_BASE_URL}"
         local json='{
           "run_name": "'"$name"'",
           "tasks": [{
@@ -134,18 +137,18 @@ run_notebook() {
             "notebook_task": {
               "notebook_path": "'"$path"'",
               "base_parameters": {
-                "QOBRIX_API_USER": "'"$QOBRIX_API_USER"'",
-                "QOBRIX_API_KEY": "'"$QOBRIX_API_KEY"'",
-                "QOBRIX_API_BASE_URL": "'"$QOBRIX_API_BASE_URL"'"
+                "QOBRIX_API_USER": "'"$api_user"'",
+                "QOBRIX_API_KEY": "'"$api_key"'",
+                "QOBRIX_API_BASE_URL": "'"$api_url"'"
               }
             }
           }]
         }'
     elif [ "$notebook_type" = "gold" ]; then
         # Gold notebooks: need OriginatingSystemOfficeKey
-        # Note: MLS_LIST_OFFICE_KEY is read directly by notebooks from env
-        local office_key="${QOBRIX_API_OFFICE_KEY:-CSIR}"
-        local dash_office_key="${DASH_OFFICE_KEY:-HSIR}"
+        # Note: LIST_OFFICE_KEY is read directly by notebooks from env
+        local office_key="${SRC_1_OFFICE_KEY:-SHARPSIR-CY-001}"
+        local dash_office_key="${SRC_2_OFFICE_KEY:-SHARPSIR-HU-001}"
         local json='{
           "run_name": "'"$name"'",
           "tasks": [{
@@ -410,65 +413,42 @@ except Exception as ex:
         echo "   Opportunities: $OPPS_CHANGED changed"
         echo "   Media: $MEDIA_CHANGED changed"
         
-        # Calculate if anything changed (include media in total)
+        # Calculate CDC changes (for reporting)
         TOTAL_CHANGES=$((PROPS_CHANGED + AGENTS_CHANGED + CONTACTS_CHANGED + VIEWINGS_CHANGED + OPPS_CHANGED + MEDIA_CHANGED))
         
+        # Always run Silver/Gold ETLs to ensure full data consistency
+        # Silver ETLs use CREATE OR REPLACE (full refresh) - fast and idempotent
+        # This ensures Bronze->Silver->Gold sync even when CDC metadata misses changes
+        echo ""
+        echo "🔄 Stage 2: Silver (sync Bronze → Silver)"
+        
+        run_notebook "MLS 2.0 - Qobrix Silver Property ETL" "/Shared/mls_2_0/02_silver_qobrix_property_etl" "false"
+        run_notebook "MLS 2.0 - Qobrix Silver Media ETL" "/Shared/mls_2_0/02c_silver_qobrix_media_etl" "false"
+        run_notebook "MLS 2.0 - Qobrix Silver Agent ETL" "/Shared/mls_2_0/02a_silver_qobrix_agent_etl" "false"
+        run_notebook "MLS 2.0 - Qobrix Silver Contact ETL" "/Shared/mls_2_0/02b_silver_qobrix_contact_etl" "false"
+        run_notebook "MLS 2.0 - Qobrix Silver Viewing ETL" "/Shared/mls_2_0/02d_silver_qobrix_viewing_etl" "false"
+        
+        echo ""
+        echo "🏆 Stage 3: Gold (sync Silver → Gold RESO)"
+        # Use full refresh ETLs (CREATE OR REPLACE) to avoid schema mismatch issues
+        
+        run_notebook "MLS 2.0 - RESO Gold Property ETL" "/Shared/mls_2_0/03_gold_reso_property_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Member ETL" "/Shared/mls_2_0/03a_gold_reso_member_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Office ETL" "/Shared/mls_2_0/03b_gold_reso_office_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "/Shared/mls_2_0/03d_gold_reso_contacts_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "gold"
+        
+        SCRIPT_END_TIME=$(date +%s)
+        TOTAL_DURATION=$((SCRIPT_END_TIME - SCRIPT_START_TIME))
+        echo ""
         if [ "$TOTAL_CHANGES" -eq 0 ]; then
-            echo ""
-            echo "✨ No changes detected - skipping Silver/Gold ETLs"
-            SCRIPT_END_TIME=$(date +%s)
-            TOTAL_DURATION=$((SCRIPT_END_TIME - SCRIPT_START_TIME))
-            echo ""
-            echo "🎉 CDC pipeline completed! (no updates needed)"
-            echo ""
-            echo "⏱️  Total time: $(format_duration $TOTAL_DURATION)"
+            echo "🎉 CDC pipeline completed! (0 API changes, full sync done)"
         else
-            echo ""
-            echo "🔄 Stage 2: Silver (changed entities only)"
-            
-            if [ "$PROPS_CHANGED" -gt 0 ]; then
-                run_notebook "MLS 2.0 - Qobrix Silver Property ETL" "/Shared/mls_2_0/02_silver_qobrix_property_etl" "false"
-            fi
-            if [ "$PROPS_CHANGED" -gt 0 ] || [ "$MEDIA_CHANGED" -gt 0 ]; then
-                run_notebook "MLS 2.0 - Qobrix Silver Media ETL" "/Shared/mls_2_0/02c_silver_qobrix_media_etl" "false"
-            fi
-            if [ "$AGENTS_CHANGED" -gt 0 ]; then
-                run_notebook "MLS 2.0 - Qobrix Silver Agent ETL" "/Shared/mls_2_0/02a_silver_qobrix_agent_etl" "false"
-            fi
-            if [ "$CONTACTS_CHANGED" -gt 0 ]; then
-                run_notebook "MLS 2.0 - Qobrix Silver Contact ETL" "/Shared/mls_2_0/02b_silver_qobrix_contact_etl" "false"
-            fi
-            if [ "$VIEWINGS_CHANGED" -gt 0 ]; then
-                run_notebook "MLS 2.0 - Qobrix Silver Viewing ETL" "/Shared/mls_2_0/02d_silver_qobrix_viewing_etl" "false"
-            fi
-            
-            echo ""
-            echo "🏆 Stage 3: Gold (changed entities only)"
-            
-            if [ "$PROPS_CHANGED" -gt 0 ]; then
-                run_notebook "MLS 2.0 - RESO CDC Gold Property" "/Shared/mls_2_0/03_cdc_gold_reso_property_etl" "gold"
-            fi
-            if [ "$PROPS_CHANGED" -gt 0 ] || [ "$MEDIA_CHANGED" -gt 0 ]; then
-                run_notebook "MLS 2.0 - RESO Gold Media ETL" "/Shared/mls_2_0/03c_gold_reso_media_etl" "gold"
-            fi
-            if [ "$AGENTS_CHANGED" -gt 0 ]; then
-                run_notebook "MLS 2.0 - RESO Gold Member ETL" "/Shared/mls_2_0/03a_gold_reso_member_etl" "gold"
-                run_notebook "MLS 2.0 - RESO Gold Office ETL" "/Shared/mls_2_0/03b_gold_reso_office_etl" "gold"
-            fi
-            if [ "$CONTACTS_CHANGED" -gt 0 ]; then
-                run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "/Shared/mls_2_0/03d_cdc_gold_reso_contacts_etl" "gold"
-            fi
-            if [ "$VIEWINGS_CHANGED" -gt 0 ]; then
-                run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "gold"
-            fi
-            
-            SCRIPT_END_TIME=$(date +%s)
-            TOTAL_DURATION=$((SCRIPT_END_TIME - SCRIPT_START_TIME))
-            echo ""
-            echo "🎉 CDC pipeline completed! Changed entities synced."
-            echo ""
-            echo "⏱️  Total time: $(format_duration $TOTAL_DURATION)"
+            echo "🎉 CDC pipeline completed! $TOTAL_CHANGES changes synced."
         fi
+        echo ""
+        echo "⏱️  Total time: $(format_duration $TOTAL_DURATION)"
         ;;
     
     # ═══════════════════════════════════════════════════════════════════════════

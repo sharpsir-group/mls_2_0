@@ -19,7 +19,9 @@ if [ -f "$MLS2_ROOT/.env" ]; then
 fi
 
 RESO_API="${RESO_API_URL:-http://localhost:3900}"
-DASH_SOURCE_DIR="${DASH_SOURCE_DIR:-$MLS2_ROOT/dash_hsir_source}"
+# Use new SRC_2 format (Hungary = DASH_JSON)
+DASH_SOURCE_DIR="${SRC_2_DIR:-${DASH_SOURCE_DIR:-$MLS2_ROOT/dash_hsir_source}}"
+DASH_OFFICE_KEY="${SRC_2_OFFICE_KEY:-SHARPSIR-HU-001}"
 
 echo "=============================================="
 echo "  Dash → RESO API Two-Way Integrity Test"
@@ -27,7 +29,7 @@ echo "=============================================="
 echo ""
 echo "Dash Source: $DASH_SOURCE_DIR"
 echo "RESO API:    $RESO_API"
-echo "Office Key:  HSIR (Dash/Sotheby's)"
+echo "Office Key:  $DASH_OFFICE_KEY (Hungary)"
 echo ""
 
 # Python script for comprehensive testing
@@ -47,8 +49,9 @@ except ImportError:
     HTTP_CLIENT = 'requests'
 
 RESO_API = os.environ.get('RESO_API_URL', 'http://localhost:3900')
-DASH_SOURCE_DIR = os.environ.get('DASH_SOURCE_DIR', '')
-# Use HSIR client credentials for Dash data
+DASH_SOURCE_DIR = os.environ.get('SRC_2_DIR', os.environ.get('DASH_SOURCE_DIR', ''))
+DASH_OFFICE_KEY = os.environ.get('SRC_2_OFFICE_KEY', 'SHARPSIR-HU-001')
+# Use Hungary client credentials for Dash data
 OAUTH_CLIENT_ID = os.environ.get('OAUTH_CLIENT_2_ID', '')
 OAUTH_CLIENT_SECRET = os.environ.get('OAUTH_CLIENT_2_SECRET', '')
 
@@ -56,7 +59,7 @@ OAUTH_CLIENT_SECRET = os.environ.get('OAUTH_CLIENT_2_SECRET', '')
 _oauth_token = None
 
 def get_oauth_token():
-    """Get OAuth token for RESO API (HSIR client)"""
+    """Get OAuth token for RESO API (Hungary client)"""
     global _oauth_token
     if _oauth_token:
         return _oauth_token
@@ -120,7 +123,7 @@ def load_dash_source():
     
     return all_listings
 
-print("Loading Dash source file (HSIR_Listings_readable.json only)...")
+print("Loading Dash source file...")
 dash_listings = load_dash_source()
 print(f"  Total: {len(dash_listings)} listings from source\n")
 
@@ -145,8 +148,8 @@ print("=" * 60)
 unique_listing_guids = set(l['listingGuid'] for l in dash_listings)
 source_count = len(unique_listing_guids)
 
-# RESO property count (HSIR only)
-reso_props = reso_get('/odata/Property?$count=true&$top=1&$filter=OriginatingSystemOfficeKey eq \'HSIR\'')
+# RESO property count (filtered by office key)
+reso_props = reso_get(f"/odata/Property?$count=true&$top=1&$filter=OriginatingSystemOfficeKey eq '{DASH_OFFICE_KEY}'")
 reso_count = reso_props.get('@odata.count', len(reso_props.get('value', [])))
 
 diff = abs(source_count - reso_count)
@@ -163,7 +166,7 @@ print("TEST 2: Sample Property Data Verification")
 print("=" * 60)
 
 # Get 5 sample properties from RESO API
-reso_sample = reso_get('/odata/Property?$top=5&$filter=OriginatingSystemOfficeKey eq \'HSIR\'')
+reso_sample = reso_get(f"/odata/Property?$top=5&$filter=OriginatingSystemOfficeKey eq '{DASH_OFFICE_KEY}'')
 data_issues = []
 
 for rprop in reso_sample.get('value', []):
@@ -267,7 +270,7 @@ print("TEST 4: Features Mapping Verification")
 print("=" * 60)
 
 # Get a property with features from RESO
-reso_with_features = reso_get('/odata/Property?$top=3&$filter=OriginatingSystemOfficeKey eq \'HSIR\' and View ne null&$select=ListingKey,View,Flooring,Cooling,Heating,PoolFeatures,ParkingFeatures')
+reso_with_features = reso_get(f"/odata/Property?$top=3&$filter=OriginatingSystemOfficeKey eq '{DASH_OFFICE_KEY}' and View ne null&$select=ListingKey,View,Flooring,Cooling,Heating,PoolFeatures,ParkingFeatures')
 feature_issues = []
 
 for rprop in reso_with_features.get('value', []):
@@ -325,7 +328,7 @@ print("=" * 60)
 agent_issues = []
 
 # Get properties with agent data
-reso_with_agent = reso_get('/odata/Property?$top=3&$filter=OriginatingSystemOfficeKey eq \'HSIR\' and ListAgentKey ne null&$select=ListingKey,ListAgentKey,ListOfficeKey,PublicRemarks')
+reso_with_agent = reso_get(f"/odata/Property?$top=3&$filter=OriginatingSystemOfficeKey eq '{DASH_OFFICE_KEY}' and ListAgentKey ne null&$select=ListingKey,ListAgentKey,ListOfficeKey,PublicRemarks')
 
 for rprop in reso_with_agent.get('value', []):
     listing_key = rprop.get('ListingKey', '')
@@ -360,8 +363,8 @@ print("=" * 60)
 print("TEST 6: Data Source & Office Key Verification")
 print("=" * 60)
 
-# Verify all HSIR properties have correct X_DataSource
-reso_check = reso_get('/odata/Property?$top=100&$filter=OriginatingSystemOfficeKey eq \'HSIR\'&$select=ListingKey,OriginatingSystemOfficeKey,X_DataSource')
+# Verify all properties have correct X_DataSource
+reso_check = reso_get(f"/odata/Property?$top=100&$filter=OriginatingSystemOfficeKey eq '{DASH_OFFICE_KEY}'&$select=ListingKey,OriginatingSystemOfficeKey,X_DataSource')
 source_issues = []
 
 correct_source = 0
@@ -371,14 +374,14 @@ for rprop in reso_check.get('value', []):
     office_key = rprop.get('OriginatingSystemOfficeKey')
     data_source = rprop.get('X_DataSource')
     
-    if office_key == 'HSIR' and data_source == 'dash_sothebys':
+    if office_key == DASH_OFFICE_KEY and data_source == 'dash_sothebys':
         correct_source += 1
     else:
         wrong_source += 1
         source_issues.append(f"{rprop.get('ListingKey')}: OfficeKey={office_key}, DataSource={data_source}")
 
 match = "✅" if wrong_source == 0 else "❌"
-print(f"  {match} Correct (HSIR + dash_sothebys): {correct_source}")
+print(f"  {match} Correct ({DASH_OFFICE_KEY} + DASH_JSON): {correct_source}")
 if wrong_source > 0:
     print(f"  ❌ Incorrect: {wrong_source}")
     for i in source_issues[:3]:
@@ -390,7 +393,7 @@ print("TEST 7: RESO Type Compliance")
 print("=" * 60)
 
 # Get one property and check types
-r_sample = reso_get('/odata/Property?$top=1&$filter=OriginatingSystemOfficeKey eq \'HSIR\'')
+r_sample = reso_get(f"/odata/Property?$top=1&$filter=OriginatingSystemOfficeKey eq '{DASH_OFFICE_KEY}'')
 if r_sample.get('value'):
     rprop = r_sample['value'][0]
     
@@ -425,7 +428,7 @@ print("TEST 8: Media URL & Dimensions")
 print("=" * 60)
 
 # Check media URLs and dimensions
-media_data = reso_get("/odata/Media?$top=5&$filter=OriginatingSystemOfficeKey eq 'HSIR'&$select=MediaKey,MediaURL,ImageWidth,ImageHeight")
+media_data = reso_get("/odata/Media?$top=5&$filter=OriginatingSystemOfficeKey eq '{DASH_OFFICE_KEY}'&$select=MediaKey,MediaURL,ImageWidth,ImageHeight")
 url_issues = []
 
 for media in media_data.get('value', []):
@@ -530,7 +533,7 @@ else:
 print("")
 print("  Checking RESO API data...")
 # Verify in RESO API
-reso_all_props = reso_get('/odata/Property?$filter=OriginatingSystemOfficeKey eq \'HSIR\'&$select=ListingKey,ListAgentKey,Latitude,Longitude')
+reso_all_props = reso_get(f"/odata/Property?$filter=OriginatingSystemOfficeKey eq '{DASH_OFFICE_KEY}'&$select=ListingKey,ListAgentKey,Latitude,Longitude')
 reso_props_list = reso_all_props.get('value', [])
 
 reso_with_agent = 0
