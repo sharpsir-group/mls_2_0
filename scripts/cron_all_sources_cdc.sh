@@ -1,7 +1,7 @@
 #!/bin/bash
 # MLS 2.0 CDC Pipeline - All Sources
 # Runs daily at 3:00 AM MSK (0:00 UTC)
-# Processes: Cyprus (Qobrix), Hungary (DASH FILE), Kazakhstan (DASH API)
+# Processes: Cyprus (Qobrix API), Hungary (DASH FILE), Kazakhstan (DASH API)
 # Sends HTML email report on completion
 
 export PATH="/home/bitnami/.local/bin:/home/bitnami/.nvm/versions/node/v20.19.5/bin:/opt/bitnami/python/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
@@ -374,7 +374,7 @@ OVERALL_STATUS="SUCCESS"
 # STEP 1: Cyprus - Qobrix CDC (existing pipeline)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" | tee -a "$LOG_FILE"
-echo "STEP 1: Cyprus (Qobrix) CDC" | tee -a "$LOG_FILE"
+echo "STEP 1: Cyprus (Qobrix API) CDC" | tee -a "$LOG_FILE"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" | tee -a "$LOG_FILE"
 
 cd "$MLS2_ROOT"

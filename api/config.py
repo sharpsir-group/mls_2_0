@@ -5,7 +5,7 @@
 RESO Web API Configuration
 
 Multi-tenant OAuth support with office-based data isolation.
-Supports multiple data sources (Qobrix, DASH API, DASH JSON).
+Supports multiple data sources (Qobrix API, DASH API, DASH FILE).
 """
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,7 +36,7 @@ class DataSource:
         office_key: OriginatingSystemOfficeKey (e.g., SHARPSIR-CY-001)
         system_name: OriginatingSystemName (e.g., Cyprus Sotheby's International Realty)
         system_id: OriginatingSystemID (e.g., QOBRIX_CY)
-        source_type: QOBRIX, DASH_API, or DASH_FILE
+        source_type: QOBRIX_API, DASH_API, or DASH_FILE
         country: ISO 3166-1 alpha-2 country code
         
     Type-specific attributes:
@@ -54,7 +54,7 @@ class DataSource:
     office_key: str
     system_name: str
     system_id: str
-    source_type: str  # QOBRIX, DASH_API, DASH_FILE
+    source_type: str  # QOBRIX_API, DASH_API, DASH_FILE
     country: str = ""
     
     # QOBRIX-specific
@@ -246,7 +246,7 @@ class Settings(BaseSettings):
         return None
     
     def get_sources_by_type(self, source_type: str) -> list[DataSource]:
-        """Get all data sources of a specific type (QOBRIX, DASH_API, DASH_FILE)."""
+        """Get all data sources of a specific type (QOBRIX_API, DASH_API, DASH_FILE)."""
         return [s for s in self.get_data_sources() if s.source_type == source_type]
     
     def get_all_office_keys(self) -> list[str]:
