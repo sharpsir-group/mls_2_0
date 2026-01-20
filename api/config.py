@@ -36,7 +36,7 @@ class DataSource:
         office_key: OriginatingSystemOfficeKey (e.g., SHARPSIR-CY-001)
         system_name: OriginatingSystemName (e.g., Cyprus Sotheby's International Realty)
         system_id: OriginatingSystemID (e.g., QOBRIX_CY)
-        source_type: QOBRIX, DASH_API, or DASH_JSON
+        source_type: QOBRIX, DASH_API, or DASH_FILE
         country: ISO 3166-1 alpha-2 country code
         
     Type-specific attributes:
@@ -44,7 +44,7 @@ class DataSource:
         api_user: API user for QOBRIX sources
         api_key: API key for QOBRIX/DASH sources
         api_url: API URL for QOBRIX/DASH sources
-        source_dir: Directory for DASH_JSON sources
+        source_dir: Directory for DASH_FILE sources
         dash_office_guid: Office GUID for DASH_API sources
         dash_okta_client_id: Okta client ID for DASH_API sources
         dash_okta_client_secret: Okta secret for DASH_API sources
@@ -54,7 +54,7 @@ class DataSource:
     office_key: str
     system_name: str
     system_id: str
-    source_type: str  # QOBRIX, DASH_API, DASH_JSON
+    source_type: str  # QOBRIX, DASH_API, DASH_FILE
     country: str = ""
     
     # QOBRIX-specific
@@ -63,7 +63,7 @@ class DataSource:
     api_key: str = ""
     api_url: str = ""
     
-    # DASH_JSON-specific
+    # DASH_FILE-specific
     source_dir: str = ""
     
     # DASH_API-specific
@@ -126,7 +126,7 @@ def _parse_data_sources() -> list[DataSource]:
             api_user=os.getenv(f"{prefix}API_USER", ""),
             api_key=os.getenv(f"{prefix}API_KEY", ""),
             api_url=os.getenv(f"{prefix}API_URL", ""),
-            # DASH_JSON
+            # DASH_FILE
             source_dir=os.getenv(f"{prefix}DIR", ""),
             # DASH_API
             dash_office_guid=os.getenv(f"{prefix}DASH_OFFICE_GUID", ""),
@@ -246,7 +246,7 @@ class Settings(BaseSettings):
         return None
     
     def get_sources_by_type(self, source_type: str) -> list[DataSource]:
-        """Get all data sources of a specific type (QOBRIX, DASH_API, DASH_JSON)."""
+        """Get all data sources of a specific type (QOBRIX, DASH_API, DASH_FILE)."""
         return [s for s in self.get_data_sources() if s.source_type == source_type]
     
     def get_all_office_keys(self) -> list[str]:

@@ -1,7 +1,7 @@
 #!/bin/bash
 # MLS 2.0 CDC Pipeline - All Sources
 # Runs daily at 3:00 AM MSK (0:00 UTC)
-# Processes: Cyprus (Qobrix), Hungary (DASH JSON), Kazakhstan (DASH API)
+# Processes: Cyprus (Qobrix), Hungary (DASH FILE), Kazakhstan (DASH API)
 # Sends HTML email report on completion
 
 export PATH="/home/bitnami/.local/bin:/home/bitnami/.nvm/versions/node/v20.19.5/bin:/opt/bitnami/python/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
@@ -284,7 +284,7 @@ send_email_report() {
                                         <span style="font-size: 11px; color: #888;">SHARPSIR-HU-001</span><br>
                                         <span style="font-size: 10px; color: #5b9a9a; font-family: monospace;">${HU_SYSTEM_ID}</span>
                                     </td>
-                                    <td style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 13px; color: #666;">DASH JSON</span></td>
+                                    <td style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 13px; color: #666;">DASH FILE</span></td>
                                     <td align="center" style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="color: ${HU_COLOR}; font-weight: 600;">${HU_STATUS}</span></td>
                                     <td align="right" style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 14px; color: #5b9a9a; font-weight: 600;">${HU_RECORDS} records</span></td>
                                 </tr>
@@ -364,7 +364,7 @@ echo "" | tee -a "$LOG_FILE"
 
 echo "📊 Sources configured:" | tee -a "$LOG_FILE"
 echo "  1. Cyprus (CY):     ${SRC_1_OFFICE_KEY:-SHARPSIR-CY-001} - Qobrix API" | tee -a "$LOG_FILE"
-echo "  2. Hungary (HU):    ${SRC_2_OFFICE_KEY:-SHARPSIR-HU-001} - DASH JSON" | tee -a "$LOG_FILE"
+echo "  2. Hungary (HU):    ${SRC_2_OFFICE_KEY:-SHARPSIR-HU-001} - DASH FILE" | tee -a "$LOG_FILE"
 echo "  3. Kazakhstan (KZ): ${SRC_3_OFFICE_KEY:-SHARPSIR-KZ-001} - DASH API" | tee -a "$LOG_FILE"
 echo "" | tee -a "$LOG_FILE"
 
@@ -417,10 +417,10 @@ fi
 echo "" | tee -a "$LOG_FILE"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# STEP 3: Hungary - Process DASH JSON (if new files)
+# STEP 3: Hungary - Process DASH FILE (if new files)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" | tee -a "$LOG_FILE"
-echo "STEP 3: Hungary (DASH JSON) Check for new files" | tee -a "$LOG_FILE"
+echo "STEP 3: Hungary (DASH FILE) Check for new files" | tee -a "$LOG_FILE"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" | tee -a "$LOG_FILE"
 
 HU_SOURCE_DIR="${SRC_2_DIR:-$MLS2_ROOT/dash_hsir_source}"

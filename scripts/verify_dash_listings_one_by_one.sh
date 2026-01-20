@@ -18,7 +18,7 @@ if [ -f "$MLS2_ROOT/.env" ]; then
 fi
 
 RESO_API="${RESO_API_URL:-http://localhost:3900}"
-# Use new SRC_2 format (Hungary = DASH_JSON)
+# Use new SRC_2 format (Hungary = DASH_FILE)
 DASH_SOURCE_DIR="${SRC_2_DIR:-${DASH_SOURCE_DIR:-$MLS2_ROOT/dash_hsir_source}}"
 DASH_OFFICE_KEY="${SRC_2_OFFICE_KEY:-SHARPSIR-HU-001}"
 

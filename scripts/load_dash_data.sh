@@ -36,7 +36,7 @@ if [ "$1" = "--force" ]; then
     FORCE_FLAG="--force"
 fi
 
-# Validate required env vars - Use new SRC_2_* format (Hungary = DASH_JSON)
+# Validate required env vars - Use new SRC_2_* format (Hungary = DASH_FILE)
 DASH_SOURCE_DIR="${SRC_2_DIR:-$DASH_SOURCE_DIR}"
 DASH_OFFICE_KEY="${SRC_2_OFFICE_KEY:-SHARPSIR-HU-001}"
 

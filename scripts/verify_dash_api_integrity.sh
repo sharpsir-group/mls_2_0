@@ -19,7 +19,7 @@ if [ -f "$MLS2_ROOT/.env" ]; then
 fi
 
 RESO_API="${RESO_API_URL:-http://localhost:3900}"
-# Use new SRC_2 format (Hungary = DASH_JSON)
+# Use new SRC_2 format (Hungary = DASH_FILE)
 DASH_SOURCE_DIR="${SRC_2_DIR:-${DASH_SOURCE_DIR:-$MLS2_ROOT/dash_hsir_source}}"
 DASH_OFFICE_KEY="${SRC_2_OFFICE_KEY:-SHARPSIR-HU-001}"
 
@@ -381,7 +381,7 @@ for rprop in reso_check.get('value', []):
         source_issues.append(f"{rprop.get('ListingKey')}: OfficeKey={office_key}, DataSource={data_source}")
 
 match = "✅" if wrong_source == 0 else "❌"
-print(f"  {match} Correct ({DASH_OFFICE_KEY} + DASH_JSON): {correct_source}")
+print(f"  {match} Correct ({DASH_OFFICE_KEY} + DASH_FILE): {correct_source}")
 if wrong_source > 0:
     print(f"  ❌ Incorrect: {wrong_source}")
     for i in source_issues[:3]:

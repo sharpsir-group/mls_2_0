@@ -46,9 +46,9 @@ class DashBronzeLoader:
         Initialize loader with a DataSource configuration.
         
         Args:
-            source: DataSource object (DASH_JSON or DASH_API type)
+            source: DataSource object (DASH_FILE or DASH_API type)
         """
-        if source.source_type not in ("DASH_JSON", "DASH_API"):
+        if source.source_type not in ("DASH_FILE", "DASH_API"):
             raise ValueError(f"Source {source.office_key} is not a DASH type (got {source.source_type})")
         
         self.source = source
@@ -57,7 +57,7 @@ class DashBronzeLoader:
         self.system_id = source.system_id
         self.country = source.country
         
-        # Source directory for DASH_JSON
+        # Source directory for DASH_FILE
         self.source_dir = Path(source.source_dir) if source.source_dir else None
         
         # Settings for Databricks connection
@@ -322,7 +322,7 @@ class DashBronzeLoader:
             prop["office_key"] = self.office_key  # OriginatingSystemOfficeKey
             prop["system_name"] = self.system_name  # OriginatingSystemName
             prop["system_id"] = self.system_id  # OriginatingSystemID
-            prop["source"] = self.source.source_type  # DASH_JSON or DASH_API
+            prop["source"] = self.source.source_type  # DASH_FILE or DASH_API
             
             # Convert all values to strings
             for key, value in prop.items():
@@ -609,7 +609,7 @@ class DashBronzeLoader:
 def list_dash_sources():
     """List all configured DASH sources (JSON and API)."""
     settings = get_settings()
-    json_sources = settings.get_sources_by_type("DASH_JSON")
+    json_sources = settings.get_sources_by_type("DASH_FILE")
     api_sources = settings.get_sources_by_type("DASH_API")
     
     all_sources = json_sources + api_sources
@@ -623,7 +623,7 @@ def list_dash_sources():
         print(f"  {src.office_key} ({src.source_type})")
         print(f"    Name: {src.system_name}")
         print(f"    Country: {src.country}")
-        if src.source_type == "DASH_JSON":
+        if src.source_type == "DASH_FILE":
             print(f"    Dir: {src.source_dir}")
         print()
 
@@ -654,7 +654,7 @@ async def main():
         list_dash_sources()
         return
     
-    if source.source_type not in ("DASH_JSON", "DASH_API"):
+    if source.source_type not in ("DASH_FILE", "DASH_API"):
         print(f"Error: Source '{args.source}' is type '{source.source_type}', not DASH")
         return
     
