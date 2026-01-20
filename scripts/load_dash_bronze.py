@@ -57,8 +57,9 @@ class DashBronzeLoader:
         self.system_id = source.system_id
         self.country = source.country
         
-        # Source directory for DASH_FILE
+        # Source directory and file for DASH_FILE
         self.source_dir = Path(source.source_dir) if source.source_dir else None
+        self.source_file = source.source_file if hasattr(source, 'source_file') else ""
         
         # Settings for Databricks connection
         self.settings = get_settings()
@@ -175,15 +176,54 @@ class DashBronzeLoader:
                 hash_md5.update(chunk)
         return hash_md5.hexdigest()
     
+    def get_file_patterns_for_office(self) -> list[str]:
+        """Get file name patterns that match this office's data files."""
+        # Map office keys to file patterns (case-insensitive matching)
+        patterns = {
+            "SHARPSIR-HU-001": ["hsir_", "hungary", "hu_"],
+            "SHARPSIR-KZ-001": ["kz_", "kazakh", "dash_kz"],
+            # Add more patterns as needed
+        }
+        return patterns.get(self.office_key, [])
+    
+    def file_matches_office(self, filename: str) -> bool:
+        """Check if a file belongs to this office based on naming convention."""
+        patterns = self.get_file_patterns_for_office()
+        if not patterns:
+            # No patterns defined - accept all files (legacy behavior)
+            return True
+        
+        filename_lower = filename.lower()
+        return any(pattern.lower() in filename_lower for pattern in patterns)
+    
     def find_new_files(self, processed: dict[str, str]) -> list[Path]:
         """Find JSON files in source directory that haven't been processed or have changed."""
         if not self.source_dir or not self.source_dir.exists():
             return []
         
         new_files = []
+        
+        # If specific source_file is configured, only use that file
+        if self.source_file:
+            json_file = self.source_dir / self.source_file
+            if json_file.exists():
+                file_hash = self.compute_file_hash(json_file)
+                filename = json_file.name
+                if filename not in processed or processed[filename] != file_hash:
+                    new_files.append(json_file)
+            else:
+                print(f"⚠️ Configured source file not found: {json_file}")
+            return new_files
+        
+        # Otherwise, use pattern matching for files
         for json_file in self.source_dir.glob("*.json"):
-            file_hash = self.compute_file_hash(json_file)
             filename = json_file.name
+            
+            # Filter by office-specific file patterns
+            if not self.file_matches_office(filename):
+                continue
+            
+            file_hash = self.compute_file_hash(json_file)
             
             # Check if file is new or has changed
             if filename not in processed or processed[filename] != file_hash:

@@ -45,6 +45,7 @@ class DataSource:
         api_key: API key for QOBRIX/DASH sources
         api_url: API URL for QOBRIX/DASH sources
         source_dir: Directory for DASH_FILE sources
+        source_file: Specific file name for DASH_FILE sources
         dash_office_guid: Office GUID for DASH_API sources
         dash_okta_client_id: Okta client ID for DASH_API sources
         dash_okta_client_secret: Okta secret for DASH_API sources
@@ -65,6 +66,7 @@ class DataSource:
     
     # DASH_FILE-specific
     source_dir: str = ""
+    source_file: str = ""  # Exact filename for DASH_FILE sources
     
     # DASH_API-specific
     dash_office_guid: str = ""
@@ -128,6 +130,7 @@ def _parse_data_sources() -> list[DataSource]:
             api_url=os.getenv(f"{prefix}API_URL", ""),
             # DASH_FILE
             source_dir=os.getenv(f"{prefix}DIR", ""),
+            source_file=os.getenv(f"{prefix}FILE", ""),
             # DASH_API
             dash_office_guid=os.getenv(f"{prefix}DASH_OFFICE_GUID", ""),
             dash_api_key=os.getenv(f"{prefix}DASH_API_KEY", ""),
