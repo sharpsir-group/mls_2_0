@@ -191,6 +191,11 @@ send_email_report() {
     HU_COLOR=$( [ "$HU_STATUS" = "SUCCESS" ] && echo "#10b981" || ( [ "$HU_STATUS" = "SKIPPED" ] && echo "#888" || echo "#ef4444" ) )
     KZ_COLOR=$( [ "$KZ_STATUS" = "SUCCESS" ] && echo "#10b981" || ( [ "$KZ_STATUS" = "SKIPPED" ] && echo "#888" || echo "#ef4444" ) )
     
+    # System IDs
+    CY_SYSTEM_ID="${SRC_1_SYSTEM_ID:-QOBRIX_CY}"
+    HU_SYSTEM_ID="${SRC_2_SYSTEM_ID:-DASH_HU}"
+    KZ_SYSTEM_ID="${SRC_3_SYSTEM_ID:-DASH_KZ_SANDBOX}"
+    
     # Escape log content for HTML (last 200 lines)
     LOG_CONTENT=$(tail -200 "$LOG_FILE" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
     
@@ -266,7 +271,8 @@ send_email_report() {
                                 <tr>
                                     <td style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;">
                                         <span style="font-size: 14px; color: #1a1a2e; font-weight: 500;">🇨🇾 Cyprus</span><br>
-                                        <span style="font-size: 11px; color: #888;">SHARPSIR-CY-001</span>
+                                        <span style="font-size: 11px; color: #888;">SHARPSIR-CY-001</span><br>
+                                        <span style="font-size: 10px; color: #5b9a9a; font-family: monospace;">${CY_SYSTEM_ID}</span>
                                     </td>
                                     <td style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 13px; color: #666;">Qobrix API</span></td>
                                     <td align="center" style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="color: ${CY_COLOR}; font-weight: 600;">${CY_STATUS}</span></td>
@@ -275,7 +281,8 @@ send_email_report() {
                                 <tr>
                                     <td style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;">
                                         <span style="font-size: 14px; color: #1a1a2e; font-weight: 500;">🇭🇺 Hungary</span><br>
-                                        <span style="font-size: 11px; color: #888;">SHARPSIR-HU-001</span>
+                                        <span style="font-size: 11px; color: #888;">SHARPSIR-HU-001</span><br>
+                                        <span style="font-size: 10px; color: #5b9a9a; font-family: monospace;">${HU_SYSTEM_ID}</span>
                                     </td>
                                     <td style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 13px; color: #666;">DASH JSON</span></td>
                                     <td align="center" style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="color: ${HU_COLOR}; font-weight: 600;">${HU_STATUS}</span></td>
@@ -284,7 +291,8 @@ send_email_report() {
                                 <tr>
                                     <td style="padding: 15px 20px;">
                                         <span style="font-size: 14px; color: #1a1a2e; font-weight: 500;">🇰🇿 Kazakhstan</span><br>
-                                        <span style="font-size: 11px; color: #888;">SHARPSIR-KZ-001</span>
+                                        <span style="font-size: 11px; color: #888;">SHARPSIR-KZ-001</span><br>
+                                        <span style="font-size: 10px; color: #5b9a9a; font-family: monospace;">${KZ_SYSTEM_ID}</span>
                                     </td>
                                     <td style="padding: 15px 20px;"><span style="font-size: 13px; color: #666;">DASH API</span></td>
                                     <td align="center" style="padding: 15px 20px;"><span style="color: ${KZ_COLOR}; font-weight: 600;">${KZ_STATUS}</span></td>
@@ -394,8 +402,9 @@ if [ -n "$SRC_3_DASH_API_KEY" ]; then
     if python3 "$SCRIPT_DIR/fetch_dash_api.py" --source "${SRC_3_OFFICE_KEY:-SHARPSIR-KZ-001}" --load >> "$LOG_FILE" 2>&1; then
         KZ_STATUS="SUCCESS"
         echo "✅ Kazakhstan fetch & load completed" | tee -a "$LOG_FILE"
-        # Extract records count
-        KZ_RECORDS=$(grep -oP "Total listings: \K[0-9]+" "$LOG_FILE" 2>/dev/null | tail -1 || echo "0")
+        # Extract records count from "Saved X listings" or "Found X listings"
+        KZ_RECORDS=$(grep -oP "Saved \K[0-9]+" "$LOG_FILE" 2>/dev/null | tail -1 || echo "0")
+        [ "$KZ_RECORDS" = "0" ] && KZ_RECORDS=$(grep -oP "Found \K[0-9]+" "$LOG_FILE" 2>/dev/null | tail -1 || echo "0")
     else
         KZ_STATUS="FAILED"
         OVERALL_STATUS="WARNING"
@@ -420,11 +429,9 @@ if [ -d "$HU_SOURCE_DIR" ]; then
     if python3 "$SCRIPT_DIR/load_dash_bronze.py" --source "${SRC_2_OFFICE_KEY:-SHARPSIR-HU-001}" >> "$LOG_FILE" 2>&1; then
         HU_STATUS="SUCCESS"
         echo "✅ Hungary processing completed" | tee -a "$LOG_FILE"
-        # Extract records count
-        HU_RECORDS=$(grep -oP "total records" "$LOG_FILE" 2>/dev/null | grep -oP "[0-9]+" | tail -1 || echo "0")
-        if [ -z "$HU_RECORDS" ]; then
-            HU_RECORDS=$(grep -oP "Processed \K[0-9]+" "$LOG_FILE" 2>/dev/null | tail -1 || echo "0")
-        fi
+        # Extract records count from "X total records" or "Found X listings"
+        HU_RECORDS=$(grep -oP "[0-9]+ total records" "$LOG_FILE" 2>/dev/null | tail -1 | grep -oP "^[0-9]+" || echo "0")
+        [ "$HU_RECORDS" = "0" ] && HU_RECORDS=$(grep -oP "Found \K[0-9]+" "$LOG_FILE" 2>/dev/null | tail -1 || echo "0")
     else
         HU_STATUS="FAILED"
         OVERALL_STATUS="WARNING"
@@ -465,9 +472,9 @@ echo "Started:  $START_TIME" | tee -a "$LOG_FILE"
 echo "Finished: $END_TIME" | tee -a "$LOG_FILE"
 echo "" | tee -a "$LOG_FILE"
 echo "Source Status:" | tee -a "$LOG_FILE"
-echo "  🇨🇾 Cyprus (Qobrix):     $CY_STATUS ($CY_CHANGES changes)" | tee -a "$LOG_FILE"
-echo "  🇭🇺 Hungary (DASH JSON): $HU_STATUS ($HU_RECORDS records)" | tee -a "$LOG_FILE"
-echo "  🇰🇿 Kazakhstan (DASH API): $KZ_STATUS ($KZ_RECORDS records)" | tee -a "$LOG_FILE"
+echo "  🇨🇾 Cyprus (${SRC_1_SYSTEM_ID:-QOBRIX_CY}):       $CY_STATUS (${CY_CHANGES:-0} changes)" | tee -a "$LOG_FILE"
+echo "  🇭🇺 Hungary (${SRC_2_SYSTEM_ID:-DASH_HU}):        $HU_STATUS (${HU_RECORDS:-0} records)" | tee -a "$LOG_FILE"
+echo "  🇰🇿 Kazakhstan (${SRC_3_SYSTEM_ID:-DASH_KZ_SANDBOX}): $KZ_STATUS (${KZ_RECORDS:-0} records)" | tee -a "$LOG_FILE"
 echo "" | tee -a "$LOG_FILE"
 
 # Determine final status
