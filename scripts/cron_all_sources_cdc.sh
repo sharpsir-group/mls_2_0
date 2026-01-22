@@ -399,12 +399,13 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 if [ -n "$SRC_3_DASH_API_KEY" ]; then
     echo "🔄 Fetching Kazakhstan listings from DASH API..." | tee -a "$LOG_FILE"
+    KZ_START_LINE=$(wc -l < "$LOG_FILE")
     if python3 "$SCRIPT_DIR/fetch_dash_api.py" --source "${SRC_3_OFFICE_KEY:-SHARPSIR-KZ-001}" --load >> "$LOG_FILE" 2>&1; then
         KZ_STATUS="SUCCESS"
         echo "✅ Kazakhstan fetch & load completed" | tee -a "$LOG_FILE"
-        # Extract records count from "Saved X listings" or "Found X listings"
-        KZ_RECORDS=$(grep -oP "Saved \K[0-9]+" "$LOG_FILE" 2>/dev/null | tail -1 || echo "0")
-        [ "$KZ_RECORDS" = "0" ] && KZ_RECORDS=$(grep -oP "Found \K[0-9]+" "$LOG_FILE" 2>/dev/null | tail -1 || echo "0")
+        # Extract records count from KZ section only (lines after KZ_START_LINE)
+        KZ_RECORDS=$(tail -n +$KZ_START_LINE "$LOG_FILE" | grep -oP "Saved \K[0-9]+" | tail -1 || echo "0")
+        [ "$KZ_RECORDS" = "0" ] && KZ_RECORDS=$(tail -n +$KZ_START_LINE "$LOG_FILE" | grep -oP "Unique listings fetched: \K[0-9]+" | tail -1 || echo "0")
     else
         KZ_STATUS="FAILED"
         OVERALL_STATUS="WARNING"
@@ -426,12 +427,24 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 HU_SOURCE_DIR="${SRC_2_DIR:-$MLS2_ROOT/dash_hsir_source}"
 if [ -d "$HU_SOURCE_DIR" ]; then
     echo "📁 Checking $HU_SOURCE_DIR for new files..." | tee -a "$LOG_FILE"
+    HU_START_LINE=$(wc -l < "$LOG_FILE")
     if python3 "$SCRIPT_DIR/load_dash_bronze.py" --source "${SRC_2_OFFICE_KEY:-SHARPSIR-HU-001}" >> "$LOG_FILE" 2>&1; then
         HU_STATUS="SUCCESS"
         echo "✅ Hungary processing completed" | tee -a "$LOG_FILE"
-        # Extract records count from "X total records" or "Found X listings"
-        HU_RECORDS=$(grep -oP "[0-9]+ total records" "$LOG_FILE" 2>/dev/null | tail -1 | grep -oP "^[0-9]+" || echo "0")
-        [ "$HU_RECORDS" = "0" ] && HU_RECORDS=$(grep -oP "Found \K[0-9]+" "$LOG_FILE" 2>/dev/null | tail -1 || echo "0")
+        # Extract records count from HU section only (lines after HU_START_LINE)
+        HU_SECTION=$(tail -n +$HU_START_LINE "$LOG_FILE")
+        if echo "$HU_SECTION" | grep -q "No new files to process"; then
+            # No new files - query Databricks for total count
+            HU_RECORDS=$(curl -s -X POST "https://${DATABRICKS_HOST#https://}/api/2.0/sql/statements" \
+                -H "Authorization: Bearer ${DATABRICKS_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d '{"warehouse_id": "'"${DATABRICKS_WAREHOUSE_ID}"'", "statement": "SELECT COUNT(*) FROM mls2.dash_bronze.properties WHERE office_key = '\''SHARPSIR-HU-001'\''", "wait_timeout": "10s"}' \
+                2>/dev/null | grep -oP '"data_array":\[\["\K[0-9]+' || echo "0")
+            HU_RECORDS="${HU_RECORDS:-0} (no change)"
+        else
+            HU_RECORDS=$(echo "$HU_SECTION" | grep -oP "Found \K[0-9]+" | tail -1 || echo "0")
+            [ "$HU_RECORDS" = "0" ] && HU_RECORDS=$(echo "$HU_SECTION" | grep -oP "[0-9]+ total" | head -1 | grep -oP "^[0-9]+" || echo "0")
+        fi
     else
         HU_STATUS="FAILED"
         OVERALL_STATUS="WARNING"
