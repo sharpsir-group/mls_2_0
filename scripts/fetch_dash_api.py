@@ -2,27 +2,19 @@
 """
 DASH API Fetcher
 
-Fetches listing data from DASH/Sotheby's API using Okta OAuth authentication.
-Supports fetching by office, by delta, or all available listings.
+Fetches listing data from DASH/Sotheby's API using Okta OAuth authentication
+and loads directly to Databricks Bronze.
 
 Usage:
-    # Fetch listings for a specific source (by office key)
+    # Fetch and load listings for a specific source
     python3 scripts/fetch_dash_api.py --source SHARPSIR-KZ-001
-    
-    # Fetch and immediately load to Databricks bronze
-    python3 scripts/fetch_dash_api.py --source SHARPSIR-KZ-001 --load
-    
-    # Output to specific file
-    python3 scripts/fetch_dash_api.py --source SHARPSIR-KZ-001 --output /path/to/output.json
     
     # List available DASH_API sources
     python3 scripts/fetch_dash_api.py --list-sources
 """
 import httpx
-import json
 import asyncio
 import argparse
-import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -300,10 +292,8 @@ def list_dash_api_sources():
 
 
 async def main():
-    parser = argparse.ArgumentParser(description="Fetch listings from DASH API")
+    parser = argparse.ArgumentParser(description="Fetch listings from DASH API and load to Databricks")
     parser.add_argument("--source", "-s", type=str, help="Source office key (e.g., SHARPSIR-KZ-001)")
-    parser.add_argument("--output", "-o", type=str, help="Output JSON file path")
-    parser.add_argument("--load", action="store_true", help="Load fetched data into Databricks bronze")
     parser.add_argument("--list-sources", action="store_true", help="List available DASH_API sources")
     
     args = parser.parse_args()
@@ -340,28 +330,13 @@ async def main():
         print("❌ No listings fetched")
         return 1
     
-    # Determine output path
-    if args.output:
-        output_path = Path(args.output)
-    else:
-        # Default to source-specific directory
-        output_path = MLS2_ROOT / "dash_hsir_source" / f"dash_{source.country.lower()}_listings_{datetime.now().strftime('%Y%m%d')}.json"
+    # Load directly to Databricks
+    print(f"\n📤 Loading {len(listings)} listings to Databricks bronze...")
     
-    # Save to file
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w") as f:
-        json.dump(listings, f, indent=2)
+    from load_dash_bronze import DashBronzeLoader
     
-    print(f"\n💾 Saved {len(listings)} listings to: {output_path}")
-    
-    # Optionally load to Databricks
-    if args.load:
-        print(f"\n📤 Loading to Databricks bronze (office_key={source.office_key})...")
-        
-        from load_dash_bronze import DashBronzeLoader
-        
-        loader = DashBronzeLoader(source)
-        await loader.load_file(output_path)
+    loader = DashBronzeLoader(source)
+    await loader.load_listings(listings)
     
     print("\n✅ Done!")
     return 0

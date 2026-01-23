@@ -548,6 +548,36 @@ class DashBronzeLoader:
             else:
                 raise
     
+    async def load_listings(self, listings: list, append: bool = False) -> int:
+        """Load listings directly into Databricks Bronze (no file needed). Returns record count."""
+        print(f"📤 Loading {len(listings)} listings directly to Databricks Bronze")
+        print(f"🏢 Source: {self.office_key} ({self.system_name})")
+        print(f"🌍 Country: {self.country}")
+        
+        if not listings:
+            print("⚠️  No listings to load")
+            return 0
+        
+        # Ensure schema exists
+        await self.ensure_schema_exists()
+        
+        # Transform data
+        print("\n🔄 Transforming properties...")
+        properties = self.transform_dash_to_bronze_properties(listings)
+        
+        print("🔄 Transforming media...")
+        media_items = self.transform_dash_to_bronze_media(listings)
+        
+        # Load into Databricks
+        print("\n💾 Loading properties into Databricks...")
+        await self.load_properties(properties, append=append)
+        
+        print("\n💾 Loading media into Databricks...")
+        await self.load_media(media_items, append=append)
+        
+        print(f"\n✅ Saved {len(listings)} listings to Databricks Bronze!")
+        return len(listings)
+    
     async def load_file(self, json_file: Path, append: bool = False) -> int:
         """Load Dash JSON file into Databricks Bronze. Returns record count."""
         print(f"📥 Loading Dash data from: {json_file}")

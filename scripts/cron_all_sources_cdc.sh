@@ -76,7 +76,7 @@ extract_api_results() {
     API_PROP_COUNT=$(grep "Property Count:" "$log" 2>/dev/null | grep -q "PASS" && echo "PASS" || echo "FAIL")
     API_PROP_DATA=$(grep "Property Data:" "$log" 2>/dev/null | grep -q "PASS" && echo "PASS" || echo "FAIL")
     API_MEDIA=$(grep "Media Count:" "$log" 2>/dev/null | grep -q "PASS" && echo "PASS" || echo "FAIL")
-    API_MEMBERS=$(grep -E "Agent.*Member|Member.*Agent" "$log" 2>/dev/null | head -1 | grep -q "PASS\|✅" && echo "PASS" || echo "WARN")
+    API_MEMBERS=$(grep -E "RESO Member:" "$log" 2>/dev/null | head -1 | grep -q "✅" && echo "PASS" || echo "WARN")
     API_CONTACTS=$(grep "Contact Count:" "$log" 2>/dev/null | grep -q "PASS" && echo "PASS" || echo "FAIL")
     API_TRANSFORM=$(grep "Field Transformations:" "$log" 2>/dev/null | grep -q "PASS" && echo "PASS" || echo "FAIL")
     API_TYPES=$(grep "RESO Type Compliance:" "$log" 2>/dev/null | grep -q "PASS" && echo "PASS" || echo "FAIL")
@@ -400,7 +400,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 if [ -n "$SRC_3_DASH_API_KEY" ]; then
     echo "🔄 Fetching Kazakhstan listings from DASH API..." | tee -a "$LOG_FILE"
     KZ_START_LINE=$(wc -l < "$LOG_FILE")
-    if python3 "$SCRIPT_DIR/fetch_dash_api.py" --source "${SRC_3_OFFICE_KEY:-SHARPSIR-KZ-001}" --load >> "$LOG_FILE" 2>&1; then
+    if python3 "$SCRIPT_DIR/fetch_dash_api.py" --source "${SRC_3_OFFICE_KEY:-SHARPSIR-KZ-001}" >> "$LOG_FILE" 2>&1; then
         KZ_STATUS="SUCCESS"
         echo "✅ Kazakhstan fetch & load completed" | tee -a "$LOG_FILE"
         # Extract records count from KZ section only (lines after KZ_START_LINE)
