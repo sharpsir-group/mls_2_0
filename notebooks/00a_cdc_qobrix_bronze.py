@@ -8,30 +8,32 @@
 # MAGIC %md
 # MAGIC # MLS 2.0 - Qobrix CDC -> Bronze Layer (Incremental)
 # MAGIC 
-# MAGIC **Purpose:** Fetches ONLY changed property data from Qobrix API since last sync.
+# MAGIC **Purpose:** Fetches NEW and CHANGED property data from Qobrix API since last sync.
 # MAGIC 
 # MAGIC **How it works:**
 # MAGIC 1. Reads last sync timestamp from `cdc_metadata` table
-# MAGIC 2. Queries Qobrix API for records modified since that timestamp
-# MAGIC 3. MERGEs changed records into bronze tables (insert/update)
+# MAGIC 2. Queries Qobrix API for records:
+# MAGIC    - **Modified** since that timestamp (existing records that changed)
+# MAGIC    - **Created** since that timestamp (brand new records)
+# MAGIC 3. MERGEs records into bronze tables (insert/update)
 # MAGIC 4. Updates metadata with new sync timestamp
 # MAGIC 
 # MAGIC **Tables Updated (Every CDC Run):**
 # MAGIC | Table | Method |
 # MAGIC |-------|--------|
-# MAGIC | `properties` | Incremental (`modified >= last_sync`) |
-# MAGIC | `agents` | Incremental (`modified >= last_sync`) |
-# MAGIC | `contacts` | Incremental (`modified >= last_sync`) |
-# MAGIC | `viewings` | Incremental (`modified >= last_sync`) |
-# MAGIC | `opportunities` | Incremental (`modified >= last_sync`) |
-# MAGIC | `property_media` | Re-fetched for changed properties |
-# MAGIC | `users` | Incremental (`modified >= last_sync`) |
-# MAGIC | `projects` | Incremental (`modified >= last_sync`) |
-# MAGIC | `project_features` | Incremental (`modified >= last_sync`) |
-# MAGIC | `property_types` | Incremental (`modified >= last_sync`) |
-# MAGIC | `property_subtypes` | Incremental (`modified >= last_sync`) |
-# MAGIC | `locations` | Incremental (`modified >= last_sync`) |
-# MAGIC | `media_categories` | Incremental (`modified >= last_sync`) |
+# MAGIC | `properties` | Incremental (`modified >= last_sync` OR `created >= last_sync`) |
+# MAGIC | `agents` | Incremental (`modified >= last_sync` OR `created >= last_sync`) |
+# MAGIC | `contacts` | Incremental (`modified >= last_sync` OR `created >= last_sync`) |
+# MAGIC | `viewings` | Incremental (`modified >= last_sync` OR `created >= last_sync`) |
+# MAGIC | `opportunities` | Incremental (`modified >= last_sync` OR `created >= last_sync`) |
+# MAGIC | `property_media` | Re-fetched for changed/new properties |
+# MAGIC | `users` | Incremental (`modified >= last_sync` OR `created >= last_sync`) |
+# MAGIC | `projects` | Incremental (`modified >= last_sync` OR `created >= last_sync`) |
+# MAGIC | `project_features` | Incremental (`modified >= last_sync` OR `created >= last_sync`) |
+# MAGIC | `property_types` | Incremental (`modified >= last_sync` OR `created >= last_sync`) |
+# MAGIC | `property_subtypes` | Incremental (`modified >= last_sync` OR `created >= last_sync`) |
+# MAGIC | `locations` | Incremental (`modified >= last_sync` OR `created >= last_sync`) |
+# MAGIC | `media_categories` | Incremental (`modified >= last_sync` OR `created >= last_sync`) |
 # MAGIC | `portal_locations` | Skipped (static lookups, full refresh only) |
 # MAGIC 
 # MAGIC **When to use:**
@@ -165,14 +167,11 @@ def update_sync_metadata(entity: str, records: int, max_modified: str, status: s
 
 # COMMAND ----------
 
-def fetch_modified_records(endpoint: str, since_timestamp: str, page_size: int = 100) -> list:
-    """Fetch records modified since a given timestamp."""
+def fetch_records_by_filter(endpoint: str, search_param: str, page_size: int = 100) -> list:
+    """Fetch records matching a search filter."""
     all_records = []
     page = 1
     has_more = True
-    
-    # URL encode the search parameter properly
-    search_param = f"modified>='{since_timestamp}'"
     
     while has_more:
         url = f"{api_base_url}{endpoint}"
@@ -201,6 +200,42 @@ def fetch_modified_records(endpoint: str, since_timestamp: str, page_size: int =
             print(f"   Error fetching {endpoint} page {page}: {e}")
             has_more = False
     
+    return all_records
+
+
+def fetch_modified_records(endpoint: str, since_timestamp: str, page_size: int = 100) -> list:
+    """
+    Fetch records that are new OR modified since a given timestamp.
+    
+    This fetches BOTH:
+    1. Records with modified >= since_timestamp (existing records that changed)
+    2. Records with created >= since_timestamp (newly created records)
+    
+    Then deduplicates by 'id' field to avoid double-counting.
+    """
+    # Fetch modified records
+    modified_param = f"modified>='{since_timestamp}'"
+    print(f"   Fetching modified records (modified >= {since_timestamp})...")
+    modified_records = fetch_records_by_filter(endpoint, modified_param, page_size)
+    print(f"   Found {len(modified_records)} modified records")
+    
+    # Fetch newly created records
+    created_param = f"created>='{since_timestamp}'"
+    print(f"   Fetching new records (created >= {since_timestamp})...")
+    created_records = fetch_records_by_filter(endpoint, created_param, page_size)
+    print(f"   Found {len(created_records)} new records")
+    
+    # Merge and deduplicate by 'id' field
+    seen_ids = set()
+    all_records = []
+    
+    for record in modified_records + created_records:
+        record_id = record.get("id")
+        if record_id and record_id not in seen_ids:
+            seen_ids.add(record_id)
+            all_records.append(record)
+    
+    print(f"   Total unique records (new + modified): {len(all_records)}")
     return all_records
 
 

@@ -30,13 +30,16 @@ if [ -f "$MLS2_ROOT/.env" ]; then
     set +a
 fi
 
-# Source status tracking
+# Source status tracking (records = total, updates = changed in this run)
 CY_STATUS="PENDING"
 HU_STATUS="PENDING"
 KZ_STATUS="PENDING"
-CY_CHANGES="0"
+CY_RECORDS="0"
+CY_UPDATES="0"
 HU_RECORDS="0"
+HU_UPDATES="0"
 KZ_RECORDS="0"
+KZ_UPDATES="0"
 
 # API Test results
 API_TEST_STATUS="SKIPPED"
@@ -196,8 +199,21 @@ send_email_report() {
     HU_SYSTEM_ID="${SRC_2_SYSTEM_ID:-DASH_HU}"
     KZ_SYSTEM_ID="${SRC_3_SYSTEM_ID:-DASH_KZ_SANDBOX}"
     
-    # Escape log content for HTML (last 200 lines)
-    LOG_CONTENT=$(tail -200 "$LOG_FILE" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
+    # Escape log content for HTML (first 120 lines + last 120 lines to show both Cyprus and summary)
+    LOG_LINES=$(wc -l < "$LOG_FILE")
+    if [ "$LOG_LINES" -le 250 ]; then
+        # Short log - show everything
+        LOG_CONTENT=$(cat "$LOG_FILE" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
+    else
+        # Long log - show beginning (Cyprus/Qobrix) + end (Summary)
+        LOG_HEAD=$(head -120 "$LOG_FILE" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
+        LOG_TAIL=$(tail -120 "$LOG_FILE" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
+        LOG_CONTENT="${LOG_HEAD}
+
+... [$(( LOG_LINES - 240 )) lines omitted] ...
+
+${LOG_TAIL}"
+    fi
     
     # Build HTML email
     cat << EOF | mail -a "Content-Type: text/html; charset=UTF-8" -s "$subject" "$EMAIL_TO"
@@ -266,7 +282,8 @@ send_email_report() {
                                     <td style="padding: 12px 20px; border-bottom: 2px solid #e5e5e5; background-color: #f0f0f0; border-radius: 6px 0 0 0;"><span style="font-size: 12px; color: #666; text-transform: uppercase; font-weight: 600;">Source</span></td>
                                     <td style="padding: 12px 20px; border-bottom: 2px solid #e5e5e5; background-color: #f0f0f0;"><span style="font-size: 12px; color: #666; text-transform: uppercase; font-weight: 600;">Type</span></td>
                                     <td align="center" style="padding: 12px 20px; border-bottom: 2px solid #e5e5e5; background-color: #f0f0f0;"><span style="font-size: 12px; color: #666; text-transform: uppercase; font-weight: 600;">Status</span></td>
-                                    <td align="right" style="padding: 12px 20px; border-bottom: 2px solid #e5e5e5; background-color: #f0f0f0; border-radius: 0 6px 0 0;"><span style="font-size: 12px; color: #666; text-transform: uppercase; font-weight: 600;">Records</span></td>
+                                    <td align="right" style="padding: 12px 20px; border-bottom: 2px solid #e5e5e5; background-color: #f0f0f0;"><span style="font-size: 12px; color: #666; text-transform: uppercase; font-weight: 600;">Records</span></td>
+                                    <td align="right" style="padding: 12px 20px; border-bottom: 2px solid #e5e5e5; background-color: #f0f0f0; border-radius: 0 6px 0 0;"><span style="font-size: 12px; color: #666; text-transform: uppercase; font-weight: 600;">Updates</span></td>
                                 </tr>
                                 <tr>
                                     <td style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;">
@@ -274,9 +291,10 @@ send_email_report() {
                                         <span style="font-size: 11px; color: #888;">SHARPSIR-CY-001</span><br>
                                         <span style="font-size: 10px; color: #5b9a9a; font-family: monospace;">${CY_SYSTEM_ID}</span>
                                     </td>
-                                    <td style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 13px; color: #666;">Qobrix API</span></td>
+                                    <td style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 13px; color: #666;">Qobrix API</span><br><span style="font-size: 10px; color: #5b9a9a;">(CDC)</span></td>
                                     <td align="center" style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="color: ${CY_COLOR}; font-weight: 600;">${CY_STATUS}</span></td>
-                                    <td align="right" style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 14px; color: #5b9a9a; font-weight: 600;">${CY_CHANGES} changed</span></td>
+                                    <td align="right" style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 14px; color: #666;">${CY_RECORDS}</span></td>
+                                    <td align="right" style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 14px; color: #5b9a9a; font-weight: 600;">${CY_UPDATES}</span></td>
                                 </tr>
                                 <tr>
                                     <td style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;">
@@ -284,9 +302,10 @@ send_email_report() {
                                         <span style="font-size: 11px; color: #888;">SHARPSIR-HU-001</span><br>
                                         <span style="font-size: 10px; color: #5b9a9a; font-family: monospace;">${HU_SYSTEM_ID}</span>
                                     </td>
-                                    <td style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 13px; color: #666;">DASH FILE</span></td>
+                                    <td style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 13px; color: #666;">DASH FILE</span><br><span style="font-size: 10px; color: #888;">(file sync)</span></td>
                                     <td align="center" style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="color: ${HU_COLOR}; font-weight: 600;">${HU_STATUS}</span></td>
-                                    <td align="right" style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 14px; color: #5b9a9a; font-weight: 600;">${HU_RECORDS} records</span></td>
+                                    <td align="right" style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 14px; color: #666;">${HU_RECORDS}</span></td>
+                                    <td align="right" style="padding: 15px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 14px; color: #5b9a9a; font-weight: 600;">${HU_UPDATES}</span></td>
                                 </tr>
                                 <tr>
                                     <td style="padding: 15px 20px;">
@@ -294,9 +313,10 @@ send_email_report() {
                                         <span style="font-size: 11px; color: #888;">SHARPSIR-KZ-001</span><br>
                                         <span style="font-size: 10px; color: #5b9a9a; font-family: monospace;">${KZ_SYSTEM_ID}</span>
                                     </td>
-                                    <td style="padding: 15px 20px;"><span style="font-size: 13px; color: #666;">DASH API</span></td>
+                                    <td style="padding: 15px 20px;"><span style="font-size: 13px; color: #666;">DASH API</span><br><span style="font-size: 10px; color: #888;">(full sync)</span></td>
                                     <td align="center" style="padding: 15px 20px;"><span style="color: ${KZ_COLOR}; font-weight: 600;">${KZ_STATUS}</span></td>
-                                    <td align="right" style="padding: 15px 20px;"><span style="font-size: 14px; color: #5b9a9a; font-weight: 600;">${KZ_RECORDS} records</span></td>
+                                    <td align="right" style="padding: 15px 20px;"><span style="font-size: 14px; color: #666;">${KZ_RECORDS}</span></td>
+                                    <td align="right" style="padding: 15px 20px;"><span style="font-size: 14px; color: #5b9a9a; font-weight: 600;">${KZ_UPDATES}</span></td>
                                 </tr>
                             </table>
                         </td>
@@ -381,8 +401,21 @@ cd "$MLS2_ROOT"
 if "$SCRIPT_DIR/run_pipeline.sh" cdc >> "$LOG_FILE" 2>&1; then
     CY_STATUS="SUCCESS"
     echo "✅ Cyprus CDC completed" | tee -a "$LOG_FILE"
-    # Extract changes count
-    CY_CHANGES=$(grep -oP "Properties: \K[0-9]+" "$LOG_FILE" 2>/dev/null | tail -1 || echo "0")
+    # Extract changes count (sum of all entity changes)
+    CY_PROPS_CHG=$(grep -oP "Properties: \K[0-9]+" "$LOG_FILE" 2>/dev/null | tail -1 || echo "0")
+    CY_AGENTS_CHG=$(grep -oP "Agents: \K[0-9]+" "$LOG_FILE" 2>/dev/null | tail -1 || echo "0")
+    CY_CONTACTS_CHG=$(grep -oP "Contacts: \K[0-9]+" "$LOG_FILE" 2>/dev/null | tail -1 || echo "0")
+    CY_VIEWINGS_CHG=$(grep -oP "Viewings: \K[0-9]+" "$LOG_FILE" 2>/dev/null | tail -1 || echo "0")
+    CY_MEDIA_CHG=$(grep -oP "Media: \K[0-9]+" "$LOG_FILE" 2>/dev/null | tail -1 || echo "0")
+    CY_UPDATES=$((${CY_PROPS_CHG:-0} + ${CY_AGENTS_CHG:-0} + ${CY_CONTACTS_CHG:-0} + ${CY_VIEWINGS_CHG:-0} + ${CY_MEDIA_CHG:-0}))
+    # Get total records count from Databricks
+    DB_API_URL="https://${DATABRICKS_HOST#https://}/api/2.0/sql/statements"
+    CY_RECORDS=$(curl -s -X POST "$DB_API_URL" \
+        -H "Authorization: Bearer ${DATABRICKS_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d '{"warehouse_id": "'"${DATABRICKS_WAREHOUSE_ID}"'", "statement": "SELECT COUNT(*) FROM mls2.reso_gold.property WHERE OriginatingSystemOfficeKey = '\''SHARPSIR-CY-001'\''", "wait_timeout": "30s"}' \
+        2>/dev/null | grep -oP '"data_array":\[\["\K[0-9]+' || echo "0")
+    CY_RECORDS="${CY_RECORDS:-0}"
 else
     CY_STATUS="FAILED"
     OVERALL_STATUS="FAILED"
@@ -404,8 +437,13 @@ if [ -n "$SRC_3_DASH_API_KEY" ]; then
         KZ_STATUS="SUCCESS"
         echo "✅ Kazakhstan fetch & load completed" | tee -a "$LOG_FILE"
         # Extract records count from KZ section only (lines after KZ_START_LINE)
-        KZ_RECORDS=$(tail -n +$KZ_START_LINE "$LOG_FILE" | grep -oP "Saved \K[0-9]+" | tail -1 || echo "0")
-        [ "$KZ_RECORDS" = "0" ] && KZ_RECORDS=$(tail -n +$KZ_START_LINE "$LOG_FILE" | grep -oP "Unique listings fetched: \K[0-9]+" | tail -1 || echo "0")
+        KZ_SECTION=$(tail -n +$KZ_START_LINE "$LOG_FILE")
+        KZ_LOADED=$(echo "$KZ_SECTION" | grep -oP "Saved \K[0-9]+" | tail -1 || echo "0")
+        [ "$KZ_LOADED" = "0" ] && KZ_LOADED=$(echo "$KZ_SECTION" | grep -oP "Unique listings fetched: \K[0-9]+" | tail -1 || echo "0")
+        [ "$KZ_LOADED" = "0" ] && KZ_LOADED=$(echo "$KZ_SECTION" | grep -oP "Loaded \K[0-9]+" | tail -1 || echo "0")
+        # DASH API does full sync (no CDC) - records = total synced, updates = 0 (can't detect changes)
+        KZ_RECORDS="$KZ_LOADED"
+        KZ_UPDATES="0"
     else
         KZ_STATUS="FAILED"
         OVERALL_STATUS="WARNING"
@@ -434,16 +472,25 @@ if [ -d "$HU_SOURCE_DIR" ]; then
         # Extract records count from HU section only (lines after HU_START_LINE)
         HU_SECTION=$(tail -n +$HU_START_LINE "$LOG_FILE")
         if echo "$HU_SECTION" | grep -q "No new files to process"; then
-            # No new files - query Databricks for total count
-            HU_RECORDS=$(curl -s -X POST "https://${DATABRICKS_HOST#https://}/api/2.0/sql/statements" \
+            # No new files - query Databricks for total count, updates = 0
+            DB_API_URL="https://${DATABRICKS_HOST#https://}/api/2.0/sql/statements"
+            HU_RECORDS=$(curl -s -X POST "$DB_API_URL" \
                 -H "Authorization: Bearer ${DATABRICKS_TOKEN}" \
                 -H "Content-Type: application/json" \
-                -d '{"warehouse_id": "'"${DATABRICKS_WAREHOUSE_ID}"'", "statement": "SELECT COUNT(*) FROM mls2.dash_bronze.properties WHERE office_key = '\''SHARPSIR-HU-001'\''", "wait_timeout": "10s"}' \
+                -d '{"warehouse_id": "'"${DATABRICKS_WAREHOUSE_ID}"'", "statement": "SELECT COUNT(*) FROM mls2.dash_bronze.properties WHERE office_key = '\''SHARPSIR-HU-001'\''", "wait_timeout": "30s"}' \
                 2>/dev/null | grep -oP '"data_array":\[\["\K[0-9]+' || echo "0")
-            HU_RECORDS="${HU_RECORDS:-0} (no change)"
+            HU_RECORDS="${HU_RECORDS:-0}"
+            HU_UPDATES="0"
         else
-            HU_RECORDS=$(echo "$HU_SECTION" | grep -oP "Found \K[0-9]+" | tail -1 || echo "0")
-            [ "$HU_RECORDS" = "0" ] && HU_RECORDS=$(echo "$HU_SECTION" | grep -oP "[0-9]+ total" | head -1 | grep -oP "^[0-9]+" || echo "0")
+            # New files processed - count how many files were loaded
+            HU_FILES=$(echo "$HU_SECTION" | grep -oP "Found \K[0-9]+" | head -1 || echo "0")
+            [ "$HU_FILES" = "0" ] && HU_FILES=$(echo "$HU_SECTION" | grep -c "Processing file" || echo "0")
+            # Get total records loaded
+            HU_LOADED=$(echo "$HU_SECTION" | grep -oP "Loaded \K[0-9]+" | tail -1 || echo "0")
+            [ "$HU_LOADED" = "0" ] && HU_LOADED=$(echo "$HU_SECTION" | grep -oP "[0-9]+ total" | head -1 | grep -oP "^[0-9]+" || echo "0")
+            # DASH FILE: records = total loaded, updates = new files count (file-level change detection)
+            HU_RECORDS="${HU_LOADED:-0}"
+            HU_UPDATES="${HU_FILES:-0}"
         fi
     else
         HU_STATUS="FAILED"
@@ -485,9 +532,9 @@ echo "Started:  $START_TIME" | tee -a "$LOG_FILE"
 echo "Finished: $END_TIME" | tee -a "$LOG_FILE"
 echo "" | tee -a "$LOG_FILE"
 echo "Source Status:" | tee -a "$LOG_FILE"
-echo "  🇨🇾 Cyprus (${SRC_1_SYSTEM_ID:-QOBRIX_CY}):       $CY_STATUS (${CY_CHANGES:-0} changes)" | tee -a "$LOG_FILE"
-echo "  🇭🇺 Hungary (${SRC_2_SYSTEM_ID:-DASH_HU}):        $HU_STATUS (${HU_RECORDS:-0} records)" | tee -a "$LOG_FILE"
-echo "  🇰🇿 Kazakhstan (${SRC_3_SYSTEM_ID:-DASH_KZ_SANDBOX}): $KZ_STATUS (${KZ_RECORDS:-0} records)" | tee -a "$LOG_FILE"
+echo "  🇨🇾 Cyprus (${SRC_1_SYSTEM_ID:-QOBRIX_CY}):       $CY_STATUS | Records: ${CY_RECORDS:-0} | Updates: ${CY_UPDATES:-0}" | tee -a "$LOG_FILE"
+echo "  🇭🇺 Hungary (${SRC_2_SYSTEM_ID:-DASH_HU}):        $HU_STATUS | Records: ${HU_RECORDS:-0} | Updates: ${HU_UPDATES:-0}" | tee -a "$LOG_FILE"
+echo "  🇰🇿 Kazakhstan (${SRC_3_SYSTEM_ID:-DASH_KZ_SANDBOX}): $KZ_STATUS | Records: ${KZ_RECORDS:-0} | Updates: ${KZ_UPDATES:-0}" | tee -a "$LOG_FILE"
 echo "" | tee -a "$LOG_FILE"
 
 # Determine final status
