@@ -34,6 +34,7 @@
 # MAGIC | `property_subtypes` | Incremental (`modified >= last_sync` OR `created >= last_sync`) |
 # MAGIC | `locations` | Incremental (`modified >= last_sync` OR `created >= last_sync`) |
 # MAGIC | `media_categories` | Incremental (`modified >= last_sync` OR `created >= last_sync`) |
+# MAGIC | `property_translations_ru` | Full refresh every CDC run (translations change independently) |
 # MAGIC | `portal_locations` | Skipped (static lookups, full refresh only) |
 # MAGIC 
 # MAGIC **When to use:**
@@ -50,10 +51,12 @@
 # COMMAND ----------
 
 import os
+import time
 import requests
 import pandas as pd
 import json as _json
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pyspark.sql.functions import lit, current_timestamp
 
 catalog = "mls2"
@@ -100,7 +103,8 @@ cdc_changes = {
     "property_subtypes": 0,
     "locations": 0,
     "media_categories": 0,
-    "portal_locations": 0
+    "portal_locations": 0,
+    "property_translations_ru": 0
 }
 
 # COMMAND ----------
@@ -336,6 +340,86 @@ def merge_to_bronze(records: list, table_name: str, key_column: str = "id") -> i
     
     print(f"   ✅ {table_name}: Merged {len(records)} records")
     return len(records)
+
+
+def save_to_bronze_overwrite(records: list, table_name: str, description: str) -> int:
+    """Save records to a bronze Delta table (full overwrite)."""
+    if not records:
+        print(f"   ⚠️  No {description} to save")
+        return 0
+    pdf = pd.json_normalize(records, sep="_")
+    for col in pdf.columns:
+        pdf[col] = pdf[col].apply(lambda x: _json.dumps(x) if isinstance(x, (list, dict)) else (str(x) if x is not None else ""))
+    df = spark.createDataFrame(pdf)
+    spark.sql(f"DROP TABLE IF EXISTS {table_name}")
+    df.write.format("delta").mode("overwrite").saveAsTable(table_name)
+    print(f"   ✅ {table_name}: {len(records)} records, {len(df.columns)} columns")
+    return len(records)
+
+
+def fetch_translations_ru(max_workers: int = 10) -> list:
+    """Fetch Russian translations for ALL properties via /properties/{id}/translations/ru_RU.
+
+    Reads property IDs from the bronze properties table, then fetches translations
+    in parallel. Returns a list of dicts suitable for save_to_bronze_overwrite().
+    """
+    prop_ids = [row["id"] for row in
+                spark.sql("SELECT id FROM properties WHERE id IS NOT NULL AND id != ''").collect()]
+    if not prop_ids:
+        print("   ⚠️  No properties found in bronze table")
+        return []
+
+    session = requests.Session()
+    session.headers.update({
+        "X-Api-User": qobrix_api_user,
+        "X-Api-Key": qobrix_api_key,
+        "Accept": "application/json",
+    })
+    adapter = requests.adapters.HTTPAdapter(
+        pool_connections=max_workers, pool_maxsize=max_workers, max_retries=1
+    )
+    session.mount("https://", adapter)
+
+    def _fetch_one(prop_id):
+        try:
+            url = f"{api_base_url}/properties/{prop_id}/translations/ru_RU"
+            resp = session.get(url, params={"fallback": "false"}, timeout=15)
+            if resp.status_code == 200:
+                data = resp.json().get("data", {})
+                return {
+                    "id": prop_id,
+                    "name": (data.get("name") or "").strip(),
+                    "description": (data.get("description") or "").strip(),
+                    "short_description": (data.get("short_description") or "").strip(),
+                }
+            return {"id": prop_id, "name": "", "description": "", "short_description": ""}
+        except Exception:
+            return {"id": prop_id, "name": "", "description": "", "short_description": ""}
+
+    total = len(prop_ids)
+    results = []
+    success_count = 0
+    start_time = time.time()
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_fetch_one, pid): pid for pid in prop_ids}
+        for i, future in enumerate(as_completed(futures), 1):
+            result = future.result()
+            results.append(result)
+            if result["name"] or result["description"] or result["short_description"]:
+                success_count += 1
+            if i % 200 == 0 or i == total:
+                elapsed = time.time() - start_time
+                rate = i / elapsed if elapsed > 0 else 0
+                eta = (total - i) / rate if rate > 0 else 0
+                print(f"   [{i:>5}/{total}] {success_count} with RU text, "
+                      f"{rate:.0f} req/s, ETA {eta:.0f}s")
+
+    session.close()
+    elapsed_total = time.time() - start_time
+    print(f"   Completed in {elapsed_total:.1f}s — {success_count}/{total} with RU text "
+          f"({total / elapsed_total:.0f} req/s)")
+    return results
 
 # COMMAND ----------
 
@@ -670,6 +754,36 @@ cdc_changes["portal_locations"] = 0
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Property Translations (Russian) — Full Refresh
+# MAGIC 
+# MAGIC Russian translations can change independently of the property record
+# MAGIC (e.g., someone adds a translation without modifying the property).
+# MAGIC We always do a full refresh of all translations during CDC.
+
+# COMMAND ----------
+
+print("\n" + "=" * 80)
+print("📥 PROPERTY TRANSLATIONS (Russian) — Full Refresh")
+print("=" * 80)
+
+started_at = datetime.utcnow()
+print(f"\n   Fetching Russian translations for all properties...")
+translations_ru = fetch_translations_ru(max_workers=10)
+
+if translations_ru:
+    count = save_to_bronze_overwrite(translations_ru, "property_translations_ru", "property translations (RU)")
+    cdc_changes["property_translations_ru"] = count
+    update_sync_metadata("property_translations_ru", count,
+                         datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'), "SUCCESS", started_at)
+    print(f"\n✅ Property Translations (RU) complete: {count} records")
+else:
+    print("\n⚠️  No translations fetched")
+    update_sync_metadata("property_translations_ru", 0,
+                         datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'), "SUCCESS", started_at)
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Soft Delete Detection
 
 # COMMAND ----------
@@ -744,14 +858,16 @@ table_to_cdc = {
     "bayut_locations": "portal_locations",
     "bazaraki_locations": "portal_locations",
     "spitogatos_locations": "portal_locations",
-    "property_finder_ae_locations": "portal_locations"
+    "property_finder_ae_locations": "portal_locations",
+    "property_translations_ru": "property_translations_ru"
 }
 
 tables = [
     "properties", "agents", "contacts", "property_viewings", "property_media",
     "opportunities", "users", "projects", "project_features",
     "property_types", "property_subtypes", "locations", "media_categories",
-    "bayut_locations", "bazaraki_locations", "spitogatos_locations", "property_finder_ae_locations"
+    "bayut_locations", "bazaraki_locations", "spitogatos_locations", "property_finder_ae_locations",
+    "property_translations_ru"
 ]
 
 # Build data for DataFrame

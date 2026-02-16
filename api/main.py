@@ -28,6 +28,7 @@ Endpoints:
     GET /odata/Media                - List media
     GET /odata/Contacts             - List contacts
     GET /odata/ShowingAppointment   - List showings
+    GET /export/homesoverseas.xml   - HomeOverseas.ru XML feed (public)
 """
 import sys
 from pathlib import Path
@@ -42,6 +43,7 @@ from config import get_settings
 
 # Import routers
 from routers import property, member, office, media, contacts, showing, metadata, oauth
+from routers import export_homesoverseas
 
 
 def create_app() -> FastAPI:
@@ -80,6 +82,9 @@ def create_app() -> FastAPI:
     app.include_router(contacts.router)
     app.include_router(showing.router)
     
+    # Export endpoints (public, no auth)
+    app.include_router(export_homesoverseas.router)
+    
     return app
 
 
@@ -112,6 +117,9 @@ async def root():
                 "Contacts": "/odata/Contacts",
                 "ShowingAppointment": "/odata/ShowingAppointment"
             }
+        },
+        "exports": {
+            "HomeOverseas.ru XML V4": "/export/homesoverseas.xml"
         },
         "documentation": "/docs"
     }
