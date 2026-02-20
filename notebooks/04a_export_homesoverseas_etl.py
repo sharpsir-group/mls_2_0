@@ -620,6 +620,9 @@ SELECT
     p.ListingKey,
     p.X_DataSource,
 
+    -- date listing was created (for feed sorting: newest first)
+    p.ListingContractDate AS listing_created_date,
+
     -- ETL metadata
     CURRENT_TIMESTAMP() AS etl_timestamp
 

@@ -17,8 +17,11 @@ class DatabricksConnector:
     
     def __init__(self):
         self.settings = get_settings()
-        # Handle host with or without https:// prefix
-        host = self.settings.databricks_host
+        host = (self.settings.databricks_host or "").strip()
+        if not host:
+            raise ValueError(
+                "DATABRICKS_HOST is not set. Add it to mls_2_0/.env (e.g. DATABRICKS_HOST=https://xxx.cloud.databricks.com)"
+            )
         if host.startswith("https://"):
             self.base_url = host.rstrip("/")
         else:

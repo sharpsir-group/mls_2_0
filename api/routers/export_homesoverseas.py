@@ -19,7 +19,7 @@ from typing import Any, Optional
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.sax.saxutils import escape
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Response, Path as PathParam
 from fastapi.responses import Response as FastAPIResponse
 
 import sys
@@ -38,7 +38,10 @@ _cache: dict[str, Any] = {
     "xml_bytes": None,
     "generated_at": 0.0,
 }
+# Cache for limited feed: key = limit (e.g. 1000), value = {xml_bytes, generated_at}
+_cache_limited: dict[int, dict[str, Any]] = {}
 _CACHE_TTL_SECONDS = 900  # 15 minutes default
+_MAX_LIMIT = 10000
 
 
 def _get_cache_ttl() -> int:
@@ -375,4 +378,56 @@ async def homesoverseas_xml():
         content=xml_bytes,
         media_type="application/xml; charset=utf-8",
         headers={"X-Cache": "MISS"},
+    )
+
+
+@router.get(
+    "/export/homesoverseas.xml/{limit}",
+    summary="HomeOverseas.ru XML Feed V4 (limited, newest first)",
+    description=(
+        "Same XML feed as /export/homesoverseas.xml but limited to N objects "
+        "sorted by listing creation date (newest first). E.g. /export/homesoverseas.xml/1000 returns 1000 newest."
+    ),
+    response_class=FastAPIResponse,
+)
+async def homesoverseas_xml_limited(
+    limit: int = PathParam(ge=1, le=_MAX_LIMIT, description="Max number of objects (newest first)"),
+):
+    """
+    Generate XML feed with only the N newest listings (by listing_created_date DESC).
+    Same format as full feed. Cached per limit.
+    """
+    ttl = _get_cache_ttl()
+    now = time.time()
+    entry = _cache_limited.get(limit)
+    if entry and (now - entry["generated_at"]) < ttl:
+        return Response(
+            content=entry["xml_bytes"],
+            media_type="application/xml; charset=utf-8",
+            headers={"X-Cache": "HIT", "X-Limit": str(limit)},
+        )
+
+    settings = get_settings()
+    connector = get_databricks_connector()
+    catalog = settings.databricks_catalog
+
+    sql = f"""
+        SELECT *
+        FROM {catalog}.exports.homesoverseas
+        ORDER BY objectid DESC
+        LIMIT {limit}
+    """
+
+    result = await connector.execute_query(sql)
+    columns = result.get("columns", [])
+    data_rows = result.get("data", [])
+    rows = [dict(zip(columns, row)) for row in data_rows]
+    xml_bytes = build_xml(rows)
+
+    _cache_limited[limit] = {"xml_bytes": xml_bytes, "generated_at": time.time()}
+
+    return Response(
+        content=xml_bytes,
+        media_type="application/xml; charset=utf-8",
+        headers={"X-Cache": "MISS", "X-Limit": str(limit)},
     )

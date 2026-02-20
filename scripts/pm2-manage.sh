@@ -67,9 +67,27 @@ setup_venv() {
     echo -e "${GREEN}✅ Setup complete${NC}"
 }
 
+# PM2: global или локальный из node_modules
+get_pm2() {
+    if command -v pm2 &>/dev/null; then
+        echo "pm2"
+        return
+    fi
+    if [ -f "$MLS2_ROOT/node_modules/.bin/pm2" ]; then
+        echo "$MLS2_ROOT/node_modules/.bin/pm2"
+        return
+    fi
+    return 1
+}
+
 check_health() {
     echo "Checking API health..."
-    local response=$(curl -s http://localhost:3900/health 2>/dev/null || echo "error")
+    [ -f "$MLS2_ROOT/.env" ] && set -a && source "$MLS2_ROOT/.env" 2>/dev/null && set +a
+    local proto="http"
+    if [ -n "$RESO_SSL_CERTFILE" ] && [ -n "$RESO_SSL_KEYFILE" ] && [ -f "$RESO_SSL_CERTFILE" ] 2>/dev/null; then
+        proto="https"
+    fi
+    local response=$(curl -sk "${proto}://localhost:3900/health" 2>/dev/null || echo "error")
     
     if echo "$response" | grep -q "healthy"; then
         echo -e "${GREEN}✅ API is healthy${NC}"
@@ -82,49 +100,63 @@ check_health() {
 
 case "${1:-help}" in
     start)
+        PM2_CMD=$(get_pm2) || true
+        if [ -z "$PM2_CMD" ]; then
+            echo -e "${RED}❌ pm2 not found. Run: cd $MLS2_ROOT && npm install${NC}"
+            exit 1
+        fi
         echo -e "${GREEN}🚀 Starting $APP_NAME...${NC}"
         
-        # Check if venv exists
         if [ ! -d "$API_DIR/venv" ]; then
             echo -e "${YELLOW}⚠️  Virtual environment not found. Running setup...${NC}"
             setup_venv
         fi
         
         cd "$MLS2_ROOT"
-        pm2 start ecosystem.config.js
-        pm2 save
+        "$PM2_CMD" start ecosystem.config.js
+        "$PM2_CMD" save
         
         echo ""
-        sleep 2
+        sleep 4
         check_health
         ;;
         
     stop)
+        PM2_CMD=$(get_pm2) || true
+        if [ -z "$PM2_CMD" ]; then echo -e "${RED}❌ pm2 not found${NC}"; exit 1; fi
         echo -e "${YELLOW}🛑 Stopping $APP_NAME...${NC}"
-        pm2 stop $APP_NAME
+        "$PM2_CMD" stop $APP_NAME
         echo -e "${GREEN}✅ Stopped${NC}"
         ;;
         
     restart)
+        PM2_CMD=$(get_pm2) || true
+        if [ -z "$PM2_CMD" ]; then echo -e "${RED}❌ pm2 not found${NC}"; exit 1; fi
         echo -e "${YELLOW}🔄 Restarting $APP_NAME...${NC}"
-        pm2 restart $APP_NAME
-        pm2 save
+        "$PM2_CMD" restart $APP_NAME
+        "$PM2_CMD" save
         
         echo ""
-        sleep 2
+        sleep 4
         check_health
         ;;
         
     status)
-        pm2 status $APP_NAME
+        PM2_CMD=$(get_pm2) || true
+        if [ -z "$PM2_CMD" ]; then echo -e "${RED}❌ pm2 not found${NC}"; exit 1; fi
+        "$PM2_CMD" status $APP_NAME
         ;;
         
     logs)
-        pm2 logs $APP_NAME
+        PM2_CMD=$(get_pm2) || true
+        if [ -z "$PM2_CMD" ]; then echo -e "${RED}❌ pm2 not found${NC}"; exit 1; fi
+        "$PM2_CMD" logs $APP_NAME
         ;;
         
     logs-err)
-        pm2 logs $APP_NAME --err
+        PM2_CMD=$(get_pm2) || true
+        if [ -z "$PM2_CMD" ]; then echo -e "${RED}❌ pm2 not found${NC}"; exit 1; fi
+        "$PM2_CMD" logs $APP_NAME --err
         ;;
         
     setup)
@@ -136,9 +168,11 @@ case "${1:-help}" in
         ;;
         
     save)
+        PM2_CMD=$(get_pm2) || true
+        if [ -z "$PM2_CMD" ]; then echo -e "${RED}❌ pm2 not found${NC}"; exit 1; fi
         echo "Saving PM2 process list..."
-        pm2 save
-        echo -e "${GREEN}✅ PM2 state saved (will auto-start on reboot)${NC}"
+        "$PM2_CMD" save
+        echo -e "${GREEN}✅ PM2 state saved${NC}"
         ;;
         
     help|--help|-h|*)

@@ -28,7 +28,8 @@ Endpoints:
     GET /odata/Media                - List media
     GET /odata/Contacts             - List contacts
     GET /odata/ShowingAppointment   - List showings
-    GET /export/homesoverseas.xml   - HomeOverseas.ru XML feed (public)
+    GET /export/homesoverseas.xml        - HomeOverseas.ru XML feed (public)
+    GET /export/homesoverseas.xml/{limit} - Same feed, N newest by creation date (e.g. /1000)
 """
 import sys
 from pathlib import Path
@@ -119,7 +120,8 @@ async def root():
             }
         },
         "exports": {
-            "HomeOverseas.ru XML V4": "/export/homesoverseas.xml"
+            "HomeOverseas.ru XML V4": "/export/homesoverseas.xml",
+            "HomeOverseas.ru XML V4 (N newest)": "/export/homesoverseas.xml/{limit}"
         },
         "documentation": "/docs"
     }

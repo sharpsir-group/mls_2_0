@@ -17,10 +17,12 @@ import os
 import re
 
 
-# Find the .env file in parent directory (mls_2_0/.env)
+# Find the .env file: prefer mls_2_0/.env, fallback to api/.env
 API_DIR = Path(__file__).parent
 MLS2_ROOT = API_DIR.parent
 ENV_FILE = MLS2_ROOT / ".env"
+if not ENV_FILE.exists():
+    ENV_FILE = API_DIR / ".env"
 
 # Load .env into os.environ for SRC_* and OAUTH_CLIENT_* parsing
 if ENV_FILE.exists():
