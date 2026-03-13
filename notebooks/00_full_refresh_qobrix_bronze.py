@@ -30,6 +30,7 @@
 # MAGIC | `spitogatos_locations` | Spitogatos portal location mappings |
 # MAGIC | `property_finder_ae_locations` | Property Finder AE location mappings |
 # MAGIC | `property_media` | Photos, documents, floorplans |
+# MAGIC | `property_translations_ru` | Russian translations (name, description, short_description) |
 # MAGIC 
 # MAGIC **Test Mode:** Set `test_mode = True` to limit records (default: 10 properties)
 # MAGIC 
@@ -43,9 +44,11 @@
 # COMMAND ----------
 
 import os
+import time
 import requests
 import pandas as pd
 import json as _json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 catalog = "mls2"
 schema = "qobrix_bronze"
@@ -240,6 +243,68 @@ def save_to_bronze(records: list, table_name: str, description: str):
     print(f"   ✅ {table_name}: {len(records)} records, {len(df.columns)} columns")
     return len(records)
 
+
+def fetch_translations_ru(properties: list, max_workers: int = 10) -> list:
+    """Fetch Russian translations for all properties via /properties/{id}/translations/ru_RU.
+    
+    Returns a list of dicts suitable for save_to_bronze().
+    """
+    if not properties:
+        return []
+    
+    session = requests.Session()
+    session.headers.update({
+        "X-Api-User": qobrix_api_user,
+        "X-Api-Key": qobrix_api_key,
+        "Accept": "application/json",
+    })
+    adapter = requests.adapters.HTTPAdapter(
+        pool_connections=max_workers, pool_maxsize=max_workers, max_retries=1
+    )
+    session.mount("https://", adapter)
+
+    def _fetch_one(prop_id):
+        try:
+            url = f"{api_base_url}/properties/{prop_id}/translations/ru_RU"
+            resp = session.get(url, params={"fallback": "false"}, timeout=15)
+            if resp.status_code == 200:
+                data = resp.json().get("data", {})
+                return {
+                    "id": prop_id,
+                    "name": (data.get("name") or "").strip(),
+                    "description": (data.get("description") or "").strip(),
+                    "short_description": (data.get("short_description") or "").strip(),
+                }
+            return {"id": prop_id, "name": "", "description": "", "short_description": ""}
+        except Exception:
+            return {"id": prop_id, "name": "", "description": "", "short_description": ""}
+
+    prop_ids = [p.get("id") for p in properties if p.get("id")]
+    total = len(prop_ids)
+    results = []
+    success_count = 0
+    start_time = time.time()
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_fetch_one, pid): pid for pid in prop_ids}
+        for i, future in enumerate(as_completed(futures), 1):
+            result = future.result()
+            results.append(result)
+            if result["name"] or result["description"] or result["short_description"]:
+                success_count += 1
+            if i % 200 == 0 or i == total:
+                elapsed = time.time() - start_time
+                rate = i / elapsed if elapsed > 0 else 0
+                eta = (total - i) / rate if rate > 0 else 0
+                print(f"   [{i:>5}/{total}] {success_count} with RU text, "
+                      f"{rate:.0f} req/s, ETA {eta:.0f}s")
+
+    session.close()
+    elapsed_total = time.time() - start_time
+    print(f"   Completed in {elapsed_total:.1f}s — {success_count}/{total} with RU text "
+          f"({total / elapsed_total:.0f} req/s)")
+    return results
+
 # COMMAND ----------
 
 # MAGIC %md
@@ -357,6 +422,17 @@ print(f"   Combined media items: {len(property_media)}")
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Fetch Property Translations (Russian)
+
+# COMMAND ----------
+
+print("\n1️⃣5️⃣ Property Translations (Russian)...")
+property_translations_ru = fetch_translations_ru(properties, max_workers=10)
+print(f"   Total: {len(property_translations_ru)}")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Save All to Bronze Tables
 
 # COMMAND ----------
@@ -385,6 +461,7 @@ total_records += save_to_bronze(bazaraki_locations, "bazaraki_locations", "Bazar
 total_records += save_to_bronze(spitogatos_locations, "spitogatos_locations", "Spitogatos locations")
 total_records += save_to_bronze(property_finder_ae_locations, "property_finder_ae_locations", "Property Finder AE locations")
 total_records += save_to_bronze(property_media, "property_media", "property media")
+total_records += save_to_bronze(property_translations_ru, "property_translations_ru", "property translations (RU)")
 
 print("\n" + "=" * 80)
 print(f"✅ BRONZE LAYER COMPLETE: {total_records} total records")
@@ -405,7 +482,7 @@ tables = [
     "projects", "project_features", "contacts", "users",
     "locations", "media_categories", "property_viewings", "opportunities",
     "bayut_locations", "bazaraki_locations", "spitogatos_locations", 
-    "property_finder_ae_locations", "property_media"
+    "property_finder_ae_locations", "property_media", "property_translations_ru"
 ]
 
 for table in tables:

@@ -392,10 +392,50 @@ for media in media_data.get('value', []):
 
 print("")
 print("=" * 60)
+print("TEST 9: HomeOverseas XML Export Feed")
+print("=" * 60)
+
+ho_issues = []
+HO_FEED_URL = RESO_API.replace('/reso', '') + '/reso/export/homesoverseas.xml'
+
+try:
+    ho_resp = httpx.get(HO_FEED_URL, timeout=60)
+    if ho_resp.status_code == 200:
+        print(f"  ✅ Feed URL: {HO_FEED_URL} (HTTP 200)")
+        content = ho_resp.text
+        # Check it's valid XML with objects
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(content)
+        objects = root.findall('.//object')
+        ho_count = len(objects)
+        print(f"  ✅ XML valid, {ho_count} objects")
+        if ho_count == 0:
+            ho_issues.append("Feed is empty (0 objects)")
+        # Check for RU translations
+        ru_with_text = 0
+        for obj in objects[:50]:  # sample first 50
+            title = obj.find('title')
+            if title is not None:
+                ru_el = title.find('ru')
+                if ru_el is not None and ru_el.text and ru_el.text.strip():
+                    ru_with_text += 1
+        sample_size = min(50, ho_count)
+        print(f"  {'✅' if ru_with_text > 0 else '⚠️'} RU translations: {ru_with_text}/{sample_size} sampled have Russian title")
+        if ru_with_text == 0 and ho_count > 0:
+            ho_issues.append("No Russian translations found in feed")
+    else:
+        print(f"  ❌ Feed URL returned HTTP {ho_resp.status_code}")
+        ho_issues.append(f"HTTP {ho_resp.status_code}")
+except Exception as e:
+    print(f"  ❌ Feed URL error: {e}")
+    ho_issues.append(str(e))
+
+print("")
+print("=" * 60)
 print("SUMMARY")
 print("=" * 60)
 
-total_issues = len(count_issues) + len(data_issues) + len(media_issues) + len(contact_issues) + len(transform_issues) + len(type_issues) + len(url_issues)
+total_issues = len(count_issues) + len(data_issues) + len(media_issues) + len(contact_issues) + len(transform_issues) + len(type_issues) + len(url_issues) + len(ho_issues)
 
 print(f"  Property Count:         {'✅ PASS' if not count_issues else '❌ FAIL (' + str(len(count_issues)) + ')'}")
 print(f"  Property Data:          {'✅ PASS' if not data_issues else '❌ FAIL (' + str(len(data_issues)) + ')'}")
@@ -404,6 +444,7 @@ print(f"  Contact Count:          {'✅ PASS' if not contact_issues else '❌ FA
 print(f"  Field Transformations:  {'✅ PASS' if not transform_issues else '❌ FAIL (' + str(len(transform_issues)) + ')'}")
 print(f"  RESO Type Compliance:   {'✅ PASS' if not type_issues else '❌ FAIL (' + str(len(type_issues)) + ')'}")
 print(f"  Media URL Full Path:    {'✅ PASS' if not url_issues else '❌ FAIL (' + str(len(url_issues)) + ')'}")
+print(f"  HomeOverseas Feed:      {'✅ PASS' if not ho_issues else '❌ FAIL (' + str(len(ho_issues)) + ')'}")
 print("")
 
 if total_issues == 0:

@@ -335,6 +335,9 @@ case "$1" in
         run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "/Shared/mls_2_0/03d_cdc_gold_reso_contacts_etl" "gold"
         run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "gold"
         echo ""
+        echo "📤 Stage 4: Exports"
+        run_notebook "MLS 2.0 - Export HomeOverseas XML Feed" "/Shared/mls_2_0/04a_export_homesoverseas_etl" "false"
+        echo ""
         SCRIPT_END_TIME=$(date +%s)
         TOTAL_DURATION=$((SCRIPT_END_TIME - SCRIPT_START_TIME))
         echo "🎉 CDC pipeline completed! All entities synced."
@@ -439,6 +442,10 @@ except Exception as ex:
         run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "/Shared/mls_2_0/03d_gold_reso_contacts_etl" "gold"
         run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "gold"
         
+        echo ""
+        echo "📤 Stage 4: Exports"
+        run_notebook "MLS 2.0 - Export HomeOverseas XML Feed" "/Shared/mls_2_0/04a_export_homesoverseas_etl" "false"
+        
         SCRIPT_END_TIME=$(date +%s)
         TOTAL_DURATION=$((SCRIPT_END_TIME - SCRIPT_START_TIME))
         echo ""
@@ -449,6 +456,13 @@ except Exception as ex:
         fi
         echo ""
         echo "⏱️  Total time: $(format_duration $TOTAL_DURATION)"
+        ;;
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # EXPORTS (XML feeds for portals)
+    # ═══════════════════════════════════════════════════════════════════════════
+    export-homesoverseas)
+        run_notebook "MLS 2.0 - Export HomeOverseas XML Feed" "/Shared/mls_2_0/04a_export_homesoverseas_etl" "false"
         ;;
     
     # ═══════════════════════════════════════════════════════════════════════════
@@ -473,7 +487,10 @@ except Exception as ex:
         run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "/Shared/mls_2_0/03d_gold_reso_contacts_etl" "gold"
         run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "/Shared/mls_2_0/03e_gold_reso_showingappointment_etl" "gold"
         echo ""
-        echo "✅ Stage 4: Integrity verification"
+        echo "📤 Stage 4: Exports"
+        run_notebook "MLS 2.0 - Export HomeOverseas XML Feed" "/Shared/mls_2_0/04a_export_homesoverseas_etl" "false"
+        echo ""
+        echo "✅ Stage 5: Integrity verification"
         run_notebook "MLS 2.0 - Qobrix vs RESO Integrity Test" "/Shared/mls_2_0/10_verify_data_integrity_qobrix_vs_reso" "true"
         echo ""
         SCRIPT_END_TIME=$(date +%s)
@@ -504,6 +521,11 @@ except Exception as ex:
         echo "  gold-showing        RESO ShowingAppointment only"
         echo "  integrity           Data integrity verification"
         echo "  all                 Full pipeline (bronze → silver → gold → integrity)"
+        echo ""
+        echo "═══════════════════════════════════════════════════════════════════════"
+        echo "EXPORTS (XML feeds for portals)"
+        echo "═══════════════════════════════════════════════════════════════════════"
+        echo "  export-homesoverseas  HomeOverseas.ru XML feed (with RU translations)"
         echo ""
         echo "═══════════════════════════════════════════════════════════════════════"
         echo "CDC - INCREMENTAL SYNC (recommended for regular updates)"

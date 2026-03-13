@@ -8,3 +8,6 @@ logs/
 tmp/
 # Ignore Dash source data files
 dash_hsir_source/
+
+*.json
+ecosustem.config.js

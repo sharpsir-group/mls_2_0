@@ -383,6 +383,57 @@ done
 
 echo ""
 echo "================================================================================"
+echo "📤 EXPORT PIPELINE VERIFICATION"
+echo "================================================================================"
+
+# Check translations bronze table
+echo ""
+echo "📋 Russian Translations (Bronze):"
+tr_result=$(execute_sql "SELECT COUNT(*) FROM mls2.qobrix_bronze.property_translations_ru" 2>/dev/null)
+tr_count=$(echo "$tr_result" | json_get_count)
+
+tr_with_text_result=$(execute_sql "SELECT COUNT(*) FROM mls2.qobrix_bronze.property_translations_ru WHERE name != '' OR description != ''" 2>/dev/null)
+tr_with_text=$(echo "$tr_with_text_result" | json_get_count)
+
+export_ok=true
+
+if [ "$tr_count" -gt 0 ]; then
+    echo "   ✅ property_translations_ru: $tr_count rows ($tr_with_text with RU text)"
+else
+    echo "   ⚠️  property_translations_ru: empty or missing"
+fi
+
+# Check HomeOverseas export table
+echo ""
+echo "📋 HomeOverseas Export:"
+ho_result=$(execute_sql "SELECT COUNT(*) FROM mls2.exports.homesoverseas" 2>/dev/null)
+ho_count=$(echo "$ho_result" | json_get_count)
+
+ho_ru_result=$(execute_sql "SELECT COUNT(*) FROM mls2.exports.homesoverseas WHERE title_ru IS NOT NULL AND title_ru != ''" 2>/dev/null)
+ho_ru_count=$(echo "$ho_ru_result" | json_get_count)
+
+# Compare with active Cyprus properties in gold
+active_cy_result=$(execute_sql "SELECT COUNT(*) FROM mls2.reso_gold.property WHERE OriginatingSystemOfficeKey = 'SHARPSIR-CY-001' AND StandardStatus = 'Active'" 2>/dev/null)
+active_cy_count=$(echo "$active_cy_result" | json_get_count)
+
+if [ "$ho_count" -gt 0 ]; then
+    echo "   ✅ exports.homesoverseas: $ho_count properties"
+    echo "   ✅ With Russian title: $ho_ru_count / $ho_count"
+    echo "   ℹ️  Active Cyprus (gold): $active_cy_count"
+    diff=$((active_cy_count - ho_count))
+    if [ "$diff" -lt 0 ]; then diff=$((-diff)); fi
+    if [ "$diff" -le 5 ]; then
+        echo "   ✅ Export count matches gold (diff=$diff)"
+    else
+        echo "   ⚠️  Export count differs from gold by $diff"
+    fi
+else
+    echo "   ❌ exports.homesoverseas: empty or missing"
+    export_ok=false
+fi
+
+echo ""
+echo "================================================================================"
 
 # Final result
 field_coverage_passed=true
@@ -401,13 +452,27 @@ fi
 echo ""
 echo "================================================================================"
 
-if [ "$reso_passed" = true ] && [ "$coverage_passed" = true ] && [ "$all_resources_ok" = true ] && [ "$field_coverage_passed" = true ]; then
+echo ""
+if [ "$export_ok" = true ]; then
+    echo "✅ Export Pipeline: PASSED"
+    echo "   ✓ HomeOverseas export table has $ho_count properties ($ho_ru_count with RU)"
+    echo "   ✓ Bronze translations table has $tr_count rows ($tr_with_text with RU text)"
+else
+    echo "⚠️ Export Pipeline: WARNINGS"
+    echo "   ⚠️ HomeOverseas export table may be empty or missing"
+fi
+
+echo ""
+echo "================================================================================"
+
+if [ "$reso_passed" = true ] && [ "$coverage_passed" = true ] && [ "$all_resources_ok" = true ] && [ "$field_coverage_passed" = true ] && [ "$export_ok" = true ]; then
     echo "✅ COMPREHENSIVE DATA INTEGRITY TEST PASSED"
     echo "================================================================================"
     echo "✓ All 6 RESO resources verified"
     echo "✓ Gold property table has $total_cols fields ($std_cols RESO + $ext_cols extensions)"
     echo "✓ All data matches between Qobrix API and MLS 2.0 RESO"
     echo "✓ RESO compliance verified (100% compliant)"
+    echo "✓ Export pipeline verified (HomeOverseas: $ho_count properties)"
     echo "✓ Complete verification successful"
     exit 0
 elif [ "$reso_passed" = true ] && [ "$coverage_passed" = true ]; then

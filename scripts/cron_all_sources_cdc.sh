@@ -41,6 +41,12 @@ HU_UPDATES="0"
 KZ_RECORDS="0"
 KZ_UPDATES="0"
 
+# Export results
+HO_STATUS="SKIPPED"
+HO_TOTAL="--"
+HO_WITH_RU="--"
+HO_FEED_URL="https://humaticai.com/reso/export/homesoverseas.xml"
+
 # API Test results
 API_TEST_STATUS="SKIPPED"
 API_PROP_COUNT="--"
@@ -84,6 +90,7 @@ extract_api_results() {
     API_TRANSFORM=$(grep "Field Transformations:" "$log" 2>/dev/null | grep -q "PASS" && echo "PASS" || echo "FAIL")
     API_TYPES=$(grep "RESO Type Compliance:" "$log" 2>/dev/null | grep -q "PASS" && echo "PASS" || echo "FAIL")
     API_URLS=$(grep "Media URL Full Path:" "$log" 2>/dev/null | grep -q "PASS" && echo "PASS" || echo "FAIL")
+    API_HO_FEED=$(grep "HomeOverseas Feed:" "$log" 2>/dev/null | grep -q "PASS" && echo "PASS" || echo "FAIL")
     
     # Set defaults
     API_PROP_COUNT=${API_PROP_COUNT:-"--"}
@@ -94,6 +101,7 @@ extract_api_results() {
     API_TRANSFORM=${API_TRANSFORM:-"--"}
     API_TYPES=${API_TYPES:-"--"}
     API_URLS=${API_URLS:-"--"}
+    API_HO_FEED=${API_HO_FEED:-"--"}
     
     if grep -q "ALL INTEGRITY TESTS PASSED" "$log" 2>/dev/null; then
         API_TEST_STATUS="PASS"
@@ -174,6 +182,7 @@ send_email_report() {
     API_TRANSFORM_HTML=$(get_status_html "$API_TRANSFORM")
     API_TYPES_HTML=$(get_status_html "$API_TYPES")
     API_URLS_HTML=$(get_status_html "$API_URLS")
+    API_HO_FEED_HTML=$(get_status_html "$API_HO_FEED")
     
     # API test overall status styling
     local api_status_color="#10b981"
@@ -322,6 +331,30 @@ ${LOG_TAIL}"
                         </td>
                     </tr>
                     
+                    <!-- Exports Section -->
+                    <tr>
+                        <td style="padding: 0 40px 30px 40px;">
+                            <h4 style="margin: 0 0 15px 0; font-size: 14px; color: #5b9a9a; text-transform: uppercase; letter-spacing: 1px; border-bottom: 2px solid #5b9a9a; padding-bottom: 10px;">Portal Exports</h4>
+                            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f9fafb; border-radius: 6px;">
+                                <tr>
+                                    <td style="padding: 12px 20px; border-bottom: 2px solid #e5e5e5; background-color: #f0f0f0; border-radius: 6px 0 0 0;"><span style="font-size: 12px; color: #666; text-transform: uppercase; font-weight: 600;">Portal</span></td>
+                                    <td align="center" style="padding: 12px 20px; border-bottom: 2px solid #e5e5e5; background-color: #f0f0f0;"><span style="font-size: 12px; color: #666; text-transform: uppercase; font-weight: 600;">Status</span></td>
+                                    <td align="right" style="padding: 12px 20px; border-bottom: 2px solid #e5e5e5; background-color: #f0f0f0;"><span style="font-size: 12px; color: #666; text-transform: uppercase; font-weight: 600;">Properties</span></td>
+                                    <td align="right" style="padding: 12px 20px; border-bottom: 2px solid #e5e5e5; background-color: #f0f0f0; border-radius: 0 6px 0 0;"><span style="font-size: 12px; color: #666; text-transform: uppercase; font-weight: 600;">With RU</span></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 15px 20px;">
+                                        <span style="font-size: 14px; color: #1a1a2e; font-weight: 500;">HomeOverseas.ru</span><br>
+                                        <a href="${HO_FEED_URL}" style="font-size: 11px; color: #5b9a9a;">XML Feed</a>
+                                    </td>
+                                    <td align="center" style="padding: 15px 20px;"><span style="color: $( [ "${HO_STATUS}" = "SUCCESS" ] && echo "#10b981" || ( [ "${HO_STATUS}" = "SKIPPED" ] && echo "#888" || echo "#ef4444" ) ); font-weight: 600;">${HO_STATUS}</span></td>
+                                    <td align="right" style="padding: 15px 20px;"><span style="font-size: 14px; color: #666;">${HO_TOTAL}</span></td>
+                                    <td align="right" style="padding: 15px 20px;"><span style="font-size: 14px; color: #5b9a9a; font-weight: 600;">${HO_WITH_RU}</span></td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
                     <!-- API Integration Tests Section -->
                     <tr>
                         <td style="padding: 0 40px 30px 40px;">
@@ -341,7 +374,8 @@ ${LOG_TAIL}"
                                 <tr><td style="padding: 10px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 13px; color: #1a1a2e;">Contacts</span></td><td align="right" style="padding: 10px 20px; border-bottom: 1px solid #e5e5e5;">${API_CONTACTS_HTML}</td></tr>
                                 <tr><td style="padding: 10px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 13px; color: #1a1a2e;">Field Transforms</span></td><td align="right" style="padding: 10px 20px; border-bottom: 1px solid #e5e5e5;">${API_TRANSFORM_HTML}</td></tr>
                                 <tr><td style="padding: 10px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 13px; color: #1a1a2e;">RESO Types</span></td><td align="right" style="padding: 10px 20px; border-bottom: 1px solid #e5e5e5;">${API_TYPES_HTML}</td></tr>
-                                <tr><td style="padding: 10px 20px;"><span style="font-size: 13px; color: #1a1a2e;">Media URLs</span></td><td align="right" style="padding: 10px 20px;">${API_URLS_HTML}</td></tr>
+                                <tr><td style="padding: 10px 20px; border-bottom: 1px solid #e5e5e5;"><span style="font-size: 13px; color: #1a1a2e;">Media URLs</span></td><td align="right" style="padding: 10px 20px; border-bottom: 1px solid #e5e5e5;">${API_URLS_HTML}</td></tr>
+                                <tr><td style="padding: 10px 20px;"><span style="font-size: 13px; color: #1a1a2e;">HomeOverseas Feed</span></td><td align="right" style="padding: 10px 20px;">${API_HO_FEED_HTML}</td></tr>
                             </table>
                         </td>
                     </tr>
@@ -416,6 +450,28 @@ if "$SCRIPT_DIR/run_pipeline.sh" cdc >> "$LOG_FILE" 2>&1; then
         -d '{"warehouse_id": "'"${DATABRICKS_WAREHOUSE_ID}"'", "statement": "SELECT COUNT(*) FROM mls2.reso_gold.property WHERE OriginatingSystemOfficeKey = '\''SHARPSIR-CY-001'\''", "wait_timeout": "30s"}' \
         2>/dev/null | grep -oP '"data_array":\[\["\K[0-9]+' || echo "0")
     CY_RECORDS="${CY_RECORDS:-0}"
+    
+    # Extract HomeOverseas export results
+    if grep -q "Export HomeOverseas XML Feed completed successfully" "$LOG_FILE" 2>/dev/null; then
+        HO_STATUS="SUCCESS"
+        echo "✅ HomeOverseas export completed" | tee -a "$LOG_FILE"
+        # Query Databricks for export stats
+        HO_TOTAL=$(curl -s -X POST "$DB_API_URL" \
+            -H "Authorization: Bearer ${DATABRICKS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"warehouse_id": "'"${DATABRICKS_WAREHOUSE_ID}"'", "statement": "SELECT COUNT(*) FROM mls2.exports.homesoverseas", "wait_timeout": "30s"}' \
+            2>/dev/null | grep -oP '"data_array":\[\["\K[0-9]+' || echo "--")
+        HO_WITH_RU=$(curl -s -X POST "$DB_API_URL" \
+            -H "Authorization: Bearer ${DATABRICKS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"warehouse_id": "'"${DATABRICKS_WAREHOUSE_ID}"'", "statement": "SELECT COUNT(*) FROM mls2.exports.homesoverseas WHERE title_ru IS NOT NULL AND title_ru != '\'''\''", "wait_timeout": "30s"}' \
+            2>/dev/null | grep -oP '"data_array":\[\["\K[0-9]+' || echo "--")
+        HO_TOTAL="${HO_TOTAL:-0}"
+        HO_WITH_RU="${HO_WITH_RU:-0}"
+    elif grep -q "Export HomeOverseas XML Feed failed" "$LOG_FILE" 2>/dev/null; then
+        HO_STATUS="FAILED"
+        echo "❌ HomeOverseas export failed" | tee -a "$LOG_FILE"
+    fi
 else
     CY_STATUS="FAILED"
     OVERALL_STATUS="FAILED"
@@ -535,6 +591,9 @@ echo "Source Status:" | tee -a "$LOG_FILE"
 echo "  🇨🇾 Cyprus (${SRC_1_SYSTEM_ID:-QOBRIX_CY}):       $CY_STATUS | Records: ${CY_RECORDS:-0} | Updates: ${CY_UPDATES:-0}" | tee -a "$LOG_FILE"
 echo "  🇭🇺 Hungary (${SRC_2_SYSTEM_ID:-DASH_HU}):        $HU_STATUS | Records: ${HU_RECORDS:-0} | Updates: ${HU_UPDATES:-0}" | tee -a "$LOG_FILE"
 echo "  🇰🇿 Kazakhstan (${SRC_3_SYSTEM_ID:-DASH_KZ_SANDBOX}): $KZ_STATUS | Records: ${KZ_RECORDS:-0} | Updates: ${KZ_UPDATES:-0}" | tee -a "$LOG_FILE"
+echo "" | tee -a "$LOG_FILE"
+echo "Exports:" | tee -a "$LOG_FILE"
+echo "  HomeOverseas.ru: $HO_STATUS | Properties: ${HO_TOTAL} | With RU: ${HO_WITH_RU}" | tee -a "$LOG_FILE"
 echo "" | tee -a "$LOG_FILE"
 
 # Determine final status

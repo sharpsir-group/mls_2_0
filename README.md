@@ -144,6 +144,25 @@ FastAPI-based RESO Data Dictionary 2.0 compliant OData API.
 ./scripts/pm2-manage.sh setup     # Initial setup
 ```
 
+### SSL/HTTPS (Direct)
+
+For `https://mls.sharpsir.group:3900`:
+
+```bash
+# 1. Ensure DNS for mls.sharpsir.group points to this server
+# 2. Obtain Let's Encrypt certificate
+sudo CERTBOT_EMAIL=your@email.com ./scripts/setup-ssl.sh
+
+# 3. Add to .env (setup-ssl.sh does this automatically):
+# SSL_CERT_FILE=/etc/letsencrypt/live/mls.sharpsir.group/fullchain.pem
+# SSL_KEY_FILE=/etc/letsencrypt/live/mls.sharpsir.group/privkey.pem
+
+# 4. Restart API
+./scripts/pm2-manage.sh restart
+```
+
+Test: `curl -v https://mls.sharpsir.group:3900/health`
+
 ### Apache Reverse Proxy (HTTPS)
 
 ```apache
