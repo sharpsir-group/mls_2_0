@@ -1,0 +1,1912 @@
+// App data model — we add tables step by step
+//
+// To view diagram: https://dbdiagram.io/ or VS Code DBML extension
+
+Project app_data_model {
+  database_type: 'PostgreSQL'
+  Note: 'Qobrix bronze/silver → app model; RESO-aligned where applicable'
+}
+
+// Columns as returned by Qobrix API (e.g. GET /api/v2/contacts/related-with/{association}/{id}/)
+// Source: docs/qobrix_openapi.yaml — components/schemas/Contact
+Table qobrix_api_contacts {
+  id uuid [pk, not null, note: 'Read-only, unique']
+  ref int [not null, note: 'Contact Unique ID, unique']
+  assigned_to uuid [ref: > qobrix_api_contacts.id, note: 'Assigned To → Users']
+  birthdate date [note: 'format: date']
+  city varchar(255)
+  consent_token varchar(255) [note: 'Read-only']
+  contact_id uuid [ref: > qobrix_api_contacts.id, note: 'Works For → Contacts']
+  country varchar(2) [note: 'ISO 2-letter']
+  created timestamp [note: 'Read-only, date-time']
+  created_by uuid [ref: > qobrix_api_contacts.id, note: 'Read-only → Users']
+  description varchar(2048)
+  email varchar(255) [note: 'format: email']
+  email_2 varchar(255) [note: 'format: email']
+  email_consent boolean
+  first_name varchar(255)
+  group_id uuid [note: '→ Groups']
+  is_company boolean [not null]
+  last_name varchar(255)
+  legacy_id varchar(255) [note: 'Unique']
+  marketing_consent boolean
+  modified timestamp [note: 'Read-only, date-time']
+  modified_by uuid [ref: > qobrix_api_contacts.id, note: 'Read-only → Users']
+  name varchar(255)
+  nationality varchar(35) [note: 'Country of nationality']
+  personal_data_cleared timestamp [note: 'Read-only']
+  phone varchar(255) [note: 'format: phone']
+  phone_2 varchar(255) [note: 'Mobile Phone']
+  phone_3 varchar(255) [note: 'Other Phone']
+  phone_consent boolean
+  post_code varchar(255)
+  postal_consent boolean
+  preferred_contact_method varchar(255) [note: 'phone, email, sms, whatsapp, Viber']
+  preferred_language varchar(6) [note: '→ Languages.code']
+  registration_number varchar(255)
+  role varchar(255) [note: 'Job Title']
+  sms_consent boolean
+  state varchar(255)
+  street varchar(255)
+  title varchar(35) [note: 'mr, mrs, ms, miss, dr, prof, ...']
+  trashed timestamp [note: 'Soft-delete timestamp']
+  vat_number varchar(255)
+  website varchar(1024) [note: 'format: url']
+  custom_contact_person_first_name varchar
+  custom_contact_person_last_name varchar
+  custom_mailchimp_subscriber_status varchar [note: 'subscribed, unsubscribed, cleaned, pending, transactional']
+  custom_works_for uuid [ref: > qobrix_api_contacts.id, note: 'Primary Contact → Contacts']
+
+  Note: 'Contact payload from Qobrix API (getContactsRelatedWith, GET /contacts, etc.)'
+}
+
+// Bronze: leads (opportunities) from Qobrix API — API payload only; no derived columns.
+// Source: Qobrix API opportunity payload (e.g. GET /api/v2/opportunities or similar).
+Table qobrix_api_opportunities {
+  id uuid [pk, not null]
+  ref int [note: 'Opportunity ref']
+  contact_name uuid [ref: > qobrix_api_contacts.id, note: 'Lead contact']
+  agent uuid [note: 'Assigned agent', ref: > qobrix_api_contacts.id]
+  owner uuid [note: 'Owner', ref: > qobrix_api_contacts.id]
+  campaign_id uuid [note: 'Campaign']
+  created timestamp
+  created_by uuid [ref: > qobrix_api_contacts.id]
+  modified timestamp
+  modified_by uuid [ref: > qobrix_api_contacts.id]
+  enquiry_date date
+  enquiry_type varchar(255)
+  status varchar(255)
+  last_status_change timestamp
+  buy_rent varchar(50) [note: 'to_buy, to_rent']
+  source varchar(255) [note: 'direct, campaign, etc.']
+  direct_source varchar(255) [note: 'e.g. campaign']
+  source_description text
+  description text
+  legacy_id varchar(255)
+  website_url varchar(1024)
+  virtual_contact_name varchar(255)
+  area_of_interest text [note: 'Polygon/wkt string']
+  post_codes text [note: 'JSON array']
+  enquiry_subtypes text [note: 'JSON array']
+  town_planning_zone varchar(255) [note: 'e.g. residential']
+  construction_stage varchar(255) [note: 'e.g. offplans']
+  sorting_expression varchar(255) [note: 'e.g. price_low']
+  list_selling_price_from decimal
+  list_selling_price_to decimal
+  list_selling_price decimal
+  list_rental_price_from decimal
+  list_rental_price_to decimal
+  list_letting_price decimal
+  lowest_selling_price decimal
+  lowest_letting_price decimal
+  bedrooms_from int
+  bedrooms_to int
+  bathrooms_from int
+  bathrooms_to int
+  covered_area_from_amount decimal
+  covered_area_to_amount decimal
+  internal_area_from_amount decimal
+  internal_area_to_amount decimal
+  total_area_from_amount decimal
+  total_area_to_amount decimal
+  plot_area_from_amount decimal
+  plot_area_to_amount decimal
+  storage_from_amount decimal
+  storage_to_amount decimal
+  frontage_from_amount decimal
+  frontage_to_amount decimal
+  covered_parking int
+  parking_from int
+  parking_to int
+  furnished varchar(255) [note: 'e.g. furnished']
+  air_condition boolean
+  common_swimming_pool boolean
+  private_swimming_pool boolean
+  concierge_reception boolean
+  electricity boolean
+  water boolean
+  elevator boolean
+  registered_road boolean
+  title_deeds boolean
+  new_build boolean
+  pets_allowed boolean
+  enclosed_office_room boolean
+  server_room boolean
+  business_transfer_or_sale boolean
+  business_transfer_commercial_activity text [note: 'JSON array e.g. bed_and_breakfast']
+  notify_matching_properties boolean
+  notify_properties_price_drop boolean
+  next_follow_up_date timestamp
+  last_website_visit timestamp
+  closed_lost_reason_id uuid
+  closed_lost_details text
+  trashed timestamp
+  custom_attended_webinar boolean
+  custom_do_not_contact boolean
+  custom_enquiry_low_budget boolean
+  custom_enquiry_stage_type varchar(255) [note: 'e.g. Agent']
+  custom_facebook_lead_id varchar(255)
+  custom_general_interest_type varchar(255) [note: 'e.g. Investment']
+  custom_interest_type varchar(255) [note: 'e.g. Project']
+  custom_internal_area_amount decimal
+  custom_mql boolean
+  custom_project uuid
+  custom_property uuid
+  custom_sql boolean
+  custom_webinars text [note: 'JSON array e.g. Registered']
+
+  Note: 'Bronze: leads/opportunities from Qobrix API (opportunity payload)'
+}
+
+// Bronze: raw opportunity/lead change events from Qobrix audit API.
+// Mirrors the /opportunity changes endpoint: changed/original/meta as JSON blobs.
+Table qobrix_api_opportunity_changes {
+  id uuid [pk, not null]
+  primary_key uuid [not null, ref: > qobrix_api_opportunities.id, note: 'Primary key of the changed record (opportunity UUID)']
+  destination varchar(255) [note: 'Destination entity/table in Qobrix (e.g. opportunities)']
+  destination_primary_key uuid [note: 'Destination primary key, usually same as primary_key for opportunities']
+  source varchar(255) [note: 'Source system for the change']
+  parent_source varchar(255)
+  type varchar(100) [note: 'Event type from API (e.g. created, updated, deleted)']
+  timestamp timestamp [not null]
+  user_id uuid [ref: > qobrix_api_contacts.id, note: 'User who performed the action']
+  impersonated_user_id uuid [note: 'If action was done via impersonation']
+  changed text [note: 'JSON object with changed fields (field -> new value)']
+  original text [note: 'JSON object with original values before change']
+  meta text [note: 'JSON object with extra metadata from API']
+
+  Note: 'Bronze: raw opportunity change events from Qobrix opportunity changes API'
+}
+
+// Bronze: agents from Qobrix API — API payload only; no derived columns.
+// Represents external agents/agencies that may list or co-broker properties.
+Table qobrix_api_agents {
+  id uuid [pk, not null]
+  ref int
+  legacy_id varchar(255)
+  name varchar(255)
+  description text
+  status varchar(255) [note: 'e.g. without_agency_agreement']
+  agent_type varchar(50) [note: 'e.g. individual_agent']
+  agency uuid [note: 'Related agency/company']
+  owner uuid [ref: > qobrix_api_contacts.id]
+  primary_contact uuid [ref: > qobrix_api_contacts.id]
+  sub_agent_of uuid [ref: > qobrix_api_agents.id]
+  agreement_date date
+  commission_1 decimal
+  commission_2 decimal
+  commission_3 decimal
+  created timestamp
+  created_by uuid [ref: > qobrix_api_contacts.id]
+  modified timestamp
+  modified_by uuid [ref: > qobrix_api_contacts.id]
+  trashed timestamp
+
+  Note: 'Bronze: agents from Qobrix API (agent payload)'
+}
+
+// Bronze: projects from Qobrix API — API payload only; no derived columns.
+// A project groups multiple properties (e.g. a development/building).
+Table qobrix_api_projects {
+  id uuid [pk, not null]
+  ref int
+  legacy_id varchar(255)
+  name varchar(255)
+  abbreviation varchar(255)
+  reference_code varchar(255)
+  type varchar(50) [note: 'e.g. project']
+  housing_type varchar(255) [note: 'e.g. commercial, residential']
+  availability_status varchar(255) [note: 'e.g. units_available']
+  description text
+  short_description text
+  amenities_description text
+  location_description text
+  map_popup_description text
+  developer_id uuid
+  assigned_to uuid [ref: > qobrix_api_contacts.id, note: 'Assigned To → Users']
+  location uuid
+  coordinates varchar(255) [note: 'e.g. 12.1234,12.1234']
+  country varchar(2)
+  state varchar(255)
+  city varchar(255)
+  municipality varchar(255)
+  post_code varchar(255)
+  street varchar(255)
+  street_2 varchar(255)
+  completion_date date
+  construction_stage varchar(255) [note: 'e.g. offplans']
+  number_of_units int
+  starting_price_from decimal
+  price_to decimal
+  project_listing_priority int
+  website_status varchar(255) [note: 'e.g. published']
+  website_url varchar(1024)
+  website_listing_date timestamp
+  video_link varchar(1024)
+  video_links text [note: 'Raw field from API']
+  virtual_tour_link varchar(1024)
+  virtual_tour_links text [note: 'Raw field from API']
+  last_media_update timestamp
+  views text [note: 'JSON array']
+  further_features text [note: 'JSON array']
+  distance_from_airport_amount decimal
+  distance_from_beach_amount decimal
+  distance_from_centre_amount decimal
+  distance_from_hospital_amount decimal
+  distance_from_rail_station_amount decimal
+  distance_from_school_amount decimal
+  distance_from_shops_amount decimal
+  distance_from_tube_station_amount decimal
+  distance_from_university_amount decimal
+  featured boolean
+  featured_priority int
+  custom_active boolean
+  custom_business_centre boolean
+  custom_concierge_services boolean
+  custom_delivery_date date
+  custom_gym boolean
+  custom_heated_pool boolean
+  custom_kids_play_area boolean
+  custom_list_selling_price_amount decimal
+  custom_reception boolean
+  custom_resale boolean
+  custom_restaurant_cafe boolean
+  custom_security_service boolean
+  custom_spa boolean
+  custom_tennis_court boolean
+  custom_valet_parking boolean
+  created timestamp
+  created_by uuid [ref: > qobrix_api_contacts.id]
+  modified timestamp
+  modified_by uuid [ref: > qobrix_api_contacts.id]
+  trashed timestamp
+
+  Note: 'Bronze: projects from Qobrix API (project payload); used to group properties'
+}
+
+// Bronze: project features from Qobrix API — API payload only; no derived columns.
+// Defines feature codes/labels used by projects (e.g. further_features.gym, further_features.bbq_area).
+Table qobrix_api_project_features {
+  id uuid [pk, not null]
+  code varchar(255) [not null, note: 'Internal code, e.g. gym, bbq_area']
+  label varchar(255) [not null, note: 'Human label, e.g. Gym, BBQ Area']
+  field varchar(255) [not null, note: 'Project field this feature belongs to, e.g. further_features']
+  dist boolean [note: 'Whether feature is distributed/visible']
+  created timestamp
+  created_by uuid [ref: > qobrix_api_contacts.id]
+  modified timestamp
+  modified_by uuid [ref: > qobrix_api_contacts.id]
+  trashed timestamp
+
+  Note: 'Bronze: project feature dictionary from Qobrix API; used to decode JSON arrays on projects'
+}
+
+// Bronze: property subtypes from Qobrix API — API payload only; no derived columns.
+// Defines subtype codes/labels per property_type (e.g. maisonette_house, entire_building_office).
+Table qobrix_api_property_subtypes {
+  id uuid [pk, not null]
+  code varchar(255) [not null, note: 'Internal code, e.g. maisonette_house, shop']
+  label varchar(255) [not null, note: 'Human label, e.g. Maisonette, Shop']
+  property_type varchar(255) [not null, note: 'Parent property type code, e.g. house, office, land']
+  created timestamp
+  created_by uuid [ref: > qobrix_api_contacts.id]
+  modified timestamp
+  modified_by uuid [ref: > qobrix_api_contacts.id]
+  trashed timestamp
+
+  Note: 'Bronze: property subtype dictionary from Qobrix API; aligns with qobrix_api_properties.property_type/property_subtype codes'
+}
+
+// Bronze: property types from Qobrix API — API payload only; no derived columns.
+// Defines top-level property type codes (e.g. house, apartment, land, office).
+Table qobrix_api_property_types {
+  id uuid [pk, not null]
+  code varchar(255) [not null, note: 'Internal type code, e.g. house, apartment, land']
+  name varchar(255) [not null, note: 'Human label, e.g. House, Apartment, Land']
+  base_type varchar(255) [note: 'High-level bucket, e.g. residential, commercial, land, other']
+  config text [note: 'Raw config JSON from API']
+  display_order int
+  created timestamp
+  created_by uuid [ref: > qobrix_api_contacts.id]
+  modified timestamp
+  modified_by uuid [ref: > qobrix_api_contacts.id]
+  trashed timestamp
+
+  Note: 'Bronze: property type dictionary from Qobrix API; aligns with qobrix_api_properties.property_type codes'
+}
+
+// Bronze: property viewings from Qobrix API — API payload only; no derived columns.
+// Represents feedback/assessment per (viewing, property) pair.
+Table qobrix_api_property_viewings {
+  id uuid [pk, not null]
+  property_id uuid [not null, ref: > qobrix_api_properties.id]
+  viewing_id uuid [not null, note: 'Qobrix viewing entity id (appointment)']
+  display_order int
+  further_feedback text
+  exterior_appeal_assessment decimal
+  interior_appeal_assessment decimal
+  location_assessment decimal
+  price_assessment decimal
+  views_assessment decimal
+  viewing_outcome decimal
+  created timestamp
+  created_by uuid [ref: > qobrix_api_contacts.id]
+  modified timestamp
+  modified_by uuid [ref: > qobrix_api_contacts.id]
+  trashed timestamp
+
+  Note: 'Bronze: property viewings/feedback from Qobrix API; one row per property-viewing assessment'
+}
+
+// Bronze: media categories from Qobrix API — API payload only; no derived columns.
+// Defines how media is grouped and where it can be used (properties, projects, etc.).
+Table qobrix_api_media_categories {
+  id uuid [pk, not null]
+  name varchar(255) [not null]
+  label varchar(255) [not null]
+  related_model varchar(255) [note: 'e.g. properties, projects']
+  media_types text [note: 'JSON array of media types']
+  mime_types text [note: 'JSON array of MIME types']
+  dist boolean
+  public boolean
+  signature_required boolean
+  watermark boolean
+  created timestamp
+  created_by uuid [ref: > qobrix_api_contacts.id]
+  modified timestamp
+  modified_by uuid [ref: > qobrix_api_contacts.id]
+  trashed timestamp
+
+  Note: 'Bronze: media category dictionary from Qobrix API'
+}
+
+// Bronze: media files from Qobrix API — API payload only; no derived columns.
+// Underlying file metadata used by media records.
+Table qobrix_api_media_files {
+  id uuid [pk, not null]
+  filename varchar(1024)
+  original_filename varchar(1024)
+  original_url varchar(2048)
+  href varchar(2048) [note: 'Resolved URL for serving']
+  thumbnails text [note: 'Raw thumbnails payload from API']
+  mime_type varchar(255)
+  filesize int
+  filesystem varchar(255)
+  created timestamp
+  modified timestamp
+
+  Note: 'Bronze: media file metadata from Qobrix API'
+}
+
+// Bronze: media records from Qobrix API — API payload only; no derived columns.
+// Generic media link: one row per media item attached to a property, project, etc.
+Table qobrix_api_media {
+  id uuid [pk, not null]
+  category_id uuid [ref: > qobrix_api_media_categories.id]
+  related_model varchar(255) [note: 'Target model, e.g. properties, projects']
+  related_id uuid [note: 'Target record id in related_model']
+  media_type varchar(50) [note: 'e.g. upload, url']
+  reference_id varchar(255)
+  display_order int
+  file_id uuid [ref: > qobrix_api_media_files.id]
+  created timestamp
+  modified timestamp
+
+  Note: 'Bronze: media from Qobrix API; links files/categories to properties, projects, etc.'
+}
+
+// Bronze: properties from Qobrix API — API payload only; no derived columns.
+// Source: Qobrix API property payload (e.g. GET /api/v2/properties or similar).
+Table qobrix_api_properties {
+  id uuid [pk, not null]
+  ref int [not null]
+  legacy_id varchar(255)
+  original_ref varchar(255)
+  original_name varchar(255)
+  name varchar(255)
+  short_description text
+  description text
+  source varchar(255) [note: 'e.g. direct']
+  direct_sources varchar(255) [note: 'e.g. campaign']
+  source_description text
+  status varchar(255) [note: 'e.g. pending']
+  sale_rent varchar(50) [note: 'for_sale, for_rent']
+  property_type varchar(255)
+  property_subtype varchar(255)
+  website_status varchar(255) [note: 'e.g. published']
+  website_url varchar(1024)
+  original_website_url varchar(1024)
+  website_listing_date timestamp
+  listing_date date
+  created timestamp [not null]
+  created_by uuid [not null]
+  modified timestamp [not null]
+  modified_by uuid [not null]
+  trashed timestamp [not null]
+  agent uuid
+  salesperson uuid
+  seller uuid [not null]
+  developer_id uuid
+  project uuid [not null, ref: > qobrix_api_projects.id]
+  group_id uuid
+  campaign_id uuid
+  cloned_from uuid
+  location uuid
+  coordinates varchar(255) [note: 'e.g. 12.1234,12.1234']
+  geocode_type varchar(255) [note: 'e.g. exact']
+  country varchar(2)
+  state varchar(255)
+  city varchar(255)
+  municipality varchar(255)
+  post_code varchar(255)
+  street varchar(255)
+  town_planning_zone varchar(255) [note: 'e.g. residential']
+  cadastral_reference varchar(255)
+  land_locked boolean
+  right_of_way boolean
+  registered_road boolean
+  corner_plot boolean
+  internal_area_amount decimal
+  covered_area_amount decimal
+  uncovered_area_amount decimal
+  total_area_amount decimal
+  plot_area_amount decimal
+  roof_garden_area_amount decimal
+  garden_area_amount decimal
+  mezzanine_amount decimal
+  storage_amount decimal
+  covered_verandas_amount decimal
+  uncovered_verandas_amount decimal
+  frontage_amount decimal
+  building_density decimal
+  cover_factor decimal
+  coverage decimal
+  elevated_area boolean
+  bedrooms int
+  bathrooms int
+  wc_bathrooms int
+  living_rooms int
+  kitchens int
+  office_spaces int
+  verandas int
+  floors_building int
+  floor_number int
+  storeys_max_floor int
+  height decimal
+  unit_number varchar(255)
+  floor_type varchar(255) [note: 'e.g. marble']
+  list_selling_price_amount decimal
+  list_selling_price_modified timestamp
+  list_rental_price_amount decimal
+  list_rental_price_modified timestamp
+  rent_frequency varchar(255) [note: 'e.g. Yearly']
+  price_per_square decimal
+  price_qualifier varchar(255) [note: 'e.g. fixed']
+  plus_vat boolean
+  previous_list_selling_price decimal
+  previous_list_rental_price decimal
+  reserve_price_amount decimal
+  starting_bidding_amount decimal
+  business_transfer_price decimal
+  price_field_amount decimal
+  minimum_tenancy int
+  tenancy_type varchar(255) [note: 'e.g. Long Term']
+  occupancy varchar(255) [note: 'e.g. rented']
+  engagement_letter_date timestamp
+  inspection_date timestamp
+  auction_start_date timestamp
+  auction_end_date timestamp
+  construction_year int
+  renovation_year int
+  construction_type varchar(255) [note: 'e.g. concrete']
+  construction_stage varchar(255) [note: 'e.g. offplans']
+  energy_efficiency_grade varchar(255) [note: 'e.g. pending_certification']
+  energy_consumption_rating varchar(255)
+  energy_consumption_value decimal
+  energy_emission_rating varchar(255)
+  energy_emission_value decimal
+  electricity boolean
+  electricity_type varchar(255) [note: 'e.g. single_phase']
+  water boolean
+  heating_type varchar(255) [note: 'e.g. autonomous_heating_system']
+  heating_medium varchar(255) [note: 'e.g. petrol']
+  cooling_type varchar(255) [note: 'e.g. autonomous_cooling_system']
+  heating text [note: 'JSON array']
+  cooling text [note: 'JSON array']
+  furnished varchar(255) [note: 'e.g. furnished']
+  pets_allowed boolean
+  fireplace boolean
+  view text [note: 'JSON array']
+  pool_features text [note: 'JSON array']
+  flooring text [note: 'JSON array']
+  waterfront_features text [note: 'JSON array']
+  patio_porch text [note: 'JSON array']
+  other_structures text [note: 'JSON array']
+  association_amenities text [note: 'JSON array']
+  fencing text [note: 'JSON array']
+  fireplace_features text [note: 'JSON array']
+  sea_view boolean
+  mountain_view boolean
+  beach_front boolean
+  abuts_green_area boolean
+  private_swimming_pool boolean
+  common_swimming_pool boolean
+  air_condition boolean
+  alarm boolean
+  smart_home boolean
+  solar_water_heater boolean
+  storage_space boolean
+  maids_room boolean
+  concierge_reception boolean
+  secure_door boolean
+  kitchenette boolean
+  home_office boolean
+  separate_laundry_room boolean
+  reception boolean
+  store_room boolean
+  enclosed_office_room boolean
+  server_room boolean
+  business_transfer_or_sale boolean
+  business_transfer_commercial_activity varchar(255)
+  covered_parking int
+  uncovered_parking int
+  parking int
+  customer_parking int
+  elevator boolean
+  distance_from_airport decimal
+  distance_from_beach decimal
+  distance_from_centre decimal
+  distance_from_hospital decimal
+  distance_from_rail_station decimal
+  distance_from_school decimal
+  distance_from_shops decimal
+  distance_from_tube_station decimal
+  distance_from_university decimal
+  additional_features text [note: 'JSON array']
+  appliances text [note: 'JSON array']
+  community_features text [note: 'JSON array']
+  exterior_features text [note: 'JSON array']
+  interior_features text [note: 'JSON array']
+  lot_features text [note: 'JSON array']
+  security_features text [note: 'JSON array']
+  ideal_for varchar(255)
+  licensed_for varchar(255)
+  key_holder_details text
+  kitchen_type varchar(255) [note: 'e.g. open_plan']
+  office_layout varchar(255) [note: 'e.g. open_plan']
+  video_link varchar(1024)
+  virtual_tour_link varchar(1024)
+  last_media_update timestamp
+  inherit_project_media boolean
+  featured boolean
+  featured_priority int
+  property_of_the_month boolean
+  apartment_type varchar(255)
+  building_type varchar(255)
+  hotel_type varchar(255)
+  house_type varchar(255)
+  industrial_type varchar(255)
+  land_type varchar(255)
+  office_type varchar(255)
+  retail_type varchar(255)
+  custom_distance_from_beach_amount decimal
+  custom_distance_from_city_centre_amount decimal
+  custom_bazaraki_negotiable_price boolean
+  custom_listing_property boolean
+  custom_exclusive_listing boolean
+  custom_a_place_in_the_sun_property_type varchar(255)
+  custom_distance_from_shops_amount decimal
+  custom_bazaraki_exchange boolean
+  custom_common_area_amount decimal
+  custom_distance_from_hospital_amount decimal
+  custom_presale boolean
+  custom_bazaraki_registration_block int
+  custom_distance_from_university_amount decimal
+  custom_bazaraki_chosen_phone varchar(255)
+  custom_roof_garden boolean
+  custom_commission decimal
+  custom_bazaraki_registration_number int
+  custom_property_view varchar(255)
+  custom_resale boolean
+  custom_distance_from_airport_amount decimal
+  custom_bazaraki_online_viewing boolean
+  custom_loading_bay_amount int
+  custom_rightmove_url varchar(255)
+  custom_distance_from_school_amount decimal
+  custom_turn_key boolean
+  custom_delivery_date date
+  custom_heating boolean
+  custom_sir_link varchar(255)
+  custom_excluded_property boolean
+  custom_properties_groups text [note: 'JSON array']
+  custom_white_goods boolean
+  custom_bazaraki_disallow_chat boolean
+  custom_bazaraki_phone_hide boolean
+  custom_bazaraki_url varchar(255)
+  custom_sir_code varchar(255)
+  custom_bazaraki_location uuid
+
+  Note: 'Bronze: properties from Qobrix API (property payload)'
+}
+
+// Bronze: raw property change events from Qobrix audit API.
+// Mirrors the /property changes endpoint: changed/original/meta as JSON blobs.
+Table qobrix_api_property_changes {
+  id uuid [pk, not null]
+  primary_key uuid [not null, ref: > qobrix_api_properties.id, note: 'Primary key of the changed record (property UUID)']
+  destination varchar(255) [note: 'Destination entity/table in Qobrix (e.g. properties)']
+  destination_primary_key uuid [note: 'Destination primary key, usually same as primary_key for properties']
+  source varchar(255) [note: 'Source system for the change']
+  parent_source varchar(255)
+  type varchar(100) [note: 'Event type from API (e.g. created, updated, deleted)']
+  timestamp timestamp [not null]
+  user_id uuid [ref: > qobrix_api_contacts.id, note: 'User who performed the action']
+  impersonated_user_id uuid [note: 'If action was done via impersonation']
+  changed text [note: 'JSON object with changed fields (field -> new value)']
+  original text [note: 'JSON object with original values before change']
+  meta text [note: 'JSON object with extra metadata from API']
+
+  Note: 'Bronze: raw property change events from Qobrix property changes API'
+}
+
+// Silver layer: properties — normalized from bronze; 1:1 per property. String fields normalized (trim, lowercase where applicable).
+Table qobrix_silver_properties {
+  id uuid [pk, not null, ref: > qobrix_api_properties.id]
+  ref int
+  legacy_id text
+  original_ref text
+  original_name text
+  name text [note: 'Normalized']
+  short_description text [note: 'Normalized']
+  description text [note: 'Normalized']
+  source text
+  direct_sources text
+  source_description text
+  status text
+  sale_rent text
+  property_type text
+  property_subtype text
+  website_status text
+  website_url text [note: 'Normalized URL']
+  original_website_url text
+  website_listing_date timestamp
+  listing_date date
+  created timestamp
+  created_by uuid
+  modified timestamp
+  modified_by uuid
+  trashed timestamp
+  agent uuid
+  salesperson uuid
+  seller uuid
+  developer_id uuid
+  project uuid [ref: > qobrix_silver_projects.id]
+  group_id uuid
+  campaign_id uuid
+  cloned_from uuid
+  location uuid
+  coordinates text
+  geocode_type text
+  country text
+  state text
+  city text
+  municipality text
+  post_code text
+  street text
+  town_planning_zone text
+  cadastral_reference text
+  land_locked boolean
+  right_of_way boolean
+  registered_road boolean
+  corner_plot boolean
+  internal_area_amount decimal
+  covered_area_amount decimal
+  uncovered_area_amount decimal
+  total_area_amount decimal
+  plot_area_amount decimal
+  roof_garden_area_amount decimal
+  garden_area_amount decimal
+  mezzanine_amount decimal
+  storage_amount decimal
+  covered_verandas_amount decimal
+  uncovered_verandas_amount decimal
+  frontage_amount decimal
+  building_density decimal
+  cover_factor decimal
+  coverage decimal
+  elevated_area boolean
+  bedrooms int
+  bathrooms int
+  wc_bathrooms int
+  living_rooms int
+  kitchens int
+  office_spaces int
+  verandas int
+  floors_building int
+  floor_number int
+  storeys_max_floor int
+  height decimal
+  unit_number text
+  floor_type text
+  list_selling_price_amount decimal
+  list_selling_price_modified timestamp
+  list_rental_price_amount decimal
+  list_rental_price_modified timestamp
+  rent_frequency text
+  price_per_square decimal
+  price_qualifier text
+  plus_vat boolean
+  previous_list_selling_price decimal
+  previous_list_rental_price decimal
+  reserve_price_amount decimal
+  starting_bidding_amount decimal
+  business_transfer_price decimal
+  price_field_amount decimal
+  minimum_tenancy int
+  tenancy_type text
+  occupancy text
+  engagement_letter_date timestamp
+  inspection_date timestamp
+  auction_start_date timestamp
+  auction_end_date timestamp
+  construction_year int
+  renovation_year int
+  construction_type text
+  construction_stage text
+  energy_efficiency_grade text
+  energy_consumption_rating text
+  energy_consumption_value decimal
+  energy_emission_rating text
+  energy_emission_value decimal
+  electricity boolean
+  electricity_type text
+  water boolean
+  heating_type text
+  heating_medium text
+  cooling_type text
+  heating text [note: 'JSON array']
+  cooling text [note: 'JSON array']
+  furnished text
+  pets_allowed boolean
+  fireplace boolean
+  view text [note: 'JSON array']
+  pool_features text [note: 'JSON array']
+  flooring text [note: 'JSON array']
+  waterfront_features text [note: 'JSON array']
+  patio_porch text [note: 'JSON array']
+  other_structures text [note: 'JSON array']
+  association_amenities text [note: 'JSON array']
+  fencing text [note: 'JSON array']
+  fireplace_features text [note: 'JSON array']
+  sea_view boolean
+  mountain_view boolean
+  beach_front boolean
+  abuts_green_area boolean
+  private_swimming_pool boolean
+  common_swimming_pool boolean
+  air_condition boolean
+  alarm boolean
+  smart_home boolean
+  solar_water_heater boolean
+  storage_space boolean
+  maids_room boolean
+  concierge_reception boolean
+  secure_door boolean
+  kitchenette boolean
+  home_office boolean
+  separate_laundry_room boolean
+  reception boolean
+  store_room boolean
+  enclosed_office_room boolean
+  server_room boolean
+  business_transfer_or_sale boolean
+  business_transfer_commercial_activity text
+  covered_parking int
+  uncovered_parking int
+  parking int
+  customer_parking int
+  elevator boolean
+  distance_from_airport decimal
+  distance_from_beach decimal
+  distance_from_centre decimal
+  distance_from_hospital decimal
+  distance_from_rail_station decimal
+  distance_from_school decimal
+  distance_from_shops decimal
+  distance_from_tube_station decimal
+  distance_from_university decimal
+  additional_features text [note: 'JSON array']
+  appliances text [note: 'JSON array']
+  community_features text [note: 'JSON array']
+  exterior_features text [note: 'JSON array']
+  interior_features text [note: 'JSON array']
+  lot_features text [note: 'JSON array']
+  security_features text [note: 'JSON array']
+  ideal_for text
+  licensed_for text
+  key_holder_details text
+  kitchen_type text
+  office_layout text
+  video_link text
+  virtual_tour_link text
+  last_media_update timestamp
+  inherit_project_media boolean
+  featured boolean
+  featured_priority int
+  property_of_the_month boolean
+  apartment_type text
+  building_type text
+  hotel_type text
+  house_type text
+  industrial_type text
+  land_type text
+  office_type text
+  retail_type text
+  custom_distance_from_beach_amount decimal
+  custom_distance_from_city_centre_amount decimal
+  custom_bazaraki_negotiable_price boolean
+  custom_listing_property boolean
+  custom_exclusive_listing boolean
+  custom_a_place_in_the_sun_property_type text
+  custom_distance_from_shops_amount decimal
+  custom_bazaraki_exchange boolean
+  custom_common_area_amount decimal
+  custom_distance_from_hospital_amount decimal
+  custom_presale boolean
+  custom_bazaraki_registration_block int
+  custom_distance_from_university_amount decimal
+  custom_bazaraki_chosen_phone text
+  custom_roof_garden boolean
+  custom_commission decimal
+  custom_bazaraki_registration_number int
+  custom_property_view text
+  custom_resale boolean
+  custom_distance_from_airport_amount decimal
+  custom_bazaraki_online_viewing boolean
+  custom_loading_bay_amount int
+  custom_rightmove_url text
+  custom_distance_from_school_amount decimal
+  custom_turn_key boolean
+  custom_delivery_date date
+  custom_heating boolean
+  custom_sir_link text
+  custom_excluded_property boolean
+  custom_properties_groups text [note: 'JSON array']
+  custom_white_goods boolean
+  custom_bazaraki_disallow_chat boolean
+  custom_bazaraki_phone_hide boolean
+  custom_bazaraki_url text
+  custom_sir_code text
+  custom_bazaraki_location uuid
+
+  Note: 'Silver: properties from bronze; strings normalized'
+}
+
+// Gold — listing record (identity, status, type, dates, assignment: owner, agent, seller, etc.).
+Table common_properties {
+  id uuid [pk, not null, ref: > qobrix_silver_properties.id]
+  ref int
+  status text
+  sale_rent text [note: 'for_sale, for_rent']
+  property_type text
+  property_subtype text
+  website_status text
+  listing_date date
+  created timestamp
+  modified timestamp
+  created_by uuid [ref: > common_users.id]
+  modified_by uuid [ref: > common_users.id]
+  agent_id uuid [ref: > common_users.id]
+  salesperson_id uuid [ref: > common_users.id]
+  seller_id uuid [ref: > common_contact_profiles.id]
+  developer_id uuid
+  project_id uuid [ref: > common_projects.id, note: 'Project/development this property belongs to']
+  group_id uuid
+  campaign_id uuid
+
+  Note: 'Gold: listing record — who, when, type; refs common_users, common_contact_profiles'
+}
+
+// Gold — property profile (location, size, rooms, prices, tenancy, construction, energy, features).
+Table common_property_profiles {
+  property_id uuid [pk, not null, ref: > common_properties.id]
+  coordinates text
+  geocode_type text
+  country text
+  state text
+  city text
+  municipality text
+  post_code text
+  street text
+  town_planning_zone text
+  cadastral_reference text
+  land_locked boolean
+  right_of_way boolean
+  registered_road boolean
+  corner_plot boolean
+  internal_area_amount decimal
+  covered_area_amount decimal
+  uncovered_area_amount decimal
+  total_area_amount decimal
+  plot_area_amount decimal
+  roof_garden_area_amount decimal
+  garden_area_amount decimal
+  mezzanine_amount decimal
+  storage_amount decimal
+  covered_verandas_amount decimal
+  uncovered_verandas_amount decimal
+  frontage_amount decimal
+  bedrooms int
+  bathrooms int
+  wc_bathrooms int
+  living_rooms int
+  kitchens int
+  office_spaces int
+  verandas int
+  floors_building int
+  floor_number int
+  storeys_max_floor int
+  height decimal
+  unit_number text
+  floor_type text
+  list_selling_price_amount decimal
+  list_selling_price_modified timestamp
+  list_rental_price_amount decimal
+  list_rental_price_modified timestamp
+  rent_frequency text
+  price_per_square decimal
+  price_qualifier text
+  plus_vat boolean
+  previous_list_selling_price decimal
+  previous_list_rental_price decimal
+  reserve_price_amount decimal
+  starting_bidding_amount decimal
+  minimum_tenancy int
+  tenancy_type text
+  occupancy text
+  engagement_letter_date timestamp
+  inspection_date timestamp
+  auction_start_date timestamp
+  auction_end_date timestamp
+  construction_year int
+  renovation_year int
+  construction_type text
+  construction_stage text
+  energy_efficiency_grade text
+  energy_consumption_rating text
+  energy_consumption_value decimal
+  energy_emission_rating text
+  energy_emission_value decimal
+  electricity boolean
+  electricity_type text
+  water boolean
+  heating_type text
+  heating_medium text
+  cooling_type text
+  furnished text
+  pets_allowed boolean
+  fireplace boolean
+  sea_view boolean
+  mountain_view boolean
+  beach_front boolean
+  abuts_green_area boolean
+  private_swimming_pool boolean
+  common_swimming_pool boolean
+  air_condition boolean
+  alarm boolean
+  smart_home boolean
+  solar_water_heater boolean
+  storage_space boolean
+  maids_room boolean
+  concierge_reception boolean
+  secure_door boolean
+  kitchenette boolean
+  home_office boolean
+  separate_laundry_room boolean
+  reception boolean
+  store_room boolean
+  enclosed_office_room boolean
+  server_room boolean
+  business_transfer_or_sale boolean
+  covered_parking int
+  uncovered_parking int
+  parking int
+  customer_parking int
+  elevator boolean
+  apartment_type text
+  building_type text
+  hotel_type text
+  house_type text
+  industrial_type text
+  land_type text
+  office_type text
+  retail_type text
+
+  Note: 'Gold: property profile — location, areas, rooms, prices, features; one-to-one with common_properties'
+}
+
+// Gold — listing / description slice (name, description, media, marketing).
+Table common_property_listing {
+  property_id uuid [pk, not null, ref: > common_properties.id]
+  name text
+  short_description text
+  description text
+  website_url text
+  original_website_url text
+  website_listing_date timestamp
+  video_link text
+  virtual_tour_link text
+  ideal_for text
+  licensed_for text
+  key_holder_details text
+  featured boolean
+  featured_priority int
+  property_of_the_month boolean
+  last_media_update timestamp
+  inherit_project_media boolean
+  kitchen_type text
+  office_layout text
+  original_name text
+  original_ref text
+
+  Note: 'Gold: listing description and media; one-to-one with common_properties'
+}
+
+// Gold — Bazaraki-specific custom fields (portal integration).
+Table common_property_bazaraki {
+  property_id uuid [pk, not null, ref: > common_properties.id]
+  custom_bazaraki_negotiable_price boolean
+  custom_bazaraki_exchange boolean
+  custom_bazaraki_registration_block int
+  custom_bazaraki_chosen_phone text
+  custom_bazaraki_registration_number int
+  custom_bazaraki_online_viewing boolean
+  custom_bazaraki_url text
+  custom_bazaraki_location uuid
+  custom_bazaraki_disallow_chat boolean
+  custom_bazaraki_phone_hide boolean
+
+  Note: 'Gold: Bazaraki portal fields; one-to-one with common_properties'
+}
+
+// Gold — property change log (audit trail for listings/properties).
+// Built from qobrix_api_property_changes and app-side events; one row per field change.
+Table common_property_changelog {
+  id uuid [pk, not null]
+  property_id uuid [not null, ref: > common_properties.id, note: 'Property/listing this change refers to']
+  changed_at timestamp [not null, note: 'When the change happened']
+  changed_by_user_id uuid [ref: > common_users.id, note: 'Who made the change; NULL for system/batch']
+  event_type varchar(50) [note: 'e.g. created, updated, deleted, restored, price_changed']
+  field_name varchar(255) [note: 'Field that changed (e.g. list_selling_price_amount, status); NULL for whole-record events']
+  old_value text [note: 'Previous value (string/JSON)']
+  new_value text [note: 'New value (string/JSON)']
+  source_system varchar(100) [note: 'e.g. qobrix, mls2_api, mobile_app, batch_import']
+  raw_event_id uuid [ref: - qobrix_api_property_changes.id, note: 'Optional link back to raw Qobrix event']
+
+  Note: 'Gold CDL: property change logs; append-only audit trail per property'
+}
+
+// Gold — projects (developments/buildings that group multiple properties).
+// Used to surface project-level information in apps and link properties to their parent project.
+// This table is the project listing record (identity, assignment, summary, pricing, high-level marketing).
+Table common_projects {
+  id uuid [pk, not null, ref: - qobrix_silver_projects.id]
+  ref int
+  name text
+  abbreviation text
+  reference_code text
+  type text
+  housing_type text
+  availability_status text
+  description text
+  short_description text
+  amenities_description text
+  developer_id uuid
+  assigned_to uuid [ref: > common_users.id]
+  number_of_units int
+  starting_price_from decimal
+  price_to decimal
+  project_listing_priority int
+  website_status text
+  website_url text
+  website_listing_date timestamp
+  featured boolean
+  featured_priority int
+  custom_active boolean
+  custom_list_selling_price_amount decimal
+  custom_resale boolean
+  created timestamp
+  created_by uuid [ref: > common_users.id]
+  modified timestamp
+  modified_by uuid [ref: > common_users.id]
+
+  Note: 'Gold CDL: projects/developments; used to group common_properties by project'
+}
+
+// Gold — agents (brokerages/individual agents in the system).
+// This table represents agent entities and connects them to contact profiles and users.
+Table common_agents {
+  id uuid [pk, not null, ref: - qobrix_silver_agents.id]
+  ref int
+  name text
+  description text
+  status text
+  agent_type text
+  agency_id uuid [note: 'Related agency/company; may point to another common_agents row']
+  owner_profile_id uuid [ref: > common_users.id, note: 'Owner contact profile']
+  primary_contact_profile_id uuid [ref: > common_users.id, note: 'Primary contact for this agent/agency']
+  sub_agent_of_id uuid [ref: > common_agents.id]
+  agreement_date date
+  commission decimal
+  created timestamp
+  created_by uuid [ref: > common_users.id]
+  modified timestamp
+  modified_by uuid [ref: > common_users.id]
+
+  Note: 'Gold CDL: agents/agencies; link Qobrix agents to contact profiles and users'
+}
+
+// Gold — project features dictionary for apps.
+// Provides friendly labels and grouping for project features used in UI/filters.
+Table common_project_features {
+  id uuid [pk, not null, ref: > qobrix_silver_project_features.id]
+  code text [not null, note: 'Internal code, e.g. gym, bbq_area']
+  label text [not null, note: 'Human label, e.g. Gym, BBQ Area']
+  field text [not null, note: 'Project field/group, e.g. further_features']
+  dist boolean
+
+  Note: 'Gold CDL: project feature dictionary; used to decode project further_features and build filters'
+}
+
+// Gold — property subtypes dictionary for apps.
+// Provides friendly labels and mapping between property_type and property_subtype codes.
+Table common_property_subtypes {
+  id uuid [pk, not null, ref: > qobrix_silver_property_subtypes.id]
+  code text [not null, note: 'Internal subtype code, e.g. maisonette_house, shop']
+  label text [not null, note: 'Human label, e.g. Maisonette, Shop']
+  property_type text [not null, note: 'Parent type code, e.g. house, office, land']
+
+  Note: 'Gold CDL: property subtype dictionary; used with common_properties.property_type/property_subtype'
+}
+
+// Gold — property types dictionary for apps.
+// Provides friendly labels and high-level buckets for property types.
+Table common_property_types {
+  id uuid [pk, not null, ref: > qobrix_silver_property_types.id]
+  code text [not null, note: 'Internal type code, e.g. house, apartment, land']
+  name text [not null, note: 'Human label, e.g. House, Apartment, Land']
+  base_type text [note: 'High-level bucket, e.g. residential, commercial, land, other']
+  display_order int
+
+  Note: 'Gold CDL: property type dictionary; used with common_properties.property_type'
+}
+
+// Gold — property viewings/feedback for apps.
+// One row per property-viewing assessment; links to common_properties and users.
+Table common_property_viewings {
+  id uuid [pk, not null, ref: > qobrix_silver_property_viewings.id]
+  property_id uuid [not null, ref: > common_properties.id]
+  viewing_id uuid [not null, note: 'Underlying Qobrix viewing/appointment id']
+  display_order int
+  further_feedback text
+  exterior_appeal_assessment decimal
+  interior_appeal_assessment decimal
+  location_assessment decimal
+  price_assessment decimal
+  views_assessment decimal
+  viewing_outcome decimal
+  created timestamp
+  created_by uuid [ref: > common_users.id]
+  modified timestamp
+  modified_by uuid [ref: > common_users.id]
+
+  Note: 'Gold CDL: property viewings feedback; enables analytics on how buyers rate properties'
+}
+
+// Gold — media categories for apps.
+// Used to group media in UI (e.g. gallery, plans, brochures) and drive upload rules.
+Table common_media_categories {
+  id uuid [pk, not null, ref: > qobrix_silver_media_categories.id]
+  name text [not null]
+  label text [not null]
+  related_model text [note: 'Target entity type, e.g. properties, projects']
+  dist boolean
+  public boolean
+  signature_required boolean
+  watermark boolean
+
+  Note: 'Gold CDL: media category dictionary; used to group media for properties/projects'
+}
+
+// Gold — media files for apps.
+// Canonical file-level info (URL, mime type) used by media links below.
+Table common_media_files {
+  id uuid [pk, not null, ref: > qobrix_silver_media_files.id]
+  filename text
+  original_filename text
+  original_url text
+  href text
+  thumbnails text
+  mime_type text
+  filesize int
+  filesystem text
+
+  Note: 'Gold CDL: media files; used by common_media to render URLs and thumbnails'
+}
+
+// Gold — media links for apps.
+// Generic media attachment: can point to a property, project, or other entity.
+Table common_media {
+  id uuid [pk, not null, ref: > qobrix_silver_media.id]
+  entity_type text [not null, note: 'Target entity type, e.g. property, project']
+  entity_id uuid [not null, note: 'Target entity id (e.g. common_properties.id, common_projects.id)']
+  category_id uuid [ref: > common_media_categories.id]
+  media_type text
+  reference_id text
+  display_order int
+  file_id uuid [ref: > common_media_files.id]
+  created timestamp
+  created_by uuid [ref: > common_users.id]
+  modified timestamp
+  modified_by uuid [ref: > common_users.id]
+
+  Note: 'Gold CDL: media; generic linking table between files and entities (properties, projects, etc.)'
+}
+
+// Gold — project profile (location, distances, construction, amenities, rich media).
+// One row per project; detailed attributes that describe the development itself.
+Table common_project_profiles {
+  project_id uuid [pk, not null, ref: > common_projects.id]
+  location uuid
+  coordinates text
+  country text
+  state text
+  city text
+  municipality text
+  post_code text
+  street text
+  street_2 text
+  completion_date date
+  construction_stage text
+  distance_from_airport_amount decimal
+  distance_from_beach_amount decimal
+  distance_from_centre_amount decimal
+  distance_from_hospital_amount decimal
+  distance_from_rail_station_amount decimal
+  distance_from_school_amount decimal
+  distance_from_shops_amount decimal
+  distance_from_tube_station_amount decimal
+  distance_from_university_amount decimal
+  video_link text
+  video_links text
+  virtual_tour_link text
+  virtual_tour_links text
+  last_media_update timestamp
+  views text [note: 'JSON array']
+  further_features text [note: 'JSON array']
+  custom_business_centre boolean
+  custom_concierge_services boolean
+  custom_delivery_date date
+  custom_gym boolean
+  custom_heated_pool boolean
+  custom_kids_play_area boolean
+  custom_reception boolean
+  custom_restaurant_cafe boolean
+  custom_security_service boolean
+  custom_spa boolean
+  custom_tennis_court boolean
+  custom_valet_parking boolean
+
+  Note: 'Gold CDL: project profile — physical location, distances, amenities, and media; one-to-one with common_projects'
+}
+
+// Silver layer: leads/opportunities — normalized subset from bronze; 1:1 per opportunity.
+// String fields normalized (trim, lowercase where applicable); same structure as bronze, cleaned.
+Table qobrix_silver_opportunities {
+  id uuid [pk, not null, ref: > qobrix_api_opportunities.id]
+  ref int
+  contact_name uuid [not null, ref: > qobrix_silver_contacts.id, note: 'Lead contact (silver)']
+  agent uuid [ref: > common_users.id]
+  owner uuid [ref: > common_users.id]
+  campaign_id uuid
+  created timestamp
+  created_by uuid [ref: > common_users.id]
+  modified timestamp
+  modified_by uuid [ref: > common_users.id]
+  enquiry_date date
+  enquiry_type text [note: 'Normalized']
+  status text [note: 'Normalized']
+  last_status_change timestamp
+  buy_rent text [note: 'to_buy, to_rent; normalized; use with enquiry_type to divide buying vs selling']
+  source text [note: 'direct, campaign; normalized']
+  direct_source text
+  source_description text
+  description text
+  legacy_id text
+  website_url text [note: 'Normalized URL']
+  virtual_contact_name text
+  area_of_interest text [note: 'Polygon/wkt']
+  post_codes text [note: 'JSON array']
+  enquiry_subtypes text [note: 'JSON array']
+  town_planning_zone text [note: 'Normalized']
+  construction_stage text [note: 'e.g. offplans; normalized']
+  sorting_expression text
+  list_selling_price_from decimal
+  list_selling_price_to decimal
+  list_selling_price decimal
+  list_rental_price_from decimal
+  list_rental_price_to decimal
+  list_letting_price decimal
+  lowest_selling_price decimal
+  lowest_letting_price decimal
+  bedrooms_from int
+  bedrooms_to int
+  bathrooms_from int
+  bathrooms_to int
+  covered_area_from_amount decimal
+  covered_area_to_amount decimal
+  internal_area_from_amount decimal
+  internal_area_to_amount decimal
+  total_area_from_amount decimal
+  total_area_to_amount decimal
+  plot_area_from_amount decimal
+  plot_area_to_amount decimal
+  storage_from_amount decimal
+  storage_to_amount decimal
+  frontage_from_amount decimal
+  frontage_to_amount decimal
+  covered_parking int
+  parking_from int
+  parking_to int
+  furnished text
+  air_condition boolean
+  common_swimming_pool boolean
+  private_swimming_pool boolean
+  concierge_reception boolean
+  electricity boolean
+  water boolean
+  elevator boolean
+  registered_road boolean
+  title_deeds boolean
+  new_build boolean
+  pets_allowed boolean
+  enclosed_office_room boolean
+  server_room boolean
+  business_transfer_or_sale boolean
+  business_transfer_commercial_activity text
+  notify_matching_properties boolean
+  notify_properties_price_drop boolean
+  next_follow_up_date timestamp
+  last_website_visit timestamp
+  closed_lost_reason_id uuid
+  closed_lost_details text
+  trashed timestamp
+  custom_attended_webinar boolean
+  custom_do_not_contact boolean
+  custom_enquiry_low_budget boolean
+  custom_enquiry_stage_type text
+  custom_facebook_lead_id text
+  custom_general_interest_type text
+  custom_interest_type text
+  custom_internal_area_amount decimal
+  custom_mql boolean
+  custom_project uuid
+  custom_property uuid
+  custom_sql boolean
+  custom_webinars text
+
+  Note: 'Silver: leads from bronze; strings normalized'
+}
+
+// Silver layer: projects — normalized subset from bronze; 1:1 per project.
+// String fields normalized (trim, lowercase where applicable); URLs cleaned.
+Table qobrix_silver_projects {
+  id uuid [pk, not null, ref: - qobrix_api_projects.id]
+  ref int
+  legacy_id text
+  name text [note: 'Normalized']
+  abbreviation text
+  reference_code text
+  type text
+  housing_type text
+  availability_status text
+  description text [note: 'Normalized']
+  short_description text [note: 'Normalized']
+  amenities_description text [note: 'Normalized']
+  location_description text
+  map_popup_description text
+  developer_id uuid
+  assigned_to uuid [ref: > qobrix_silver_contacts.id]
+  location uuid
+  coordinates text
+  country text
+  state text
+  city text
+  municipality text
+  post_code text
+  street text
+  street_2 text
+  completion_date date
+  construction_stage text
+  number_of_units int
+  starting_price_from decimal
+  price_to decimal
+  project_listing_priority int
+  website_status text
+  website_url text [note: 'Normalized URL']
+  website_listing_date timestamp
+  video_link text
+  video_links text
+  virtual_tour_link text
+  virtual_tour_links text
+  last_media_update timestamp
+  views text [note: 'JSON array']
+  further_features text [note: 'JSON array']
+  distance_from_airport_amount decimal
+  distance_from_beach_amount decimal
+  distance_from_centre_amount decimal
+  distance_from_hospital_amount decimal
+  distance_from_rail_station_amount decimal
+  distance_from_school_amount decimal
+  distance_from_shops_amount decimal
+  distance_from_tube_station_amount decimal
+  distance_from_university_amount decimal
+  featured boolean
+  featured_priority int
+  custom_active boolean
+  custom_business_centre boolean
+  custom_concierge_services boolean
+  custom_delivery_date date
+  custom_gym boolean
+  custom_heated_pool boolean
+  custom_kids_play_area boolean
+  custom_list_selling_price_amount decimal
+  custom_reception boolean
+  custom_resale boolean
+  custom_restaurant_cafe boolean
+  custom_security_service boolean
+  custom_spa boolean
+  custom_tennis_court boolean
+  custom_valet_parking boolean
+  created timestamp
+  created_by uuid [ref: > qobrix_silver_contacts.id]
+  modified timestamp
+  modified_by uuid [ref: > qobrix_silver_contacts.id]
+  trashed timestamp
+
+  Note: 'Silver: projects from bronze; strings normalized; refs common_users'
+}
+
+// Silver layer: agents — normalized subset from bronze; 1:1 per agent.
+// String fields normalized (trim, lowercase where applicable).
+Table qobrix_silver_agents {
+  id uuid [pk, not null, ref: > qobrix_api_agents.id]
+  ref int
+  legacy_id text
+  name text [note: 'Normalized']
+  description text [note: 'Normalized']
+  status text [note: 'Normalized']
+  agent_type text
+  agency uuid
+  owner uuid [ref: > qobrix_silver_contacts.id]
+  primary_contact uuid [ref: > qobrix_silver_contacts.id]
+  sub_agent_of uuid [ref: > qobrix_silver_agents.id]
+  agreement_date date
+  commission decimal
+  created timestamp
+  created_by uuid [ref: > qobrix_silver_contacts.id]
+  modified timestamp
+  modified_by uuid [ref: > qobrix_silver_contacts.id]
+  trashed timestamp
+
+  Note: 'Silver: agents from bronze; strings normalized; linked to silver contacts for owner/primary_contact'
+}
+
+// Silver layer: project features — normalized subset from bronze; 1:1 per feature.
+// String fields normalized (trim, lowercase where applicable).
+Table qobrix_silver_project_features {
+  id uuid [pk, not null, ref: > qobrix_api_project_features.id]
+  code text [not null]
+  label text [not null]
+  field text [not null]
+  dist boolean
+  created timestamp
+  created_by uuid [ref: > common_users.id]
+  modified timestamp
+  modified_by uuid [ref: > common_users.id]
+  trashed timestamp
+
+  Note: 'Silver: project feature dictionary from bronze; strings normalized; refs common_users'
+}
+
+// Silver layer: property subtypes — normalized subset from bronze; 1:1 per subtype.
+// String fields normalized (trim, lowercase where applicable).
+Table qobrix_silver_property_subtypes {
+  id uuid [pk, not null, ref: > qobrix_api_property_subtypes.id]
+  code text [not null]
+  label text [not null]
+  property_type text [not null]
+  created timestamp
+  created_by uuid [ref: > common_users.id]
+  modified timestamp
+  modified_by uuid [ref: > common_users.id]
+  trashed timestamp
+
+  Note: 'Silver: property subtype dictionary from bronze; strings normalized; refs common_users'
+}
+
+// Silver layer: property types — normalized subset from bronze; 1:1 per type.
+// String fields normalized (trim, lowercase where applicable).
+Table qobrix_silver_property_types {
+  id uuid [pk, not null, ref: > qobrix_api_property_types.id]
+  code text [not null]
+  name text [not null]
+  base_type text
+  config text
+  display_order int
+  created timestamp
+  created_by uuid [ref: > common_users.id]
+  modified timestamp
+  modified_by uuid [ref: > common_users.id]
+  trashed timestamp
+
+  Note: 'Silver: property type dictionary from bronze; strings normalized; refs common_users'
+}
+
+// Silver layer: property viewings — normalized subset from bronze; 1:1 per property-viewing record.
+// Numeric assessments kept as decimals; text normalized.
+Table qobrix_silver_property_viewings {
+  id uuid [pk, not null, ref: > qobrix_api_property_viewings.id]
+  property_id uuid [not null, ref: > qobrix_silver_properties.id]
+  viewing_id uuid [not null]
+  display_order int
+  further_feedback text [note: 'Normalized']
+  exterior_appeal_assessment decimal
+  interior_appeal_assessment decimal
+  location_assessment decimal
+  price_assessment decimal
+  views_assessment decimal
+  viewing_outcome decimal
+  created timestamp
+  created_by uuid [ref: > common_users.id]
+  modified timestamp
+  modified_by uuid [ref: > common_users.id]
+  trashed timestamp
+
+  Note: 'Silver: property viewing feedback from bronze; refs qobrix_silver_properties and common_users'
+}
+
+// Silver layer: media categories — normalized subset from bronze; 1:1 per category.
+// String fields normalized; JSON arrays kept as text.
+Table qobrix_silver_media_categories {
+  id uuid [pk, not null, ref: > qobrix_api_media_categories.id]
+  name text [not null]
+  label text [not null]
+  related_model text
+  media_types text [note: 'JSON array']
+  mime_types text [note: 'JSON array']
+  dist boolean
+  public boolean
+  signature_required boolean
+  watermark boolean
+  created timestamp
+  created_by uuid [ref: > common_users.id]
+  modified timestamp
+  modified_by uuid [ref: > common_users.id]
+  trashed timestamp
+
+  Note: 'Silver: media category dictionary from bronze; strings normalized; refs common_users'
+}
+
+// Silver layer: media files — normalized subset from bronze; 1:1 per file.
+// URLs and filenames cleaned where applicable.
+Table qobrix_silver_media_files {
+  id uuid [pk, not null, ref: > qobrix_api_media_files.id]
+  filename text
+  original_filename text
+  original_url text
+  href text
+  thumbnails text
+  mime_type text
+  filesize int
+  filesystem text
+  created timestamp
+  modified timestamp
+
+  Note: 'Silver: media file metadata from bronze; strings normalized'
+}
+
+// Silver layer: media — normalized subset from bronze; 1:1 per media record.
+// Keeps generic related_model/related_id so it can point to properties, projects, etc.
+Table qobrix_silver_media {
+  id uuid [pk, not null, ref: > qobrix_api_media.id]
+  category_id uuid [ref: > qobrix_silver_media_categories.id]
+  related_model text [note: 'Normalized target model, e.g. properties, projects']
+  related_id uuid [note: 'Target record id; resolve to silver property/project by ETL']
+  media_type text
+  reference_id text
+  display_order int
+  file_id uuid [ref: > qobrix_silver_media_files.id]
+  created timestamp
+  modified timestamp
+
+  Note: 'Silver: media links from bronze; normalized strings and refs to silver media files/categories'
+}
+
+// Gold (CDL): leads/opportunities for apps — general lead record (who, when, status, source, CRM flags).
+Table common_leads {
+  id uuid [pk, not null, ref: > qobrix_silver_opportunities.id]
+  ref int
+  contact_profile_id uuid [not null, ref: > common_contact_profiles.id, note: 'Lead contact in CDL']
+  agent_id uuid [ref: > common_users.id]
+  owner_id uuid [ref: > common_users.id]
+  campaign_id uuid
+  created timestamp
+  created_by uuid [ref: > common_users.id]
+  modified timestamp
+  modified_by uuid [ref: > common_users.id]
+  enquiry_date date
+  enquiry_type text
+  status text
+  last_status_change timestamp
+  buy_rent text [note: 'to_buy, to_rent; use with enquiry_type to divide buying vs selling leads']
+  source text
+  direct_source text
+  source_description text
+  description text
+  website_url text
+  virtual_contact_name text
+  notify_matching_properties boolean
+  notify_properties_price_drop boolean
+  next_follow_up_date timestamp
+  last_website_visit timestamp
+  closed_lost_reason_id uuid
+  closed_lost_details text
+  custom_attended_webinar boolean
+  custom_do_not_contact boolean
+  custom_enquiry_low_budget boolean
+  custom_enquiry_stage_type text
+  custom_facebook_lead_id text
+  custom_general_interest_type text
+  custom_interest_type text
+  custom_mql boolean
+  custom_project uuid
+  custom_property uuid
+  custom_sql boolean
+  custom_webinars text
+
+  Note: 'Gold: lead record — identity, contact, assignment, status, source, CRM flags; refs common_contact_profiles, common_users'
+}
+
+// Gold (CDL): lead enquiry profile — property requirements/preferences (budget, location, size, features).
+Table common_lead_enquiry_profiles {
+  lead_id uuid [pk, not null, ref: > common_leads.id]
+  area_of_interest text
+  post_codes text [note: 'JSON array']
+  enquiry_subtypes text
+  town_planning_zone text
+  construction_stage text
+  sorting_expression text
+  list_selling_price_from decimal
+  list_selling_price_to decimal
+  list_selling_price decimal
+  list_rental_price_from decimal
+  list_rental_price_to decimal
+  list_letting_price decimal
+  lowest_selling_price decimal
+  lowest_letting_price decimal
+  bedrooms_from int
+  bedrooms_to int
+  bathrooms_from int
+  bathrooms_to int
+  covered_area_from_amount decimal
+  covered_area_to_amount decimal
+  internal_area_from_amount decimal
+  internal_area_to_amount decimal
+  total_area_from_amount decimal
+  total_area_to_amount decimal
+  plot_area_from_amount decimal
+  plot_area_to_amount decimal
+  storage_from_amount decimal
+  storage_to_amount decimal
+  frontage_from_amount decimal
+  frontage_to_amount decimal
+  covered_parking int
+  parking_from int
+  parking_to int
+  furnished text
+  air_condition boolean
+  common_swimming_pool boolean
+  private_swimming_pool boolean
+  concierge_reception boolean
+  electricity boolean
+  water boolean
+  elevator boolean
+  registered_road boolean
+  title_deeds boolean
+  new_build boolean
+  pets_allowed boolean
+  enclosed_office_room boolean
+  server_room boolean
+  business_transfer_or_sale boolean
+  business_transfer_commercial_activity text
+  custom_internal_area_amount decimal
+
+  Note: 'Gold: lead enquiry profile — property requirements (budget, location, size, features); one-to-one with common_leads'
+}
+
+// Gold — lead/opportunity change log (audit trail for leads).
+// Built from qobrix_api_opportunity_changes and app-side events; one row per field change.
+Table common_lead_changelog {
+  id uuid [pk, not null]
+  lead_id uuid [not null, ref: > common_leads.id, note: 'Lead/opportunity this change refers to']
+  changed_at timestamp [not null, note: 'When the change happened']
+  changed_by_user_id uuid [ref: > common_users.id, note: 'Who made the change; NULL for system/batch']
+  event_type varchar(50) [note: 'e.g. created, updated, status_changed, closed_lost']
+  field_name varchar(255) [note: 'Field that changed (e.g. status, list_selling_price_from); NULL for whole-record events']
+  old_value text [note: 'Previous value (string/JSON)']
+  new_value text [note: 'New value (string/JSON)']
+  source_system varchar(100) [note: 'e.g. qobrix, mls2_api, mobile_app, batch_import']
+  raw_event_id uuid [ref: - qobrix_api_opportunity_changes.id, note: 'Optional link back to raw Qobrix event']
+
+  Note: 'Gold CDL: lead/opportunity change logs; append-only audit trail per lead'
+}
+
+// Silver layer: only columns from app contact model (tmp/contacts_data_model.md).
+// String fields (phone, email, website, address, etc.) are normalized/cleaned in this layer.
+// Normalization rules: tmp/silver_contact_normalization_rules.md (for ETL and AI agents).
+Table qobrix_silver_contacts {
+  id uuid [pk, not null, ref: - qobrix_api_contacts.id]
+  ref int [not null]
+  first_name text [note: 'Normalized']
+  last_name text [note: 'Normalized']
+  name text [note: 'Full display name / company; normalized']
+  is_company boolean [not null]
+  email text [note: 'Normalized (trim, lowercase, validated)']
+  email_2 text [note: 'Normalized']
+  phone text [note: 'Normalized (e.g. E.164, trim)']
+  phone_2 text [note: 'Normalized']
+  website text [note: 'Normalized URL']
+  street text [note: 'Normalized']
+  city text [note: 'Normalized']
+  state text [note: 'Normalized']
+  post_code text [note: 'Normalized']
+  country text [note: 'Country code; normalized']
+  role text [note: 'Job title; normalized']
+  registration_number text [note: 'Normalized']
+  vat_number text [note: 'Normalized']
+  nationality text [note: 'Normalized']
+  assigned_to uuid [ref: > qobrix_silver_contacts.id]
+  description text [note: 'Notes; normalized']
+  email_consent boolean [not null, default: true]
+  sms_consent boolean [not null, default: true]
+  phone_consent boolean [not null, default: true]
+  postal_consent boolean [not null, default: true]
+  marketing_consent boolean [not null, default: true]
+  consent_token text
+  personal_data_cleared timestamp
+  created timestamp
+  modified timestamp
+  created_by uuid [ref: > qobrix_silver_contacts.id]
+  modified_by uuid [ref: > qobrix_silver_contacts.id]
+  custom_contact_person_first_name text [note: 'Normalized']
+  custom_contact_person_last_name text [note: 'Normalized']
+  custom_works_for uuid [ref: > qobrix_silver_contacts.id]
+  custom_mailchimp_subscriber_status text [note: 'subscribed, unsubscribed, cleaned, pending, transactional']
+
+  Note: 'Silver layer: subset of API contact columns; string fields normalized. Rules: tmp/silver_contact_normalization_rules.md'
+}
+
+
+// Common Data Layer: main user information (e.g. for assigned_to, created_by, modified_by).
+// Source: docs/qobrix_openapi.yaml — components/schemas/User (subset).
+Table common_users {
+  id uuid [pk, not null]
+  contact_id uuid [ref: - qobrix_silver_contacts.id, note: 'Linked contact (agent/person)']
+  active boolean [not null, default: true]
+  role varchar(255) [note: 'User role in system']
+  username varchar(255) [note: 'Login / unique identifier']
+  name text [note: 'Display name']
+
+  Note: 'Common Data Layer: main user/agent info; used by contacts.assigned_to, created_by, modified_by'
+}
+
+
+// Common Data Layer: contact profile — canonical contact data (name, address, contact info, etc.).
+// One row per contact; fed from qobrix_silver_contacts. Columns align with tmp/contacts_data_model.md.
+Table common_contact_profiles {
+  id uuid [pk, not null, ref: - common_users.id, note: 'One profile per silver contact']
+  ref int [not null, note: 'ContactLoginId']
+  first_name text [note: 'FirstName']
+  last_name text [note: 'LastName']
+  name text [note: 'FullName / company display name']
+  is_company boolean [not null]
+  email text [note: 'Email']
+  email_2 text [note: 'Email2']
+  phone text [note: 'HomePhone / DirectPhone']
+  phone_2 text [note: 'MobilePhone']
+  website text [note: 'Qobrix_website']
+  street text [note: 'HomeAddress1']
+  city text [note: 'HomeCity']
+  state text [note: 'HomeStateOrProvince']
+  post_code text [note: 'HomePostalCode']
+  country text [note: 'HomeCountry']
+  role text [note: 'JobTitle']
+  registration_number text
+  vat_number text
+  nationality text
+  assigned_to uuid [ref: <> common_users.id, note: 'OwnerMemberKey']
+  description text [note: 'Notes']
+  email_consent boolean [not null, default: true]
+  sms_consent boolean [not null, default: true]
+  phone_consent boolean [not null, default: true]
+  postal_consent boolean [not null, default: true]
+  marketing_consent boolean [not null, default: true]
+  consent_token text
+  personal_data_cleared timestamp
+  created timestamp
+  modified timestamp
+  created_by uuid [ref: <> common_users.id]
+  modified_by uuid [ref: <> common_users.id]
+  custom_contact_person_first_name text
+  custom_contact_person_last_name text
+  custom_works_for uuid [ref: <> common_users.id, note: 'Primary contact / company']
+  custom_mailchimp_subscriber_status text
+
+  Note: 'Common Data Layer: contact profile (name, address, contact info); source: qobrix_silver_contacts'
+}
+
+// Change log for one profile: one row per change event; stores modified timestamps (and who/when).
+// Append-only; aligns with ContactAuditLog idea in tmp/contacts_data_model.md.
+Table common_contact_profile_changelog {
+  id uuid [pk, not null, ref: - common_users.id]
+  changed_at timestamp [not null, note: 'When the change happened']
+  changed_by_user_id uuid [ref: <> common_users.id, note: 'Who made the change; NULL for system/batch']
+  event_type varchar(50) [note: 'e.g. created, updated, deleted, restored']
+  field_name varchar(255) [note: 'Field that changed (e.g. phone, role); NULL for whole-record events']
+  old_value text [note: 'Previous value (string/JSON)']
+  new_value text [note: 'New value (string/JSON)']
+  source_system varchar(100) [note: 'e.g. qobrix, mls2_api, mobile_app, batch_import']
+
+  Note: 'Change logs for one profile: modified timestamps and audit fields per event'
+}
+
+// Marketing/CRM segments (lists, tags) — distinct from profile.role (buyer/seller, etc.).
+// Examples: Newsletter, VIP, Open House 2024, Campaign X. A contact can be in many segments.
+Table common_contact_segments {
+  id uuid [pk, not null]
+  name varchar(255) [not null, note: 'e.g. Newsletter, VIP, Open House 2024']
+  description text [note: 'Optional description of the segment']
+  created_at timestamp [not null]
+
+  Note: 'Segment definitions; role (buyer/seller) stays on common_contact_profiles.role'
+}
+
+// Which profiles belong to which segments (many-to-many).
+Table common_contact_profile_segments {
+  contact_profile_id uuid [pk, not null, ref: > common_contact_profiles.id]
+  segment_id uuid [pk, not null, ref: > common_contact_segments.id]
+  added_at timestamp [not null]
+
+  Note: 'Junction: profile ↔ segment; composite PK (profile, segment)'
+}
