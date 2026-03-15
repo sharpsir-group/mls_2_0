@@ -14,19 +14,20 @@ import os
 
 from pyspark.sql import functions as F
 
-catalog = "mls2"
+# Must match the catalog and schema used in 00b (e.g. sharp + mls2 in your workspace)
+catalog = "sharp"
+schema = "mls2"
 spark.sql(f"USE CATALOG {catalog}")
+spark.sql("CREATE SCHEMA IF NOT EXISTS mls2")
+spark.sql(f"USE SCHEMA {schema}")
 
-# Ensure schemas exist
-spark.sql("CREATE SCHEMA IF NOT EXISTS qobrix_bronze")
-spark.sql("CREATE SCHEMA IF NOT EXISTS qobrix_silver")
-
-print("Using catalog:", catalog)
+print("Using catalog:", catalog, "schema:", schema)
 
 # COMMAND ----------
 
 print("Inspecting bronze qobrix_api_properties columns...")
-bronze_table = "qobrix_bronze.qobrix_api_properties"
+# Bronze tables live in sharp.mls2 (same schema as 00b)
+bronze_table = f"{catalog}.{schema}.qobrix_api_properties"
 bronze_df = spark.table(bronze_table)
 bronze_cols = set(c.lower() for c in bronze_df.columns)
 print(f"Bronze table {bronze_table} has {len(bronze_cols)} columns")
@@ -55,7 +56,7 @@ def col_or_null(col_name: str, alias: str | None = None) -> str:
 # mappings and deduplication will be done in the Gold layer.
 
 transform_sql = f"""
-CREATE OR REPLACE TABLE qobrix_silver.qobrix_silver_properties AS
+CREATE OR REPLACE TABLE mls2.qobrix_silver_properties AS
 SELECT
     -- Identifiers / relations
     {col_or_null('id')},
@@ -130,6 +131,7 @@ SELECT
 
     -- Location fields
     TRIM(p.coordinates)                                     AS coordinates,
+    {col_or_null('geocode_type')},
     UPPER(TRIM(p.country))                                  AS country,
     TRIM(p.state)                                           AS state,
     TRIM(p.city)                                            AS city,
@@ -289,14 +291,26 @@ SELECT
     LOWER(TRIM(p.industrial_type))            AS industrial_type,
     LOWER(TRIM(p.land_type))                  AS land_type,
     LOWER(TRIM(p.office_type))                AS office_type,
-    LOWER(TRIM(p.retail_type))                AS retail_type
+    LOWER(TRIM(p.retail_type))                AS retail_type,
+
+    -- Bazaraki portal fields (for common_property_bazaraki)
+    {col_or_null('custom_bazaraki_negotiable_price') if has_col('custom_bazaraki_negotiable_price') else 'CAST(NULL AS BOOLEAN) AS custom_bazaraki_negotiable_price'},
+    {col_or_null('custom_bazaraki_exchange') if has_col('custom_bazaraki_exchange') else 'CAST(NULL AS BOOLEAN) AS custom_bazaraki_exchange'},
+    {col_or_null('custom_bazaraki_registration_block') if has_col('custom_bazaraki_registration_block') else 'CAST(NULL AS INT) AS custom_bazaraki_registration_block'},
+    {col_or_null('custom_bazaraki_chosen_phone') if has_col('custom_bazaraki_chosen_phone') else 'CAST(NULL AS STRING) AS custom_bazaraki_chosen_phone'},
+    {col_or_null('custom_bazaraki_registration_number') if has_col('custom_bazaraki_registration_number') else 'CAST(NULL AS INT) AS custom_bazaraki_registration_number'},
+    {col_or_null('custom_bazaraki_online_viewing') if has_col('custom_bazaraki_online_viewing') else 'CAST(NULL AS BOOLEAN) AS custom_bazaraki_online_viewing'},
+    {col_or_null('custom_bazaraki_url') if has_col('custom_bazaraki_url') else 'CAST(NULL AS STRING) AS custom_bazaraki_url'},
+    {col_or_null('custom_bazaraki_location') if has_col('custom_bazaraki_location') else 'CAST(NULL AS STRING) AS custom_bazaraki_location'},
+    {col_or_null('custom_bazaraki_disallow_chat') if has_col('custom_bazaraki_disallow_chat') else 'CAST(NULL AS BOOLEAN) AS custom_bazaraki_disallow_chat'},
+    {col_or_null('custom_bazaraki_phone_hide') if has_col('custom_bazaraki_phone_hide') else 'CAST(NULL AS BOOLEAN) AS custom_bazaraki_phone_hide'}
 
 FROM {bronze_table} p
 """
 
-print("Creating qobrix_silver.qobrix_silver_properties from bronze...")
+print("Creating mls2.qobrix_silver_properties from bronze...")
 spark.sql(transform_sql)
 
-silver_df = spark.table("qobrix_silver.qobrix_silver_properties")
+silver_df = spark.table(f"{catalog}.{schema}.qobrix_silver_properties")
 print(f"✅ Silver properties rows: {silver_df.count()}, columns: {len(silver_df.columns)}")
 

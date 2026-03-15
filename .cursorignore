@@ -28,3 +28,8 @@ tmp/*
 
 # But allow if explicitly in path when user requests
 # This prevents automatic creation but allows explicit requests
+
+# Matrix Platform Knowledge Base — allow reading for docs and AI context
+!matrix-platform-kb-main/
+!matrix-platform-kb-main/**/*
+

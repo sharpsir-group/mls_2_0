@@ -14,41 +14,42 @@
 # COMMAND ----------
 
 from pyspark.sql import functions as F
+from pyspark.sql.window import Window
 
-catalog = "mls2"
+# Must match the catalog and schema used in 00b and 02e (e.g. sharp + mls2)
+catalog = "sharp"
+schema = "mls2"
 spark.sql(f"USE CATALOG {catalog}")
-
-spark.sql("CREATE SCHEMA IF NOT EXISTS qobrix_silver")
+spark.sql("CREATE SCHEMA IF NOT EXISTS mls2")
 spark.sql("CREATE SCHEMA IF NOT EXISTS common")
 
-print("Using catalog:", catalog)
+print("Using catalog:", catalog, "schema:", schema)
 
-silver_table = "qobrix_silver.qobrix_silver_properties"
+# Silver table lives in sharp.mls2
+silver_table = f"{catalog}.{schema}.qobrix_silver_properties"
 silver_df = spark.table(silver_table)
 print(f"Silver table {silver_table}: {silver_df.count()} rows, {len(silver_df.columns)} columns")
 
 # Deduplicate: group by business key (ref, project, address) and keep latest modified
-dedup_key_expr = """
-    COALESCE(CAST(ref AS STRING), '')           AS k_ref,
-    COALESCE(CAST(project AS STRING), '')       AS k_project,
-    COALESCE(UPPER(TRIM(country)), '')          AS k_country,
-    COALESCE(LOWER(TRIM(city)), '')             AS k_city,
-    COALESCE(LOWER(TRIM(municipality)), '')     AS k_municipality,
-    COALESCE(LOWER(TRIM(post_code)), '')        AS k_post_code,
-    COALESCE(LOWER(TRIM(street)), '')           AS k_street,
-    COALESCE(LOWER(TRIM(unit_number)), '')      AS k_unit_number
-"""
+# Each expression must be a separate argument to selectExpr (no comma inside one string)
+dedup_key_exprs = [
+    "COALESCE(CAST(ref AS STRING), '') AS k_ref",
+    "COALESCE(CAST(project AS STRING), '') AS k_project",
+    "COALESCE(UPPER(TRIM(country)), '') AS k_country",
+    "COALESCE(LOWER(TRIM(city)), '') AS k_city",
+    "COALESCE(LOWER(TRIM(municipality)), '') AS k_municipality",
+    "COALESCE(LOWER(TRIM(post_code)), '') AS k_post_code",
+    "COALESCE(LOWER(TRIM(street)), '') AS k_street",
+    "COALESCE(LOWER(TRIM(unit_number)), '') AS k_unit_number",
+]
 
 dedup_df = (
     silver_df
-    .selectExpr(
-        "*",
-        dedup_key_expr
-    )
+    .selectExpr("*", *dedup_key_exprs)
     .withColumn(
         "_rn",
         F.row_number().over(
-            F.Window.partitionBy(
+            Window.partitionBy(
                 "k_ref",
                 "k_project",
                 "k_country",
@@ -93,8 +94,8 @@ SELECT
     modified                                  AS modified,
 
     -- Assignment / relationships
-    NULL::uuid                                AS created_by,      -- to be populated from common_users later
-    NULL::uuid                                AS modified_by,     -- to be populated from common_users later
+    CAST(NULL AS STRING)                        AS created_by,      -- to be populated from common_users later
+    CAST(NULL AS STRING)                        AS modified_by,     -- to be populated from common_users later
     agent                                     AS agent_id,        -- will point to common_users.id once populated
     salesperson                               AS salesperson_id,  -- will point to common_users.id once populated
     seller                                    AS seller_id,       -- will point to common_contact_profiles.id
@@ -123,7 +124,7 @@ SELECT
 
     -- Location
     coordinates                              AS coordinates,
-    geocode_type                             AS geocode_type,
+    CAST(NULL AS STRING)                     AS geocode_type,
     country                                  AS country,
     state                                    AS state,
     city                                     AS city,
@@ -290,16 +291,16 @@ SELECT
     licensed_for                             AS licensed_for,
     key_holder_details                       AS key_holder_details,
 
-    -- Feature/flag fields
-    featured                                 AS featured,
-    featured_priority                        AS featured_priority,
-    property_of_the_month                    AS property_of_the_month,
-    last_media_update                        AS last_media_update,
-    inherit_project_media                    AS inherit_project_media,
+    -- Feature/flag fields (not in current silver; use NULL until added to 02e)
+    CAST(NULL AS BOOLEAN)                    AS featured,
+    CAST(NULL AS INT)                        AS featured_priority,
+    CAST(NULL AS BOOLEAN)                    AS property_of_the_month,
+    CAST(NULL AS TIMESTAMP)                  AS last_media_update,
+    CAST(NULL AS BOOLEAN)                    AS inherit_project_media,
 
-    -- Extra marketing attributes
-    kitchen_type                             AS kitchen_type,
-    office_layout                            AS office_layout,
+    -- Extra marketing attributes (not in current silver)
+    CAST(NULL AS STRING)                     AS kitchen_type,
+    CAST(NULL AS STRING)                     AS office_layout,
     original_name                            AS original_name,
     original_ref                             AS original_ref
 
@@ -309,4 +310,30 @@ FROM qobrix_silver_properties_dedup
 
 gold_listing = spark.table("common.common_property_listing")
 print(f"✅ common.common_property_listing: {gold_listing.count()} rows, {len(gold_listing.columns)} columns")
+
+# COMMAND ----------
+
+print("Creating gold.common_property_bazaraki ...")
+
+spark.sql(
+    """
+CREATE OR REPLACE TABLE common.common_property_bazaraki AS
+SELECT
+    id                                       AS property_id,
+    custom_bazaraki_negotiable_price         AS custom_bazaraki_negotiable_price,
+    custom_bazaraki_exchange                 AS custom_bazaraki_exchange,
+    custom_bazaraki_registration_block       AS custom_bazaraki_registration_block,
+    custom_bazaraki_chosen_phone             AS custom_bazaraki_chosen_phone,
+    custom_bazaraki_registration_number      AS custom_bazaraki_registration_number,
+    custom_bazaraki_online_viewing           AS custom_bazaraki_online_viewing,
+    custom_bazaraki_url                      AS custom_bazaraki_url,
+    custom_bazaraki_location                 AS custom_bazaraki_location,
+    custom_bazaraki_disallow_chat            AS custom_bazaraki_disallow_chat,
+    custom_bazaraki_phone_hide               AS custom_bazaraki_phone_hide
+FROM qobrix_silver_properties_dedup
+"""
+)
+
+gold_bazaraki = spark.table("common.common_property_bazaraki")
+print(f"✅ common.common_property_bazaraki: {gold_bazaraki.count()} rows, {len(gold_bazaraki.columns)} columns")
 

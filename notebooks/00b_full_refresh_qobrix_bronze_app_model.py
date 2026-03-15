@@ -18,12 +18,14 @@
 
 import os
 import requests
+import json as _json
 from typing import List, Dict, Optional
 
 from pyspark.sql import DataFrame, functions as F
 
-catalog = "mls2"
-schema = "qobrix_bronze"
+# Use the existing default Unity Catalog in your workspace
+catalog = "sharp"
+schema = "mls2"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"USE SCHEMA {schema}")
 
@@ -46,6 +48,9 @@ headers = {
     "X-Api-Key": qobrix_api_key,
 }
 
+# Optional: set to True to fetch and write media tables (qobrix_api_media, qobrix_api_media_files)
+INCLUDE_MEDIA = False
+
 # Optional test mode
 test_mode = True
 max_properties = 50 if test_mode else None
@@ -53,6 +58,8 @@ max_contacts = 200 if test_mode else None
 max_projects = 100 if test_mode else None
 max_viewings = 100 if test_mode else None
 max_opportunities = 200 if test_mode else None
+max_property_changes = 500 if test_mode else None
+max_opportunity_changes = 500 if test_mode else None
 
 if test_mode:
     print("🧪 TEST MODE ENABLED")
@@ -61,6 +68,8 @@ if test_mode:
     print(f"Max projects:     {max_projects}")
     print(f"Max viewings:     {max_viewings}")
     print(f"Max opportunities:{max_opportunities}")
+    print(f"Max property changes: {max_property_changes}")
+    print(f"Max opportunity changes: {max_opportunity_changes}")
 
 # COMMAND ----------
 
@@ -110,10 +119,29 @@ def fetch_paginated(endpoint: str, max_records: Optional[int] = None, page_size:
 
 
 def records_to_df(records: List[Dict]) -> Optional[DataFrame]:
-    """Convert list[dict] -> Spark DataFrame without pandas.json_normalize."""
+    """
+    Convert list[dict] -> Spark DataFrame.
+    To avoid schema conflicts like StringType vs MapType for fields that are
+    sometimes objects and sometimes strings (e.g. created_by_user), we
+    JSON-encode any dict/list values into strings. This keeps the structure
+    raw but prevents Spark from inferring incompatible types.
+    """
     if not records:
         return None
-    return spark.createDataFrame(records)
+    normalized: List[Dict] = []
+    for rec in records:
+        out: Dict = {}
+        for k, v in rec.items():
+            # JSON-encode nested structures
+            if isinstance(v, (dict, list)):
+                out[k] = _json.dumps(v, ensure_ascii=False)
+            # Replace None with empty string so Spark can infer a concrete type
+            elif v is None:
+                out[k] = ""
+            else:
+                out[k] = v
+        normalized.append(out)
+    return spark.createDataFrame(normalized)
 
 
 def overwrite_table(df: DataFrame, full_table_name: str):
@@ -183,59 +211,67 @@ print("\n1️⃣1️⃣ Media Categories (/media/categories)...")
 raw_media_categories = fetch_paginated("/media/categories")
 print(f"   Fetched: {len(raw_media_categories)}")
 
+print("\n1️⃣1️⃣b Property changes (/properties/changes)...")
+raw_property_changes = fetch_paginated("/properties/changes", max_records=max_property_changes)
+print(f"   Fetched: {len(raw_property_changes)}")
+
+print("\n1️⃣1️⃣c Opportunity changes (/opportunities/changes)...")
+raw_opportunity_changes = fetch_paginated("/opportunities/changes", max_records=max_opportunity_changes)
+print(f"   Fetched: {len(raw_opportunity_changes)}")
+
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Fetch property + project media (for media/media_files tables)
+# MAGIC ## Fetch property + project media (optional; set INCLUDE_MEDIA = True to enable)
 
 # COMMAND ----------
 
+if INCLUDE_MEDIA:
 
-def fetch_media_for_entity(entity: str, ids: List[str], categories=("photos", "documents", "floorplans")) -> List[Dict]:
-    """
-    Fetch media for given Qobrix entity type ('Properties' or 'Projects').
-    Returns list of media JSON records from API (with file structs).
-    """
-    all_media: List[Dict] = []
-    base_url = api_base_url.replace("/api/v2", "")  # for building absolute href
+    def fetch_media_for_entity(entity: str, ids: List[str], categories=("photos", "documents", "floorplans")) -> List[Dict]:
+        """
+        Fetch media for given Qobrix entity type ('Properties' or 'Projects').
+        Returns list of media JSON records from API (with file structs).
+        """
+        all_media: List[Dict] = []
+        base_url = api_base_url.replace("/api/v2", "")  # for building absolute href
 
-    for i, entity_id in enumerate(ids):
-        for category in categories:
-            try:
-                url = f"{api_base_url}/media/by-category/{category}/{entity}/{entity_id}"
-                resp = requests.get(url, headers=headers, timeout=timeout_seconds)
-                if resp.status_code == 200:
-                    media_data = resp.json().get("data", []) or []
-                    for m in media_data:
-                        m["related_model"] = entity
-                        m["related_id"] = entity_id
-                        m["media_category"] = category
-                        # Make file.href absolute
-                        if m.get("file", {}).get("href"):
-                            href = m["file"]["href"]
-                            if href.startswith("/"):
-                                m["file"]["href"] = f"{base_url}{href}"
-                    all_media.extend(media_data)
-            except Exception as e:
-                print(f"   Error fetching media for {entity} {entity_id}: {e}")
+        for i, entity_id in enumerate(ids):
+            for category in categories:
+                try:
+                    url = f"{api_base_url}/media/by-category/{category}/{entity}/{entity_id}"
+                    resp = requests.get(url, headers=headers, timeout=timeout_seconds)
+                    if resp.status_code == 200:
+                        media_data = resp.json().get("data", []) or []
+                        for m in media_data:
+                            m["related_model"] = entity
+                            m["related_id"] = entity_id
+                            m["media_category"] = category
+                            # Make file.href absolute
+                            if m.get("file", {}).get("href"):
+                                href = m["file"]["href"]
+                                if href.startswith("/"):
+                                    m["file"]["href"] = f"{base_url}{href}"
+                        all_media.extend(media_data)
+                except Exception as e:
+                    print(f"   Error fetching media for {entity} {entity_id}: {e}")
 
-        if (i + 1) % 25 == 0:
-            print(f"   Media progress {entity}: {i + 1}/{len(ids)}, total media {len(all_media)}")
+            if (i + 1) % 25 == 0:
+                print(f"   Media progress {entity}: {i + 1}/{len(ids)}, total media {len(all_media)}")
 
-    return all_media
+        return all_media
 
-
-print("\n1️⃣2️⃣ Property + Project Media ...")
-
-property_ids = [p.get("id") for p in raw_properties if p.get("id")]
-project_ids = [p.get("id") for p in raw_projects if p.get("id")]
-
-property_media = fetch_media_for_entity("Properties", property_ids)
-project_media = fetch_media_for_entity("Projects", project_ids)
-
-all_media_raw = property_media + project_media
-print(f"   Total media items: {len(all_media_raw)}")
+    print("\n1️⃣2️⃣ Property + Project Media ...")
+    property_ids = [p.get("id") for p in raw_properties if p.get("id")]
+    project_ids = [p.get("id") for p in raw_projects if p.get("id")]
+    property_media = fetch_media_for_entity("Properties", property_ids)
+    project_media = fetch_media_for_entity("Projects", project_ids)
+    all_media_raw = property_media + project_media
+    print(f"   Total media items: {len(all_media_raw)}")
+else:
+    all_media_raw = []
+    print("\n1️⃣2️⃣ Property + Project Media ... skipped (INCLUDE_MEDIA = False)")
 
 
 # COMMAND ----------
@@ -261,21 +297,31 @@ overwrite_table(records_to_df(raw_users), "qobrix_api_users")
 overwrite_table(records_to_df(raw_property_viewings), "qobrix_api_property_viewings")
 overwrite_table(records_to_df(raw_opportunities), "qobrix_api_opportunities")
 overwrite_table(records_to_df(raw_media_categories), "qobrix_api_media_categories")
+overwrite_table(records_to_df(raw_property_changes), "qobrix_api_property_changes")
+overwrite_table(records_to_df(raw_opportunity_changes), "qobrix_api_opportunity_changes")
 
-# 2. Media: split into qobrix_api_media_files + qobrix_api_media
-media_df = records_to_df(all_media_raw)
+# 2. Media tables (only when INCLUDE_MEDIA = True and we have media data)
+if INCLUDE_MEDIA and all_media_raw:
+    def _normalize_media_file(rec: Dict) -> Dict:
+        out = dict(rec)
+        f = rec.get("file")
+        if f is None:
+            out["file"] = {}
+        elif isinstance(f, str):
+            try:
+                out["file"] = _json.loads(f) or {}
+            except Exception:
+                out["file"] = {}
+        else:
+            out["file"] = f if isinstance(f, dict) else {}
+        return out
 
-if media_df is not None and not media_df.rdd.isEmpty():
-    files_df = (
-        media_df
-        .select("file.*")
-        .dropDuplicates(["id"])
-    )
-    overwrite_table(files_df, "qobrix_api_media_files")
-
-    media_links_df = (
-        media_df
-        .select(
+    media_normalized = [_normalize_media_file(m) for m in all_media_raw]
+    media_df = spark.createDataFrame(media_normalized)
+    if not media_df.rdd.isEmpty():
+        files_df = media_df.select("file.*").dropDuplicates(["id"])
+        overwrite_table(files_df, "qobrix_api_media_files")
+        media_links_df = media_df.select(
             F.col("id").alias("id"),
             F.col("category_id"),
             F.col("related_model"),
@@ -287,10 +333,11 @@ if media_df is not None and not media_df.rdd.isEmpty():
             F.col("created"),
             F.col("modified"),
         )
-    )
-    overwrite_table(media_links_df, "qobrix_api_media")
+        overwrite_table(media_links_df, "qobrix_api_media")
+    else:
+        print("   ⚠️ Media DataFrame empty, skipping media tables.")
 else:
-    print("   ⚠️ No media returned, skipping media tables.")
+    print("   ⚠️ Media tables skipped (INCLUDE_MEDIA = False or no media data).")
 
 print("\n" + "=" * 80)
 print("✅ QOBRIX BRONZE (DBML qobrix_api_*) COMPLETE")
