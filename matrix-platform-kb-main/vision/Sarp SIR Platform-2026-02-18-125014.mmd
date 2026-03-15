@@ -1,0 +1,73 @@
+---
+config:
+  layout: elk
+  theme: neo
+---
+flowchart LR
+ subgraph subGraph0["Внешние каналы"]
+        Email["Email"]
+        Telegram["Telegram"]
+        WhatsApp["WhatsApp BSP"]
+        Voice["Voice"]
+        Ads["Google Ads, Meta Ads, др."]
+        Other["Other"]
+  end
+ subgraph subGraph1["Собственные каналы"]
+        Web["Публичный сайт"]
+        Portal["Личный кабинет"]
+        Mobile["Мобильное приложение"]
+  end
+ subgraph subGraph2["Интеграционный слой"]
+        APIGW["API Gateway / ESB"]
+  end
+ subgraph subGraph3["Прикладные системы"]
+        Sales["Система управления продажами"]
+        Listings["Система управления листингами"]
+        MKT["Маркетинговая платформа"]
+        Contact["Сервисы контакт-центра"]
+        AgentUI["CMS публичных сайтов"]
+  end
+ subgraph subGraph4["Данные и аналитика"]
+        DWH["Корпоративное хранилище данных (КХД / CDP)"]
+        ETL["ETL / Data Integration"]
+  end
+ subgraph subGraph5["AI/ML и аналитика"]
+        GenAI["Провайдеры GenAI и Embedding"]
+        Scoring["Скоринговые модели"]
+        Agents["AI-агенты"]
+        RAG["RAG"]
+        SemanticSearch["Семантический поиск"]
+        Recommender["Рекомендательная система"]
+  end
+ subgraph subGraph6["Внешние сервисы"]
+        MLS["MLS / партнёрские листинги"]
+        Finance["Финансовые системы (банк, биллинг)"]
+        Docs["Электронный документооборот (e-sign, облако)"]
+  end
+ subgraph s1["Управленческая отчетность"]
+        BI["BI"]
+  end
+    Email --- APIGW
+    Telegram --- APIGW
+    WhatsApp --- APIGW
+    Voice --- APIGW
+    Other --- APIGW
+    Web --- APIGW
+    Portal --- APIGW
+    Mobile --- APIGW
+    APIGW --- Sales & Listings & AgentUI & Contact & MKT
+    Sales --> ETL
+    Sales --- Finance & Docs & MLS
+    Listings --> ETL
+    Listings --- MLS & Finance
+    MKT --> ETL
+    Contact --> ETL
+    ETL --> DWH
+    DWH --> BI & Scoring & Recommender & RAG & SemanticSearch
+    RAG --> GenAI
+    GenAI --> Agents
+    Ads --- APIGW
+    subGraph5 L_subGraph5_subGraph3_0@--> subGraph3
+
+
+    L_subGraph5_subGraph3_0@{ animation: slow }

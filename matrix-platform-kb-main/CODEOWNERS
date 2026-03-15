@@ -1,0 +1,23 @@
+# Sharp Matrix Platform KB — Code Owners
+
+# Platform docs (CTO/CDTO)
+/docs/platform/ @cdto
+
+# Data models (Data Engineering)
+/docs/data-models/ @data-engineering
+
+# Business processes (CDSO)
+/docs/business-processes/ @cdso
+
+# Product specs (VP Product)
+/docs/product-specs/ @vp-product
+
+# Vision & strategy (Leadership)
+/docs/vision/ @cdso @cdto
+
+# Architecture decisions (CTO)
+/docs/architecture/ @cdto
+
+# Root navigation (CTO)
+/AGENTS.md @cdto
+/docs/INDEX.md @cdto

@@ -1,10 +1,14 @@
 # Cursor Ignore - Files to ignore in suggestions
 
+# Explicitly allow docs directory (including .md) for tools
+!docs/**
+
 # Documentation files (unless explicitly requested)
 *.md
 !README.md
 !CHANGELOG.md
 !tmp/*.md
+!docs/**
 
 # Temporary files and directories
 # tmp/ folder hosts auxiliary scripts and markdown files - these should be accessible
@@ -24,3 +28,8 @@ tmp/*
 
 # But allow if explicitly in path when user requests
 # This prevents automatic creation but allows explicit requests
+
+# Matrix Platform Knowledge Base — allow reading for docs and AI context
+!matrix-platform-kb-main/
+!matrix-platform-kb-main/**/*
+
