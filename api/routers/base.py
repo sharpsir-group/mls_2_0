@@ -140,9 +140,6 @@ async def execute_odata_query(
     connector = get_databricks_connector()
     parser = get_odata_parser()
     
-    if settings.reso_api_public_url:
-        base_url = settings.reso_api_public_url.rstrip("/")
-    
     # Build office filter
     office_filter = build_office_filter(allowed_offices or [])
     
@@ -175,9 +172,9 @@ async def execute_odata_query(
             record = convert_numeric_fields(record)
             values.append(record)
         
-        # Build response
+        # Build response with relative URLs (avoids host/scheme/proxy issues)
         response = {
-            "@odata.context": f"{base_url}/$metadata#{resource_name}",
+            "@odata.context": f"/$metadata#{resource_name}",
             "value": values
         }
         
@@ -188,12 +185,12 @@ async def execute_odata_query(
             total_count = int(count_result["data"][0][0]) if count_result["data"] else 0
             response["@odata.count"] = total_count
         
-        # Add nextLink for pagination
+        # Add nextLink for pagination (relative path)
         actual_top = parser.parse_top(top)
         actual_skip = parser.parse_skip(skip)
         if len(values) == actual_top:
             next_skip = actual_skip + actual_top
-            response["@odata.nextLink"] = f"{base_url}/odata/{resource_name}?$skip={next_skip}&$top={actual_top}"
+            response["@odata.nextLink"] = f"/odata/{resource_name}?$skip={next_skip}&$top={actual_top}"
             if filter:
                 response["@odata.nextLink"] += f"&$filter={filter}"
             if select:
@@ -240,9 +237,6 @@ async def get_entity_by_key(
     connector = get_databricks_connector()
     settings = get_settings()
     
-    if settings.reso_api_public_url:
-        base_url = settings.reso_api_public_url.rstrip("/")
-    
     # Build office filter
     office_filter = build_office_filter(allowed_offices or [])
     
@@ -285,7 +279,7 @@ async def get_entity_by_key(
         
         # Convert numeric fields per RESO spec
         record = convert_numeric_fields(record)
-        record["@odata.context"] = f"{base_url}/$metadata#{resource_name}/$entity"
+        record["@odata.context"] = f"/$metadata#{resource_name}/$entity"
         
         return record
         
