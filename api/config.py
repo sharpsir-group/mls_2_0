@@ -202,6 +202,7 @@ class Settings(BaseSettings):
     # API server settings
     reso_api_host: str = "0.0.0.0"
     reso_api_port: int = 3900
+    reso_api_public_url: str = ""
     
     # API metadata
     api_title: str = "RESO Web API"

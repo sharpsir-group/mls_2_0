@@ -140,6 +140,9 @@ async def execute_odata_query(
     connector = get_databricks_connector()
     parser = get_odata_parser()
     
+    if settings.reso_api_public_url:
+        base_url = settings.reso_api_public_url.rstrip("/")
+    
     # Build office filter
     office_filter = build_office_filter(allowed_offices or [])
     
@@ -236,6 +239,9 @@ async def get_entity_by_key(
     """
     connector = get_databricks_connector()
     settings = get_settings()
+    
+    if settings.reso_api_public_url:
+        base_url = settings.reso_api_public_url.rstrip("/")
     
     # Build office filter
     office_filter = build_office_filter(allowed_offices or [])
