@@ -224,8 +224,9 @@ send_email_report() {
 ${LOG_TAIL}"
     fi
     
-    # Build HTML email
-    cat << EOF | mail -a "Content-Type: text/html; charset=UTF-8" -s "$subject" "$EMAIL_TO"
+    # Build HTML email body
+    local html_body
+    html_body=$(cat << HTMLEOF
 <!DOCTYPE html>
 <html>
 <head>
@@ -403,7 +404,43 @@ ${LOG_TAIL}"
     </table>
 </body>
 </html>
-EOF
+HTMLEOF
+)
+    
+    # Send via Resend API
+    local resend_key="${RESEND_API_KEY:-}"
+    if [ -z "$resend_key" ]; then
+        echo "⚠️ RESEND_API_KEY not set, cannot send email" >&2
+        return 1
+    fi
+    
+    local json_payload
+    json_payload=$(python3 -c "
+import json, sys
+html = sys.stdin.read()
+print(json.dumps({
+    'from': 'MLS Pipeline <noreply@humaticai.com>',
+    'to': ['$EMAIL_TO'],
+    'subject': '$subject',
+    'html': html
+}))
+" <<< "$html_body")
+    
+    local response
+    response=$(curl -s -w "\n%{http_code}" -X POST "https://api.resend.com/emails" \
+        -H "Authorization: Bearer $resend_key" \
+        -H "Content-Type: application/json" \
+        -d "$json_payload" 2>&1)
+    
+    local http_code
+    http_code=$(echo "$response" | tail -1)
+    
+    if [ "$http_code" = "200" ]; then
+        return 0
+    else
+        echo "⚠️ Resend API returned HTTP $http_code: $(echo "$response" | head -1)" >&2
+        return 1
+    fi
 }
 
 # ════════════════════════════════════════════════════════════════════════════
