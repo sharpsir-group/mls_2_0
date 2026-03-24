@@ -72,7 +72,7 @@ class DashBronzeLoader:
             "Authorization": f"Bearer {self.settings.databricks_token}",
             "Content-Type": "application/json"
         }
-        self.catalog = "mls2"
+        self.catalog = (self.settings.databricks_catalog or "mls_2_0").strip() or "mls_2_0"
         self.schema = "dash_bronze"
     
     async def execute_query(self, sql: str) -> dict[str, Any]:

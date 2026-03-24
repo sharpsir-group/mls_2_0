@@ -46,15 +46,15 @@ import pandas as pd
 import json as _json
 from typing import Dict, Any, List, Tuple
 
-catalog = "mls2"
-spark.sql(f"USE CATALOG {catalog}")
-
-timeout_seconds = 30
-
-# Widgets for credentials (can be passed via job parameters)
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
 dbutils.widgets.text("QOBRIX_API_USER", "")
 dbutils.widgets.text("QOBRIX_API_KEY", "")
 dbutils.widgets.text("QOBRIX_API_BASE_URL", "")
+
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
+spark.sql(f"USE CATALOG {catalog}")
+
+timeout_seconds = 30
 
 # Priority: env vars > widgets > empty (will fail validation)
 qobrix_api_user = os.getenv("QOBRIX_API_USER") or dbutils.widgets.get("QOBRIX_API_USER")

@@ -10,9 +10,9 @@
 # MAGIC 
 # MAGIC **Purpose:** Normalizes and cleans contact data from bronze layer.
 # MAGIC 
-# MAGIC **Input:** `mls2.qobrix_bronze.contacts`
+# MAGIC **Input:** `<uc_catalog>.qobrix_bronze.contacts`
 # MAGIC 
-# MAGIC **Output:** `mls2.qobrix_silver.contact` with normalized fields:
+# MAGIC **Output:** `<uc_catalog>.qobrix_silver.contact` with normalized fields:
 # MAGIC - Cleaned and validated contact information
 # MAGIC - Normalized role/type values
 # MAGIC - Company vs individual classification
@@ -27,7 +27,10 @@
 
 # COMMAND ----------
 
-catalog = "mls2"
+import os
+
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS qobrix_silver")
 

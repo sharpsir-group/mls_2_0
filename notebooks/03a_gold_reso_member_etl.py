@@ -10,9 +10,9 @@
 # MAGIC 
 # MAGIC **Purpose:** Creates RESO-compliant Member resource from normalized Qobrix agent data.
 # MAGIC 
-# MAGIC **Input:** `mls2.qobrix_silver.agent`
+# MAGIC **Input:** `<uc_catalog>.qobrix_silver.agent`
 # MAGIC 
-# MAGIC **Output:** `mls2.reso_gold.member` with RESO standard fields:
+# MAGIC **Output:** `<uc_catalog>.reso_gold.member` with RESO standard fields:
 # MAGIC - `MemberKey` - Unique identifier (QOBRIX_AGENT_{id} or QOBRIX_USER_{id})
 # MAGIC - `MemberMlsId` - MLS ID (Qobrix ref)
 # MAGIC - `MemberFirstName`, `MemberLastName`, `MemberFullName`
@@ -34,7 +34,8 @@
 
 import os
 
-catalog = "mls2"
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS reso_gold")
 

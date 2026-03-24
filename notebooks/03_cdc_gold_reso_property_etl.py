@@ -15,9 +15,9 @@
 # MAGIC 2. MERGEs only changed records into gold (insert/update)
 # MAGIC 3. Much faster than full refresh for incremental updates
 # MAGIC 
-# MAGIC **Input:** `mls2.qobrix_silver.property`, `mls2.qobrix_bronze.properties`
+# MAGIC **Input:** `<uc_catalog>.qobrix_silver.property`, `<uc_catalog>.qobrix_bronze.properties`
 # MAGIC 
-# MAGIC **Output:** `mls2.reso_gold.property` (125+ fields)
+# MAGIC **Output:** `<uc_catalog>.reso_gold.property` (125+ fields)
 # MAGIC 
 # MAGIC **When to use:**
 # MAGIC - After CDC silver sync: Run this notebook
@@ -33,7 +33,8 @@
 from datetime import datetime
 import os
 
-catalog = "mls2"
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
 spark.sql(f"USE CATALOG {catalog}")
 
 # Widget for OriginatingSystemOfficeKey (passed via job parameters)

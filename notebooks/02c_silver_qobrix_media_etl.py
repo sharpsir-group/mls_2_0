@@ -12,10 +12,10 @@
 # MAGIC Includes both direct property media and project media linked to properties.
 # MAGIC 
 # MAGIC **Input:** 
-# MAGIC - `mls2.qobrix_bronze.property_media` (direct property media)
-# MAGIC - `mls2.qobrix_bronze.properties` (to link properties to projects)
+# MAGIC - `<uc_catalog>.qobrix_bronze.property_media` (direct property media)
+# MAGIC - `<uc_catalog>.qobrix_bronze.properties` (to link properties to projects)
 # MAGIC 
-# MAGIC **Output:** `mls2.qobrix_silver.media` with normalized fields:
+# MAGIC **Output:** `<uc_catalog>.qobrix_silver.media` with normalized fields:
 # MAGIC - Cleaned URLs and file paths
 # MAGIC - Normalized media types
 # MAGIC - Order/sequence handling
@@ -31,7 +31,10 @@
 
 # COMMAND ----------
 
-catalog = "mls2"
+import os
+
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS qobrix_silver")
 

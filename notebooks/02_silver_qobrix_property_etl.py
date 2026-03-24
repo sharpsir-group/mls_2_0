@@ -10,9 +10,9 @@
 # MAGIC 
 # MAGIC **Purpose:** Transforms raw Qobrix properties from bronze to normalized silver layer.
 # MAGIC 
-# MAGIC **Input:** `mls2.qobrix_bronze.properties`
+# MAGIC **Input:** `<uc_catalog>.qobrix_bronze.properties`
 # MAGIC 
-# MAGIC **Output:** `mls2.qobrix_silver.property` with:
+# MAGIC **Output:** `<uc_catalog>.qobrix_silver.property` with:
 # MAGIC - Cleaned identifiers (qobrix_id, qobrix_ref)
 # MAGIC - Normalized attributes (bedrooms, bathrooms, areas)
 # MAGIC - Typed columns (INT, DECIMAL, TIMESTAMP)
@@ -28,7 +28,10 @@
 
 # COMMAND ----------
 
-catalog = "mls2"
+import os
+
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
 spark.sql(f"USE CATALOG {catalog}")
 
 print("Using catalog:", catalog)

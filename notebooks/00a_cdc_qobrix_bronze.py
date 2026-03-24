@@ -59,17 +59,18 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pyspark.sql.functions import lit, current_timestamp
 
-catalog = "mls2"
+# Widgets (job base_parameters from scripts/run_pipeline.sh)
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
+dbutils.widgets.text("QOBRIX_API_USER", "")
+dbutils.widgets.text("QOBRIX_API_KEY", "")
+dbutils.widgets.text("QOBRIX_API_BASE_URL", "")
+
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
 schema = "qobrix_bronze"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"USE SCHEMA {schema}")
 
 timeout_seconds = 30
-
-# Widgets for credentials (can be passed via job parameters)
-dbutils.widgets.text("QOBRIX_API_USER", "")
-dbutils.widgets.text("QOBRIX_API_KEY", "")
-dbutils.widgets.text("QOBRIX_API_BASE_URL", "")
 
 # Priority: env vars > widgets > empty (will fail validation)
 qobrix_api_user = os.getenv("QOBRIX_API_USER") or dbutils.widgets.get("QOBRIX_API_USER")

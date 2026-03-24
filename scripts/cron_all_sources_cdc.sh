@@ -29,6 +29,7 @@ if [ -f "$MLS2_ROOT/.env" ]; then
     source "$MLS2_ROOT/.env"
     set +a
 fi
+DATABRICKS_CATALOG="${DATABRICKS_CATALOG:-mls_2_0}"
 
 # Source status tracking (records = total, updates = changed in this run)
 CY_STATUS="PENDING"
@@ -484,7 +485,7 @@ if "$SCRIPT_DIR/run_pipeline.sh" cdc >> "$LOG_FILE" 2>&1; then
     CY_RECORDS=$(curl -s -X POST "$DB_API_URL" \
         -H "Authorization: Bearer ${DATABRICKS_TOKEN}" \
         -H "Content-Type: application/json" \
-        -d '{"warehouse_id": "'"${DATABRICKS_WAREHOUSE_ID}"'", "statement": "SELECT COUNT(*) FROM mls2.reso_gold.property WHERE OriginatingSystemOfficeKey = '\''SHARPSIR-CY-001'\''", "wait_timeout": "30s"}' \
+        -d "{\"warehouse_id\": \"${DATABRICKS_WAREHOUSE_ID}\", \"statement\": \"SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.reso_gold.property WHERE OriginatingSystemOfficeKey = 'SHARPSIR-CY-001'\", \"wait_timeout\": \"30s\"}" \
         2>/dev/null | grep -oP '"data_array":\[\["\K[0-9]+' || echo "0")
     CY_RECORDS="${CY_RECORDS:-0}"
     
@@ -496,12 +497,12 @@ if "$SCRIPT_DIR/run_pipeline.sh" cdc >> "$LOG_FILE" 2>&1; then
         HO_TOTAL=$(curl -s -X POST "$DB_API_URL" \
             -H "Authorization: Bearer ${DATABRICKS_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d '{"warehouse_id": "'"${DATABRICKS_WAREHOUSE_ID}"'", "statement": "SELECT COUNT(*) FROM mls2.exports.homesoverseas", "wait_timeout": "30s"}' \
+            -d "{\"warehouse_id\": \"${DATABRICKS_WAREHOUSE_ID}\", \"statement\": \"SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.exports.homesoverseas\", \"wait_timeout\": \"30s\"}" \
             2>/dev/null | grep -oP '"data_array":\[\["\K[0-9]+' || echo "--")
         HO_WITH_RU=$(curl -s -X POST "$DB_API_URL" \
             -H "Authorization: Bearer ${DATABRICKS_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d '{"warehouse_id": "'"${DATABRICKS_WAREHOUSE_ID}"'", "statement": "SELECT COUNT(*) FROM mls2.exports.homesoverseas WHERE title_ru IS NOT NULL AND title_ru != '\'''\''", "wait_timeout": "30s"}' \
+            -d "{\"warehouse_id\": \"${DATABRICKS_WAREHOUSE_ID}\", \"statement\": \"SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.exports.homesoverseas WHERE title_ru IS NOT NULL AND title_ru != ''\", \"wait_timeout\": \"30s\"}" \
             2>/dev/null | grep -oP '"data_array":\[\["\K[0-9]+' || echo "--")
         HO_TOTAL="${HO_TOTAL:-0}"
         HO_WITH_RU="${HO_WITH_RU:-0}"
@@ -570,7 +571,7 @@ if [ -d "$HU_SOURCE_DIR" ]; then
             HU_RECORDS=$(curl -s -X POST "$DB_API_URL" \
                 -H "Authorization: Bearer ${DATABRICKS_TOKEN}" \
                 -H "Content-Type: application/json" \
-                -d '{"warehouse_id": "'"${DATABRICKS_WAREHOUSE_ID}"'", "statement": "SELECT COUNT(*) FROM mls2.dash_bronze.properties WHERE office_key = '\''SHARPSIR-HU-001'\''", "wait_timeout": "30s"}' \
+                -d "{\"warehouse_id\": \"${DATABRICKS_WAREHOUSE_ID}\", \"statement\": \"SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.dash_bronze.properties WHERE office_key = 'SHARPSIR-HU-001'\", \"wait_timeout\": \"30s\"}" \
                 2>/dev/null | grep -oP '"data_array":\[\["\K[0-9]+' || echo "0")
             HU_RECORDS="${HU_RECORDS:-0}"
             HU_UPDATES="0"

@@ -26,6 +26,7 @@ else
     echo "   Copy .env.example to .env and fill in your values."
     exit 1
 fi
+DATABRICKS_CATALOG="${DATABRICKS_CATALOG:-mls_2_0}"
 
 # Suppress CLI warning
 export DATABRICKS_CLI_DO_NOT_SHOW_UPGRADE_MESSAGE=1
@@ -170,7 +171,7 @@ echo ""
 echo "Run this query in Databricks to verify:"
 echo ""
 echo "SELECT Country, OriginatingSystemOfficeKey, X_DataSource, COUNT(*) as count"
-echo "FROM mls2.reso_gold.property"
+echo "FROM ${DATABRICKS_CATALOG}.reso_gold.property"
 echo "GROUP BY Country, OriginatingSystemOfficeKey, X_DataSource"
 echo "ORDER BY Country, OriginatingSystemOfficeKey;"
 echo ""

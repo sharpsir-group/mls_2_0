@@ -83,11 +83,18 @@ get_pm2() {
 check_health() {
     echo "Checking API health..."
     [ -f "$MLS2_ROOT/.env" ] && set -a && source "$MLS2_ROOT/.env" 2>/dev/null && set +a
+    local port="${RESO_API_PORT:-3900}"
     local proto="http"
     if [ -n "$RESO_SSL_CERTFILE" ] && [ -n "$RESO_SSL_KEYFILE" ] && [ -f "$RESO_SSL_CERTFILE" ] 2>/dev/null; then
         proto="https"
     fi
-    local response=$(curl -sk "${proto}://localhost:3900/health" 2>/dev/null || echo "error")
+    local response
+    response=$(curl -sS --connect-timeout 5 "${proto}://127.0.0.1:${port}/health" 2>/dev/null) || response=""
+    # Server may be HTTPS-only (e.g. PM2 started with cert paths not mirrored in this .env)
+    if ! echo "$response" | grep -q "healthy"; then
+        response=$(curl -skS --connect-timeout 5 "https://127.0.0.1:${port}/health" 2>/dev/null) || response=""
+    fi
+    [ -n "$response" ] || response="error"
     
     if echo "$response" | grep -q "healthy"; then
         echo -e "${GREEN}✅ API is healthy${NC}"

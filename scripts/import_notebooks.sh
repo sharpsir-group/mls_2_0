@@ -22,11 +22,12 @@ else
 fi
 
 NOTEBOOKS_DIR="$MLS2_ROOT/notebooks"
-WORKSPACE_PATH="/Shared/mls_2_0"
+# Override in .env, e.g. MLS_NOTEBOOK_BASE=/mls_etl/notebooks (folder path in workspace)
+WORKSPACE_PATH="${MLS_NOTEBOOK_BASE:-/Shared/mls_2_0}"
 
 echo "📤 Importing MLS 2.0 notebooks to Databricks..."
 echo "   Source: $NOTEBOOKS_DIR"
-echo "   Target: $WORKSPACE_PATH"
+echo "   Target: $WORKSPACE_PATH (set MLS_NOTEBOOK_BASE in .env to change)"
 echo ""
 
 for notebook in "$NOTEBOOKS_DIR"/*.py; do
@@ -34,11 +35,12 @@ for notebook in "$NOTEBOOKS_DIR"/*.py; do
         name=$(basename "$notebook" .py)
         echo "   Importing: $name"
         databricks workspace import \
+            "$WORKSPACE_PATH/$name" \
+            --file "$notebook" \
             --language PYTHON \
             --format SOURCE \
             --overwrite \
-            "$notebook" \
-            "$WORKSPACE_PATH/$name" 2>&1 | grep -v "^WARN:" || true
+            2>&1 | grep -v "^WARN:" || true
     fi
 done
 
