@@ -10,9 +10,9 @@
 # MAGIC 
 # MAGIC **Purpose:** Parses the `features` JSON column from bronze and aggregates features by group.
 # MAGIC 
-# MAGIC **Input:** `mls2.dash_bronze.properties` (features column as JSON string)
+# MAGIC **Input:** `<uc_catalog>.dash_bronze.properties` (features column as JSON string)
 # MAGIC 
-# MAGIC **Output:** `mls2.dash_silver.property_features` with:
+# MAGIC **Output:** `<uc_catalog>.dash_silver.property_features` with:
 # MAGIC - Property ID
 # MAGIC - Aggregated feature columns by featureGroupDescription
 # MAGIC - Maps to RESO DD 2.0 fields (Cooling, Heating, Pool, etc.)
@@ -26,7 +26,10 @@
 
 # COMMAND ----------
 
-catalog = "mls2"
+import os
+
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
 spark.sql(f"USE CATALOG {catalog}")
 
 print("Using catalog:", catalog)

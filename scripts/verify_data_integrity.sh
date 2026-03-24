@@ -21,6 +21,8 @@ else
     exit 1
 fi
 
+DATABRICKS_CATALOG="${DATABRICKS_CATALOG:-mls_2_0}"
+
 # Extract host without https://
 DB_HOST="${DATABRICKS_HOST#https://}"
 WAREHOUSE_ID="${DATABRICKS_HTTP_PATH##*/}"
@@ -33,7 +35,7 @@ QOBRIX_API_KEY="${SRC_1_API_KEY:-$QOBRIX_API_KEY}"
 echo "================================================================================"
 echo "🔍 COMPREHENSIVE DATA INTEGRITY TEST - Qobrix API vs MLS 2.0 RESO"
 echo "================================================================================"
-echo "Database: mls2"
+echo "Unity Catalog: $DATABRICKS_CATALOG"
 echo "API Base URL: $QOBRIX_API_BASE_URL"
 echo "Databricks Host: $DB_HOST"
 echo "================================================================================"
@@ -93,12 +95,12 @@ echo ""
 echo "🔍 Detecting loaded properties..."
 
 # Get bronze property count
-bronze_result=$(execute_sql "SELECT COUNT(*) FROM mls2.qobrix_bronze.properties" "Getting bronze count")
+bronze_result=$(execute_sql "SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.qobrix_bronze.properties" "Getting bronze count")
 bronze_count=$(echo "$bronze_result" | json_get_count)
 echo "   ✅ Found $bronze_count properties in bronze table"
 
 # Get RESO property count
-reso_result=$(execute_sql "SELECT COUNT(*) FROM mls2.reso_gold.property" "Getting RESO count")
+reso_result=$(execute_sql "SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.reso_gold.property" "Getting RESO count")
 reso_count=$(echo "$reso_result" | json_get_count)
 echo "   ✅ Found $reso_count properties in RESO table"
 
@@ -128,12 +130,12 @@ echo "==========================================================================
 
 # Get bronze IDs to temp file
 bronze_ids_file=$(mktemp)
-bronze_ids_result=$(execute_sql "SELECT DISTINCT id FROM mls2.qobrix_bronze.properties" "Getting bronze IDs")
+bronze_ids_result=$(execute_sql "SELECT DISTINCT id FROM ${DATABRICKS_CATALOG}.qobrix_bronze.properties" "Getting bronze IDs")
 echo "$bronze_ids_result" | json_get_ids | sort > "$bronze_ids_file"
 
 # Get RESO IDs (X_QobrixId) to temp file
 reso_ids_file=$(mktemp)
-reso_ids_result=$(execute_sql "SELECT DISTINCT X_QobrixId FROM mls2.reso_gold.property" "Getting RESO IDs")
+reso_ids_result=$(execute_sql "SELECT DISTINCT X_QobrixId FROM ${DATABRICKS_CATALOG}.reso_gold.property" "Getting RESO IDs")
 echo "$reso_ids_result" | json_get_ids | sort > "$reso_ids_file"
 
 # Count matched, missing
@@ -174,24 +176,24 @@ echo "==========================================================================
 valid_statuses="'Active','ComingSoon','Hold','OffMarket','Pending','Withdrawn','Closed','Canceled','Expired','Delete','Invalid','Unknown'"
 
 # Check invalid status values
-invalid_status_result=$(execute_sql "SELECT COUNT(*) FROM mls2.reso_gold.property WHERE StandardStatus NOT IN ($valid_statuses)" "Checking status compliance")
+invalid_status_result=$(execute_sql "SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.reso_gold.property WHERE StandardStatus NOT IN ($valid_statuses)" "Checking status compliance")
 invalid_status=$(echo "$invalid_status_result" | json_get_count)
 
 # Valid RESO property types
 valid_types="'Agricultural','Apartment','Business','Commercial','Condominium','Duplex','Farm','Land','MobileHome','MultiFamily','Office','Other','Parking','Residential','SingleFamilyAttached','SingleFamilyDetached','Townhouse','Unknown'"
 
 # Check invalid property types
-invalid_type_result=$(execute_sql "SELECT COUNT(*) FROM mls2.reso_gold.property WHERE PropertyType NOT IN ($valid_types)" "Checking type compliance")
+invalid_type_result=$(execute_sql "SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.reso_gold.property WHERE PropertyType NOT IN ($valid_types)" "Checking type compliance")
 invalid_type=$(echo "$invalid_type_result" | json_get_count)
 
 # Check missing required fields
-missing_key_result=$(execute_sql "SELECT COUNT(*) FROM mls2.reso_gold.property WHERE ListingKey IS NULL" "Checking ListingKey")
+missing_key_result=$(execute_sql "SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.reso_gold.property WHERE ListingKey IS NULL" "Checking ListingKey")
 missing_key=$(echo "$missing_key_result" | json_get_count)
 
-missing_status_result=$(execute_sql "SELECT COUNT(*) FROM mls2.reso_gold.property WHERE StandardStatus IS NULL" "Checking StandardStatus")
+missing_status_result=$(execute_sql "SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.reso_gold.property WHERE StandardStatus IS NULL" "Checking StandardStatus")
 missing_status_count=$(echo "$missing_status_result" | json_get_count)
 
-missing_type_result=$(execute_sql "SELECT COUNT(*) FROM mls2.reso_gold.property WHERE PropertyType IS NULL" "Checking PropertyType")
+missing_type_result=$(execute_sql "SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.reso_gold.property WHERE PropertyType IS NULL" "Checking PropertyType")
 missing_type=$(echo "$missing_type_result" | json_get_count)
 
 missing_required=$((missing_key + missing_status_count + missing_type))
@@ -283,7 +285,7 @@ echo "📊 GOLD PROPERTY FIELD COVERAGE VERIFICATION"
 echo "================================================================================"
 
 # Get column count
-cols_result=$(execute_sql "DESCRIBE mls2.reso_gold.property" 2>/dev/null)
+cols_result=$(execute_sql "DESCRIBE ${DATABRICKS_CATALOG}.reso_gold.property" 2>/dev/null)
 total_cols=$(echo "$cols_result" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('result',{}).get('data_array',[])))" 2>/dev/null || echo "0")
 
 # Get extension column count
@@ -361,11 +363,11 @@ for resource in "Property" "Member" "Office" "Media" "Contacts" "ShowingAppointm
     IFS='|' read -r bronze_table gold_table <<< "${resources[$resource]}"
     
     # Get bronze count
-    bronze_result=$(execute_sql "SELECT COUNT(*) FROM mls2.$bronze_table" 2>/dev/null)
+    bronze_result=$(execute_sql "SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.$bronze_table" 2>/dev/null)
     bronze_cnt=$(echo "$bronze_result" | json_get_count)
     
     # Get gold count
-    gold_result=$(execute_sql "SELECT COUNT(*) FROM mls2.$gold_table" 2>/dev/null)
+    gold_result=$(execute_sql "SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.$gold_table" 2>/dev/null)
     gold_cnt=$(echo "$gold_result" | json_get_count)
     
     # Determine status
@@ -389,10 +391,10 @@ echo "==========================================================================
 # Check translations bronze table
 echo ""
 echo "📋 Russian Translations (Bronze):"
-tr_result=$(execute_sql "SELECT COUNT(*) FROM mls2.qobrix_bronze.property_translations_ru" 2>/dev/null)
+tr_result=$(execute_sql "SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.qobrix_bronze.property_translations_ru" 2>/dev/null)
 tr_count=$(echo "$tr_result" | json_get_count)
 
-tr_with_text_result=$(execute_sql "SELECT COUNT(*) FROM mls2.qobrix_bronze.property_translations_ru WHERE name != '' OR description != ''" 2>/dev/null)
+tr_with_text_result=$(execute_sql "SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.qobrix_bronze.property_translations_ru WHERE name != '' OR description != ''" 2>/dev/null)
 tr_with_text=$(echo "$tr_with_text_result" | json_get_count)
 
 export_ok=true
@@ -406,14 +408,14 @@ fi
 # Check HomeOverseas export table
 echo ""
 echo "📋 HomeOverseas Export:"
-ho_result=$(execute_sql "SELECT COUNT(*) FROM mls2.exports.homesoverseas" 2>/dev/null)
+ho_result=$(execute_sql "SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.exports.homesoverseas" 2>/dev/null)
 ho_count=$(echo "$ho_result" | json_get_count)
 
-ho_ru_result=$(execute_sql "SELECT COUNT(*) FROM mls2.exports.homesoverseas WHERE title_ru IS NOT NULL AND title_ru != ''" 2>/dev/null)
+ho_ru_result=$(execute_sql "SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.exports.homesoverseas WHERE title_ru IS NOT NULL AND title_ru != ''" 2>/dev/null)
 ho_ru_count=$(echo "$ho_ru_result" | json_get_count)
 
 # Compare with active Cyprus properties in gold
-active_cy_result=$(execute_sql "SELECT COUNT(*) FROM mls2.reso_gold.property WHERE OriginatingSystemOfficeKey = 'SHARPSIR-CY-001' AND StandardStatus = 'Active'" 2>/dev/null)
+active_cy_result=$(execute_sql "SELECT COUNT(*) FROM ${DATABRICKS_CATALOG}.reso_gold.property WHERE OriginatingSystemOfficeKey = 'SHARPSIR-CY-001' AND StandardStatus = 'Active'" 2>/dev/null)
 active_cy_count=$(echo "$active_cy_result" | json_get_count)
 
 if [ "$ho_count" -gt 0 ]; then

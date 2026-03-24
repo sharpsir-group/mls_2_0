@@ -12,13 +12,13 @@
 # MAGIC and writes the result to an export staging table.
 # MAGIC 
 # MAGIC **Input:**
-# MAGIC - `mls2.reso_gold.property` (filtered for Cyprus, Active)
-# MAGIC - `mls2.reso_gold.media` (photos only)
-# MAGIC - `mls2.qobrix_bronze.property_translations_ru` (Russian translations)
+# MAGIC - `<uc_catalog>.reso_gold.property` (filtered for Cyprus, Active)
+# MAGIC - `<uc_catalog>.reso_gold.media` (photos only)
+# MAGIC - `<uc_catalog>.qobrix_bronze.property_translations_ru` (Russian translations)
 # MAGIC 
-# MAGIC **Output:** `mls2.exports.homesoverseas` — one row per property with all HomeOverseas fields
+# MAGIC **Output:** `<uc_catalog>.exports.homesoverseas` — one row per property with all HomeOverseas fields
 # MAGIC 
-# MAGIC **Stable IDs:** Uses `mls2.exports.homesoverseas_id_map` to assign persistent integer `objectid`
+# MAGIC **Stable IDs:** Uses `<uc_catalog>.exports.homesoverseas_id_map` to assign persistent integer `objectid`
 # MAGIC values that survive across runs.
 # MAGIC 
 # MAGIC **Spec:** HomeOverseas.ru XML Feed Technical Requirements V4 (1.05.2023)
@@ -36,7 +36,8 @@ import os
 from pyspark.sql.functions import col
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType
 
-catalog = "mls2"
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql("CREATE SCHEMA IF NOT EXISTS exports")
 

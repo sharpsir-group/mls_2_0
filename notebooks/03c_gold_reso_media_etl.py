@@ -11,10 +11,10 @@
 # MAGIC **Purpose:** Creates RESO-compliant Media resource from multiple data sources.
 # MAGIC 
 # MAGIC **Input Sources:**
-# MAGIC - `mls2.qobrix_silver.media` - Cyprus SIR (Qobrix) media
-# MAGIC - `mls2.dash_silver.media` - Hungary SIR (Dash/Sotheby's) media
+# MAGIC - `<uc_catalog>.qobrix_silver.media` - Cyprus SIR (Qobrix) media
+# MAGIC - `<uc_catalog>.dash_silver.media` - Hungary SIR (Dash/Sotheby's) media
 # MAGIC 
-# MAGIC **Output:** `mls2.reso_gold.media` (UNION of all sources) with RESO standard fields:
+# MAGIC **Output:** `<uc_catalog>.reso_gold.media` (UNION of all sources) with RESO standard fields:
 # MAGIC - `MediaKey` - Unique identifier
 # MAGIC - `ResourceRecordKey` - Link to Property (ListingKey)
 # MAGIC - `ResourceName` - "Property" (resource type)
@@ -40,7 +40,8 @@
 
 import os
 
-catalog = "mls2"
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS reso_gold")
 

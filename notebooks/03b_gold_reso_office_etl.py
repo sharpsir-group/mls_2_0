@@ -10,9 +10,9 @@
 # MAGIC 
 # MAGIC **Purpose:** Creates RESO-compliant Office resource from normalized Qobrix agent data.
 # MAGIC 
-# MAGIC **Input:** `mls2.qobrix_silver.agent` (offices = agents with sub-agents or top-level)
+# MAGIC **Input:** `<uc_catalog>.qobrix_silver.agent` (offices = agents with sub-agents or top-level)
 # MAGIC 
-# MAGIC **Output:** `mls2.reso_gold.office` with RESO standard fields:
+# MAGIC **Output:** `<uc_catalog>.reso_gold.office` with RESO standard fields:
 # MAGIC - `OfficeKey` - Unique identifier (QOBRIX_OFFICE_{id})
 # MAGIC - `OfficeMlsId` - MLS ID (Qobrix ref)
 # MAGIC - `OfficeName` - Office/agency name
@@ -36,7 +36,8 @@
 
 import os
 
-catalog = "mls2"
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS reso_gold")
 

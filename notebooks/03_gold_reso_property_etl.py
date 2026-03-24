@@ -11,10 +11,10 @@
 # MAGIC **Purpose:** Transforms silver properties from multiple sources to RESO Data Dictionary 2.x compliant format.
 # MAGIC 
 # MAGIC **Input Sources:**
-# MAGIC - `mls2.qobrix_silver.property` - Cyprus SIR (Qobrix) data
-# MAGIC - `mls2.dash_silver.property` - Hungary SIR (Dash/Sotheby's) data
+# MAGIC - `<uc_catalog>.qobrix_silver.property` - Cyprus SIR (Qobrix) data
+# MAGIC - `<uc_catalog>.dash_silver.property` - Hungary SIR (Dash/Sotheby's) data
 # MAGIC 
-# MAGIC **Output:** `mls2.reso_gold.property` (UNION of all sources)
+# MAGIC **Output:** `<uc_catalog>.reso_gold.property` (UNION of all sources)
 # MAGIC 
 # MAGIC **Multi-Tenant Access Control:**
 # MAGIC - `OriginatingSystemOfficeKey` = SHARPSIR-CY-001 for Qobrix (Cyprus)
@@ -34,7 +34,8 @@
 
 import os
 
-catalog = "mls2"
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
 spark.sql(f"USE CATALOG {catalog}")
 
 # Widget for Qobrix OriginatingSystemOfficeKey (Cyprus)

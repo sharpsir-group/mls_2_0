@@ -196,7 +196,7 @@ class Settings(BaseSettings):
     databricks_host: str = ""
     databricks_token: str = ""
     databricks_warehouse_id: str = ""
-    databricks_catalog: str = "mls2"
+    databricks_catalog: str = "mls_2_0"
     databricks_schema: str = "reso_gold"
     
     # API server settings

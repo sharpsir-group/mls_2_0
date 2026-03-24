@@ -10,9 +10,9 @@
 # MAGIC 
 # MAGIC **Purpose:** Transforms raw Dash media from bronze to normalized silver layer.
 # MAGIC 
-# MAGIC **Input:** `mls2.dash_bronze.media`
+# MAGIC **Input:** `<uc_catalog>.dash_bronze.media`
 # MAGIC 
-# MAGIC **Output:** `mls2.dash_silver.media` with:
+# MAGIC **Output:** `<uc_catalog>.dash_silver.media` with:
 # MAGIC - Media URLs and metadata
 # MAGIC - Property linkage
 # MAGIC - Media categories and types
@@ -26,7 +26,10 @@
 
 # COMMAND ----------
 
-catalog = "mls2"
+import os
+
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
 spark.sql(f"USE CATALOG {catalog}")
 
 print("Using catalog:", catalog)

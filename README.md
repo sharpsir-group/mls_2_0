@@ -21,10 +21,10 @@
 
 ### 3. Create Unity Catalog
 
-1. Go to **Catalog** → **Create Catalog**
-2. Name: `mls2`
+1. Go to **Catalog** → **Create Catalog** (or run [scripts/sql/init_uc_catalog_mls_2_0.sql](scripts/sql/init_uc_catalog_mls_2_0.sql) as metastore admin)
+2. Name: **`mls_2_0`** (recommended isolated catalog; legacy docs may refer to `mls2`)
 3. Click **Create**
-4. The schemas (`qobrix_bronze`, `qobrix_silver`, `reso_gold`) are created automatically by the notebooks
+4. Schemas (`qobrix_bronze`, `qobrix_silver`, `reso_gold`, `exports`, optional `dash_*`) are created by that SQL script or by the notebooks on first run
 
 ### 4. Generate Access Token
 
@@ -90,6 +90,9 @@ DATABRICKS_HOST=https://<workspace>.cloud.databricks.com
 DATABRICKS_TOKEN=<your-token>
 DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/<warehouse-id>
 DATABRICKS_WAREHOUSE_ID=<warehouse-id>
+DATABRICKS_CATALOG=mls_2_0
+DATABRICKS_SCHEMA=reso_gold
+# MLS_NOTEBOOK_BASE=/Shared/mls_2_0   # or /mls_etl/notebooks — must match workspace import path
 
 # 3. RESO Web API Server
 RESO_API_HOST=0.0.0.0
@@ -190,6 +193,7 @@ See **[Integration Guide](docs/integration-guide.md)** for:
 | [Sync Client (TS)](docs/sync-client-example.ts) | TypeScript MLS sync client example |
 | [Sync Client (JS)](docs/sync-client-example.js) | Vanilla JS MLS sync client example |
 | [Qobrix OpenAPI](docs/qobrix_openapi.yaml) | Qobrix API specification |
+| [Work log](docs/WORK_LOG.md) | Detailed journal of experiments and integrations (context for development) |
 
 ### External Resources
 - [RESO Data Dictionary 2.0](https://ddwiki.reso.org/display/DDW20/)
@@ -219,6 +223,7 @@ mls_2_0/
 │   ├── 03_gold_*.py            # Gold RESO transforms
 │   └── 10_verify_*.py          # Integrity tests
 └── scripts/
+    ├── sql/                    # UC bootstrap (init_uc_catalog_mls_2_0.sql), CDC helper SQL
     ├── import_notebooks.sh     # Import to Databricks
     ├── pm2-manage.sh           # API management
     ├── run_pipeline.sh         # ETL orchestration
@@ -229,8 +234,10 @@ mls_2_0/
 
 ## Databricks Catalog Structure
 
+Default Unity Catalog name in this repo is **`mls_2_0`** (`DATABRICKS_CATALOG` in `.env`). Older deployments may still use `mls2`.
+
 ```
-mls2 (catalog)
+mls_2_0 (catalog)
 ├── qobrix_bronze (17 tables)
 │   ├── properties, agents, contacts, users
 │   ├── property_media, property_viewings, opportunities

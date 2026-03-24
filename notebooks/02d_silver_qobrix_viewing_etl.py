@@ -10,9 +10,9 @@
 # MAGIC 
 # MAGIC **Purpose:** Normalizes and cleans property viewing/appointment data from bronze layer.
 # MAGIC 
-# MAGIC **Input:** `mls2.qobrix_bronze.property_viewings`
+# MAGIC **Input:** `<uc_catalog>.qobrix_bronze.property_viewings`
 # MAGIC 
-# MAGIC **Output:** `mls2.qobrix_silver.viewing` with normalized fields:
+# MAGIC **Output:** `<uc_catalog>.qobrix_silver.viewing` with normalized fields:
 # MAGIC - Cleaned date/time handling
 # MAGIC - Normalized status values
 # MAGIC - Assessment/feedback normalization
@@ -27,7 +27,10 @@
 
 # COMMAND ----------
 
-catalog = "mls2"
+import os
+
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS qobrix_silver")
 
