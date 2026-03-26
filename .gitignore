@@ -10,4 +10,5 @@ tmp/
 dash_hsir_source/
 
 *.json
+!scripts/schema.json
 ecosustem.config.js

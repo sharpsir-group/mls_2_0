@@ -28,7 +28,7 @@ RESOURCES = {
     "Office": {"table": "office", "key": "OfficeKey"},
     "Media": {"table": "media", "key": "MediaKey"},
     "Contacts": {"table": "contacts", "key": "ContactKey"},
-    "ShowingAppointment": {"table": "showingappointment", "key": "ShowingAppointmentKey"},
+    "ShowingAppointment": {"table": "showing_appointment", "key": "ShowingAppointmentKey"},
 }
 
 
