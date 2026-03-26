@@ -16,8 +16,8 @@ START_TIME=$(date '+%Y-%m-%d %H:%M:%S %Z')
 START_SECONDS=$(date +%s)
 HOSTNAME=$(hostname)
 
-# Email configuration
-EMAIL_TO="sseregin@sharp-sothebys-realty.com"
+# Email configuration (from .env NOTIFY_EMAILS, fallback to default)
+EMAIL_TO="${NOTIFY_EMAILS:-sseregin@sharp-sothebys-realty.com}"
 
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/all_sources_cdc_${DATE}.log"
@@ -419,9 +419,10 @@ HTMLEOF
     json_payload=$(python3 -c "
 import json, sys
 html = sys.stdin.read()
+recipients = [e.strip() for e in '$EMAIL_TO'.split(',') if e.strip()]
 print(json.dumps({
-    'from': 'MLS Pipeline <noreply@humaticai.com>',
-    'to': ['$EMAIL_TO'],
+    'from': 'MLS Pipeline <noreply@intranet.sharpsir.group>',
+    'to': recipients,
     'subject': '$subject',
     'html': html
 }))

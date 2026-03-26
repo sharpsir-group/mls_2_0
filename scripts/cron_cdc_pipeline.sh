@@ -12,7 +12,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MLS2_ROOT="$(dirname "$SCRIPT_DIR")"
 LOG_DIR="$MLS2_ROOT/logs"
-EMAIL_TO="sseregin@sharp-sothebys-realty.com"
+EMAIL_TO="${NOTIFY_EMAILS:-sseregin@sharp-sothebys-realty.com}"
 HOSTNAME=$(hostname)
 DATE=$(date '+%Y-%m-%d')
 START_TIME=$(date '+%Y-%m-%d %H:%M:%S %Z')
@@ -207,7 +207,8 @@ send_report() {
     LOG_CONTENT=$(cat "$LOG_FILE" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
     
     # Build HTML email
-    cat << EOF | mail -a "Content-Type: text/html; charset=UTF-8" -s "$subject" "$EMAIL_TO"
+    local html_body
+    html_body=$(cat << EOF
 <!DOCTYPE html>
 <html>
 <head>
@@ -352,6 +353,43 @@ send_report() {
 </body>
 </html>
 EOF
+)
+
+    # Send via Resend API
+    local resend_key="${RESEND_API_KEY:-}"
+    if [ -z "$resend_key" ]; then
+        echo "⚠️ RESEND_API_KEY not set, cannot send email" >&2
+        return 1
+    fi
+
+    local json_payload
+    json_payload=$(python3 -c "
+import json, sys
+html = sys.stdin.read()
+recipients = [e.strip() for e in '$EMAIL_TO'.split(',') if e.strip()]
+print(json.dumps({
+    'from': 'MLS Pipeline <noreply@intranet.sharpsir.group>',
+    'to': recipients,
+    'subject': '$subject',
+    'html': html
+}))
+" <<< "$html_body")
+
+    local response
+    response=$(curl -s -w "\n%{http_code}" -X POST "https://api.resend.com/emails" \
+        -H "Authorization: Bearer $resend_key" \
+        -H "Content-Type: application/json" \
+        -d "$json_payload" 2>&1)
+
+    local http_code
+    http_code=$(echo "$response" | tail -1)
+
+    if [ "$http_code" = "200" ]; then
+        return 0
+    else
+        echo "⚠️ Resend API returned HTTP $http_code: $(echo "$response" | head -1)" >&2
+        return 1
+    fi
 }
 
 # Run the CDC pipeline

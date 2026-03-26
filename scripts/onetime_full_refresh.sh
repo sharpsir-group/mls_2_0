@@ -6,8 +6,16 @@ export PATH="/home/bitnami/.local/bin:/home/bitnami/.nvm/versions/node/v20.19.5/
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MLS2_ROOT="$(dirname "$SCRIPT_DIR")"
 LOG_FILE="$MLS2_ROOT/logs/full_refresh_$(date +%Y-%m-%d).log"
-EMAIL_TO="sseregin@sharp-sothebys-realty.com"
 START_TIME=$(date '+%Y-%m-%d %H:%M:%S %Z')
+
+# Load environment
+if [ -f "$MLS2_ROOT/.env" ]; then
+    set -a
+    source "$MLS2_ROOT/.env"
+    set +a
+fi
+
+EMAIL_TO="${NOTIFY_EMAILS:-sseregin@sharp-sothebys-realty.com}"
 
 echo "╔══════════════════════════════════════════════════════════════╗" | tee "$LOG_FILE"
 echo "║  MLS 2.0 FULL REFRESH - One-time Fix                         ║" | tee -a "$LOG_FILE"
@@ -39,13 +47,9 @@ echo "$API_OUTPUT" >> "$LOG_FILE"
 PROPS_TOTAL=$(grep -oP 'properties\s*\|\s*\K\d+' "$LOG_FILE" | head -1 || echo "0")
 CONTACTS_TOTAL=$(grep -oP 'contacts\s*\|\s*\K\d+' "$LOG_FILE" | head -1 || echo "0")
 
-# Send HTML email
-cat << MAIL_EOF | msmtp "$EMAIL_TO"
-From: sergey.seregin@gmail.com
-To: $EMAIL_TO
-Subject: [MLS 2.0] Full Refresh $STATUS - $(date '+%Y-%m-%d')
-Content-Type: text/html; charset=UTF-8
-
+# Build HTML email
+STATUS_BG=$([ "$STATUS" = "SUCCESS" ] && echo "#ecfdf5" || echo "#fef2f2")
+html_body=$(cat << HTMLEOF
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
@@ -54,11 +58,10 @@ Content-Type: text/html; charset=UTF-8
 <tr><td align="center">
 <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;box-shadow:0 4px 6px rgba(0,0,0,0.1);">
   <tr><td style="padding:40px;text-align:center;border-bottom:1px solid #e5e5e5;">
-    <img src="https://humaticai.com/assets/sharp-sothebys-logo-dark.png" alt="Sharp Sotheby's" style="max-width:250px;">
     <h2 style="margin:20px 0 0;font-size:22px;color:#5b9a9a;">MLS 2.0 Full Refresh</h2>
     <p style="margin:5px 0 0;color:#888;">One-time Data Sync</p>
   </td></tr>
-  <tr><td style="padding:30px;text-align:center;background:$([ "$STATUS" = "SUCCESS" ] && echo "#ecfdf5" || echo "#fef2f2");">
+  <tr><td style="padding:30px;text-align:center;background:${STATUS_BG};">
     <span style="display:inline-block;width:50px;height:50px;line-height:50px;border-radius:50%;background:$STATUS_COLOR;color:#fff;font-size:24px;">$STATUS_ICON</span>
     <h3 style="margin:15px 0 0;color:$STATUS_COLOR;">$STATUS</h3>
   </td></tr>
@@ -81,6 +84,37 @@ Content-Type: text/html; charset=UTF-8
 </table>
 </body>
 </html>
-MAIL_EOF
+HTMLEOF
+)
 
-echo "Email sent to $EMAIL_TO"
+# Send via Resend API
+subject="[MLS 2.0] Full Refresh $STATUS - $(date '+%Y-%m-%d')"
+resend_key="${RESEND_API_KEY:-}"
+if [ -z "$resend_key" ]; then
+    echo "RESEND_API_KEY not set, cannot send email"
+    exit 1
+fi
+
+json_payload=$(python3 -c "
+import json, sys
+html = sys.stdin.read()
+recipients = [e.strip() for e in '$EMAIL_TO'.split(',') if e.strip()]
+print(json.dumps({
+    'from': 'MLS Pipeline <noreply@intranet.sharpsir.group>',
+    'to': recipients,
+    'subject': '$subject',
+    'html': html
+}))
+" <<< "$html_body")
+
+response=$(curl -s -w "\n%{http_code}" -X POST "https://api.resend.com/emails" \
+    -H "Authorization: Bearer $resend_key" \
+    -H "Content-Type: application/json" \
+    -d "$json_payload" 2>&1)
+
+http_code=$(echo "$response" | tail -1)
+if [ "$http_code" = "200" ]; then
+    echo "Email sent to $EMAIL_TO"
+else
+    echo "Failed to send email (HTTP $http_code): $(echo "$response" | head -1)"
+fi
