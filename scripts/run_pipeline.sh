@@ -78,7 +78,7 @@ except: pass
     local target_run_id="${task_run_id:-$run_id}"
     
     # Get full output from runs get-output
-    local output_json=$(databricks jobs get-run-output "$target_run_id" -o json 2>&1 | grep -v "^WARN:")
+    local output_json=$(databricks runs get-output --run-id "$target_run_id" 2>&1 | grep -v "^WARN:")
     
     # Parse and display detailed error info
     echo "$output_json" | python3 -c "
@@ -188,7 +188,7 @@ run_notebook() {
         }'
     fi
     
-    local result=$(databricks jobs submit --json "$json" --no-wait 2>&1 | grep -v "^WARN:")
+    local result=$(databricks runs submit --json "$json" 2>&1 | grep -v "^WARN:")
     local run_id=$(echo "$result" | grep -o '"run_id":[[:space:]]*[0-9]*' | grep -o '[0-9]*')
     
     if [ -z "$run_id" ]; then
@@ -201,7 +201,7 @@ run_notebook() {
     
     local last_state=""
     while true; do
-        local status_json=$(databricks jobs get-run "$run_id" -o json 2>&1 | grep -v "^WARN:")
+        local status_json=$(databricks runs get --run-id "$run_id" 2>&1 | grep -v "^WARN:")
         local state=$(echo "$status_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('state',d.get('status',{})).get('life_cycle_state','') if isinstance(d.get('state',d.get('status',{})),dict) else '')" 2>/dev/null)
         local result_state=$(echo "$status_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('state',d.get('status',{})).get('result_state','') if isinstance(d.get('state',d.get('status',{})),dict) else '')" 2>/dev/null)
         
