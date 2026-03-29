@@ -327,6 +327,34 @@ case "$1" in
         echo "🔄 CDC Mode: Incremental gold contacts sync"
         run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "${MLS_NOTEBOOK_BASE}/03d_cdc_gold_reso_contacts_etl" "gold"
         ;;
+    cdc-catchup)
+        echo "🔄 CDC Catchup: Resetting sync metadata → full re-fetch from API"
+        echo ""
+        echo "⚠️  This clears CDC metadata so the next bronze run fetches ALL records."
+        echo "   Use after: new catalog, missed runs, or data corruption."
+        echo ""
+        DB_HOST="${DATABRICKS_HOST#https://}"
+        echo "🗑️  Clearing cdc_metadata table..."
+        curl -s -X POST "https://${DB_HOST}/api/2.0/sql/statements" \
+            -H "Authorization: Bearer ${DATABRICKS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"warehouse_id\": \"${DATABRICKS_WAREHOUSE_ID}\", \"statement\": \"DELETE FROM ${DATABRICKS_CATALOG}.qobrix_bronze.cdc_metadata\", \"wait_timeout\": \"50s\"}" \
+            2>/dev/null | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+state = d.get('status', {}).get('state', 'UNKNOWN')
+if state == 'SUCCEEDED':
+    print('   ✅ CDC metadata cleared')
+else:
+    print(f'   ⚠️  Status: {state}')
+    err = d.get('status', {}).get('error', {}).get('message', '')
+    if err: print(f'   {err}')
+" 2>/dev/null
+        echo ""
+        echo "🚀 Running full CDC pipeline (will fetch all records from API)..."
+        echo ""
+        exec "$0" cdc
+        ;;
     cdc-all)
         echo "🔄 CDC Mode: Full incremental pipeline (ALL entities - forced)"
         echo ""
@@ -553,6 +581,7 @@ except Exception as ex:
         echo "CDC - INCREMENTAL SYNC (recommended for regular updates)"
         echo "═══════════════════════════════════════════════════════════════════════"
         echo "  cdc                 Smart CDC - only run Silver/Gold for changed entities"
+        echo "  cdc-catchup         Reset CDC metadata + full re-fetch (recovery after outage)"
         echo "  cdc-all             Force CDC ALL entities (bronze -> silver -> gold)"
         echo "  cdc-bronze          CDC bronze only (fetch changed records from API)"
         echo "  cdc-silver          CDC silver property only (incremental transform)"

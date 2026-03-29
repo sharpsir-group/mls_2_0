@@ -130,7 +130,11 @@ spark.sql("""
 """)
 
 def get_last_sync(entity: str) -> str:
-    """Get the last sync timestamp for an entity."""
+    """Get the last sync timestamp for an entity.
+    
+    If no previous sync exists (fresh catalog / first run), falls back to 
+    3 years ago so the first CDC run acts as a full initial load.
+    """
     result = spark.sql(f"""
         SELECT last_modified_timestamp 
         FROM cdc_metadata 
@@ -142,9 +146,9 @@ def get_last_sync(entity: str) -> str:
     if result and result[0][0]:
         return result[0][0]
     
-    # Default: 24 hours ago (first run will get recent data)
-    default_time = (datetime.utcnow() - timedelta(hours=24)).strftime('%Y-%m-%d %H:%M:%S')
-    print(f"   No previous sync found for {entity}, using default: {default_time}")
+    default_time = "2020-01-01 00:00:00"
+    print(f"   ⚠️  No previous sync found for {entity} — using bootstrap default: {default_time}")
+    print(f"      (This will fetch ALL records from the API — first run or catalog recovery)")
     return default_time
 
 
@@ -462,9 +466,10 @@ if modified_properties:
     if modified_media:
         print(f"   Found: {len(modified_media)} media items")
         cdc_changes["media"] = len(modified_media)
-        # For media, we need to handle differently - delete old media for these properties first
-        for prop_id in property_ids:
-            spark.sql(f"DELETE FROM property_media WHERE property_id = '{prop_id}'")
+        existing_tables = [t.name for t in spark.catalog.listTables()]
+        if "property_media" in existing_tables:
+            for prop_id in property_ids:
+                spark.sql(f"DELETE FROM property_media WHERE property_id = '{prop_id}'")
         merge_to_bronze(modified_media, "property_media", "id")
     
     # Update metadata
