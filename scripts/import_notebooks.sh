@@ -35,8 +35,8 @@ for notebook in "$NOTEBOOKS_DIR"/*.py; do
         name=$(basename "$notebook" .py)
         echo "   Importing: $name"
         databricks workspace import \
+            "$notebook" \
             "$WORKSPACE_PATH/$name" \
-            --file "$notebook" \
             --language PYTHON \
             --format SOURCE \
             --overwrite \

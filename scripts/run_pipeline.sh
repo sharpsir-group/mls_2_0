@@ -138,6 +138,7 @@ run_notebook() {
         local api_user="${SRC_1_API_USER:-$QOBRIX_API_USER}"
         local api_key="${SRC_1_API_KEY:-$QOBRIX_API_KEY}"
         local api_url="${SRC_1_API_URL:-$QOBRIX_API_BASE_URL}"
+        local test_limit="${CDC_TEST_LIMIT:-0}"
         local json='{
           "run_name": "'"$name"'",
           "tasks": [{
@@ -148,7 +149,8 @@ run_notebook() {
                 "QOBRIX_API_USER": "'"$api_user"'",
                 "QOBRIX_API_KEY": "'"$api_key"'",
                 "QOBRIX_API_BASE_URL": "'"$api_url"'",
-                "DATABRICKS_CATALOG": "'"$DATABRICKS_CATALOG"'"
+                "DATABRICKS_CATALOG": "'"$DATABRICKS_CATALOG"'",
+                "CDC_TEST_LIMIT": "'"$test_limit"'"
               }
             }
           }]
@@ -326,6 +328,12 @@ case "$1" in
     cdc-gold-contacts)
         echo "🔄 CDC Mode: Incremental gold contacts sync"
         run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "${MLS_NOTEBOOK_BASE}/03d_cdc_gold_reso_contacts_etl" "gold"
+        ;;
+    test-cdc)
+        echo "🧪 TEST MODE: CDC with ${2:-10} records per entity"
+        echo ""
+        export CDC_TEST_LIMIT="${2:-10}"
+        exec "$0" cdc
         ;;
     cdc-catchup)
         echo "🔄 CDC Catchup: Resetting sync metadata → full re-fetch from API"
@@ -581,6 +589,7 @@ except Exception as ex:
         echo "CDC - INCREMENTAL SYNC (recommended for regular updates)"
         echo "═══════════════════════════════════════════════════════════════════════"
         echo "  cdc                 Smart CDC - only run Silver/Gold for changed entities"
+        echo "  test-cdc [N]        Test CDC with N records per entity (default: 10)"
         echo "  cdc-catchup         Reset CDC metadata + full re-fetch (recovery after outage)"
         echo "  cdc-all             Force CDC ALL entities (bronze -> silver -> gold)"
         echo "  cdc-bronze          CDC bronze only (fetch changed records from API)"

@@ -64,6 +64,7 @@ dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
 dbutils.widgets.text("QOBRIX_API_USER", "")
 dbutils.widgets.text("QOBRIX_API_KEY", "")
 dbutils.widgets.text("QOBRIX_API_BASE_URL", "")
+dbutils.widgets.text("CDC_TEST_LIMIT", "0")
 
 catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
 schema = "qobrix_bronze"
@@ -71,6 +72,10 @@ spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"USE SCHEMA {schema}")
 
 timeout_seconds = 30
+cdc_test_limit = int(dbutils.widgets.get("CDC_TEST_LIMIT") or "0")
+if cdc_test_limit > 0:
+    print(f"⚠️  TEST MODE: Limiting to {cdc_test_limit} records per entity")
+    print("=" * 80)
 
 # Priority: env vars > widgets > empty (will fail validation)
 qobrix_api_user = os.getenv("QOBRIX_API_USER") or dbutils.widgets.get("QOBRIX_API_USER")
@@ -200,7 +205,10 @@ def fetch_records_by_filter(endpoint: str, search_param: str, page_size: int = 1
             has_more = bool(pagination.get("has_next_page", False))
             page += 1
             
-            if page % 5 == 0:
+            if cdc_test_limit > 0 and len(all_records) >= cdc_test_limit:
+                all_records = all_records[:cdc_test_limit]
+                has_more = False
+            elif page % 5 == 0:
                 print(f"   Fetched {len(all_records)} records so far...")
                 
         except Exception as e:
@@ -229,7 +237,11 @@ def fetch_all_records(endpoint: str, page_size: int = 100) -> list:
             pagination = data.get("pagination", {})
             has_more = bool(pagination.get("has_next_page", False))
             page += 1
-            if page % 5 == 0:
+            if cdc_test_limit > 0 and len(all_records) >= cdc_test_limit:
+                all_records = all_records[:cdc_test_limit]
+                has_more = False
+                print(f"   ⚠️  TEST MODE: capped at {cdc_test_limit} records")
+            elif page % 5 == 0:
                 print(f"   Fetched {len(all_records)} records so far...")
         except Exception as e:
             print(f"   Error fetching {endpoint} page {page}: {e}")
