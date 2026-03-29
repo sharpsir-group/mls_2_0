@@ -129,11 +129,11 @@ spark.sql("""
     USING DELTA
 """)
 
-def get_last_sync(entity: str) -> str:
+def get_last_sync(entity: str):
     """Get the last sync timestamp for an entity.
     
-    If no previous sync exists (fresh catalog / first run), falls back to 
-    3 years ago so the first CDC run acts as a full initial load.
+    Returns the timestamp string, or None if no previous sync exists
+    (fresh catalog / first run) — caller should fetch ALL records.
     """
     result = spark.sql(f"""
         SELECT last_modified_timestamp 
@@ -146,22 +146,20 @@ def get_last_sync(entity: str) -> str:
     if result and result[0][0]:
         return result[0][0]
     
-    default_time = "2020-01-01 00:00:00"
-    print(f"   ⚠️  No previous sync found for {entity} — using bootstrap default: {default_time}")
-    print(f"      (This will fetch ALL records from the API — first run or catalog recovery)")
-    return default_time
+    print(f"   ⚠️  No previous sync for {entity} — will fetch ALL records (bootstrap)")
+    return None
 
 
-def update_sync_metadata(entity: str, records: int, max_modified: str, status: str, started_at: datetime):
+def update_sync_metadata(entity: str, records: int, max_modified, status: str, started_at: datetime):
     """Update CDC metadata after sync."""
     completed_at = datetime.utcnow()
+    ts = max_modified if max_modified else completed_at.strftime('%Y-%m-%d %H:%M:%S')
     
-    # Insert new metadata record (append-only for audit trail)
     spark.sql(f"""
         INSERT INTO cdc_metadata VALUES (
             '{entity}',
             CURRENT_TIMESTAMP(),
-            '{max_modified}',
+            '{ts}',
             {records},
             '{status}',
             TIMESTAMP('{started_at.strftime('%Y-%m-%d %H:%M:%S')}'),
@@ -212,29 +210,54 @@ def fetch_records_by_filter(endpoint: str, search_param: str, page_size: int = 1
     return all_records
 
 
-def fetch_modified_records(endpoint: str, since_timestamp: str, page_size: int = 100) -> list:
-    """
-    Fetch records that are new OR modified since a given timestamp.
+def fetch_all_records(endpoint: str, page_size: int = 100) -> list:
+    """Fetch ALL records from an endpoint (no date filter). Used for bootstrap / first run."""
+    all_records = []
+    page = 1
+    has_more = True
+
+    print(f"   Fetching ALL records (bootstrap mode)...")
+    while has_more:
+        url = f"{api_base_url}{endpoint}"
+        params = {"limit": page_size, "page": page}
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=timeout_seconds)
+            response.raise_for_status()
+            data = response.json()
+            records = data.get("data", [])
+            all_records.extend(records)
+            pagination = data.get("pagination", {})
+            has_more = bool(pagination.get("has_next_page", False))
+            page += 1
+            if page % 5 == 0:
+                print(f"   Fetched {len(all_records)} records so far...")
+        except Exception as e:
+            print(f"   Error fetching {endpoint} page {page}: {e}")
+            has_more = False
+
+    print(f"   Total: {len(all_records)} records")
+    return all_records
+
+
+def fetch_modified_records(endpoint: str, since_timestamp, page_size: int = 100) -> list:
+    """Fetch records new or modified since a timestamp.
     
-    This fetches BOTH:
-    1. Records with modified >= since_timestamp (existing records that changed)
-    2. Records with created >= since_timestamp (newly created records)
-    
-    Then deduplicates by 'id' field to avoid double-counting.
+    If since_timestamp is None (no previous sync), fetches ALL records
+    in a single pass without any date filter.
     """
-    # Fetch modified records
+    if since_timestamp is None:
+        return fetch_all_records(endpoint, page_size)
+
     modified_param = f"modified>='{since_timestamp}'"
     print(f"   Fetching modified records (modified >= {since_timestamp})...")
     modified_records = fetch_records_by_filter(endpoint, modified_param, page_size)
     print(f"   Found {len(modified_records)} modified records")
     
-    # Fetch newly created records
     created_param = f"created>='{since_timestamp}'"
     print(f"   Fetching new records (created >= {since_timestamp})...")
     created_records = fetch_records_by_filter(endpoint, created_param, page_size)
     print(f"   Found {len(created_records)} new records")
     
-    # Merge and deduplicate by 'id' field
     seen_ids = set()
     all_records = []
     
