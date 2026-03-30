@@ -11,6 +11,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MLS2_ROOT="$(dirname "$SCRIPT_DIR")"
 PROJECT_ROOT="$(dirname "$MLS2_ROOT")"
 
+# Ensure PATH includes user bins — prefer ~/bin (CLI v0.295) over ~/.local/bin (legacy v0.18)
+export PATH="$HOME/bin:$HOME/.local/bin:$PATH"
+
 # Load credentials
 if [ -f "$MLS2_ROOT/.env" ]; then
     set -a
@@ -25,8 +28,8 @@ fi
 export MLS2_ROOT
 # Unity Catalog for all Delta tables (isolated namespace; see scripts/sql/init_uc_catalog_mls_2_0.sql)
 DATABRICKS_CATALOG="${DATABRICKS_CATALOG:-mls_2_0}"
-# Workspace folder for notebooks (match import: MLS_NOTEBOOK_BASE=/mls_etl/notebooks in .env if needed)
-MLS_NOTEBOOK_BASE="${MLS_NOTEBOOK_BASE:-/Shared/mls_2_0}"
+# Workspace folder for notebooks
+MLS_NOTEBOOK_BASE="${MLS_NOTEBOOK_BASE:-/mls_etl/notebooks}"
 export DATABRICKS_CATALOG MLS_NOTEBOOK_BASE
 echo "📚 UC catalog: $DATABRICKS_CATALOG | Notebook base: $MLS_NOTEBOOK_BASE"
 
@@ -215,7 +218,7 @@ run_notebook() {
             last_state="$state"
         fi
         
-        if [ "$state" = "TERMINATED" ]; then
+        if [ "$state" = "TERMINATED" ] || [ "$state" = "INTERNAL_ERROR" ] || [ "$state" = "SKIPPED" ]; then
             local job_end_time=$(date +%s)
             local job_duration=$((job_end_time - job_start_time))
             local job_duration_fmt=$(format_duration $job_duration)
@@ -224,7 +227,7 @@ run_notebook() {
                 echo "   ✅ $name completed successfully (${job_duration_fmt})"
                 return 0
             else
-                echo "   ❌ $name failed: $result_state (${job_duration_fmt})"
+                echo "   ❌ $name failed: state=$state result=$result_state (${job_duration_fmt})"
                 echo ""
                 echo "   ┌─────────────────────────────────────────────────────────────────"
                 echo "   │ ERROR DETAILS"

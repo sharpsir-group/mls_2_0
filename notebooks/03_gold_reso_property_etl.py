@@ -99,6 +99,35 @@ if dash_available:
 
 # COMMAND ----------
 
+import re as _re
+
+def bcol(name, cast=None):
+    """Safe bronze column reference — returns NULL if column is absent from bronze table.
+
+    Prevents UNRESOLVED_COLUMN errors when bronze schema drifts (e.g. Qobrix API
+    stops returning a field). Checks against the live `bronze_cols` set.
+    """
+    if name.lower() not in bronze_cols:
+        return f"CAST(NULL AS {cast})" if cast else "NULL"
+    if cast:
+        return f"TRY_CAST(b.{name} AS {cast})"
+    return f"b.{name}"
+
+def _safe_bronze_sql(sql, cols_set, table_ref="qobrix_bronze.properties b"):
+    """Post-process SQL: pad missing b.* columns with NULL via safe subquery."""
+    referenced = set(_re.findall(r'\bb\.(\w+)', sql))
+    missing = sorted(c for c in referenced if c.lower() not in cols_set)
+    if not missing:
+        return sql
+    print(f"⚠️ Padding {len(missing)} missing bronze column(s): {', '.join(missing)}")
+    null_cols = ", ".join(f"CAST(NULL AS STRING) AS `{c}`" for c in missing)
+    raw_table = table_ref.rsplit(None, 1)[0]   # "qobrix_bronze.properties"
+    alias = table_ref.rsplit(None, 1)[1]        # "b"
+    safe = f"(SELECT *, {null_cols} FROM {raw_table}) {alias}"
+    return sql.replace(table_ref, safe)
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Transform to RESO with Extension Fields
 
@@ -420,6 +449,9 @@ LEFT JOIN qobrix_bronze.properties b
 LEFT JOIN qobrix_bronze.property_subtypes ps 
     ON CAST(s.property_subtype_id AS STRING) = CAST(ps.id AS STRING)
 """
+
+if qobrix_available:
+    qobrix_select_sql = _safe_bronze_sql(qobrix_select_sql, bronze_cols)
 
 # Dash transform SQL - Full RESO DD 2.0 mapping with features join
 dash_select_sql = f"""
