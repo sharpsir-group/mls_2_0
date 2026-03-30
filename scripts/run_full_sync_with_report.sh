@@ -4,7 +4,7 @@
 #
 # Resilience guarantees:
 #   - Email is ALWAYS sent (via trap EXIT) regardless of pipeline outcome
-#   - Pipeline has a 6-hour timeout to prevent infinite hangs
+#   - Pipeline has a 12-hour timeout to prevent infinite hangs
 #   - Cron entry is always cleaned up
 
 set -uo pipefail
