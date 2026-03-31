@@ -355,7 +355,7 @@ async def homesoverseas_xml():
     sql = f"""
         SELECT *
         FROM {catalog}.exports.homesoverseas
-        ORDER BY listing_created_date DESC, objectid DESC
+        ORDER BY objectid DESC
         LIMIT 1000
     """
 
