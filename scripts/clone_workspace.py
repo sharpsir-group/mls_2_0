@@ -181,14 +181,24 @@ def read_batch(cfg, full_table, col_names, offset, limit):
         msg = d.get("status", {}).get("error", {}).get("message", "?")[:400]
         raise RuntimeError(f"SQL {st}: {msg}")
 
+    def _download(url, retries=3):
+        for attempt in range(retries):
+            try:
+                resp = requests.get(url, timeout=300)
+                resp.raise_for_status()
+                return resp.json()
+            except (requests.RequestException, ValueError) as exc:
+                if attempt == retries - 1:
+                    raise
+                time.sleep(2 ** attempt)
+        return []
+
     rows = []
     ext_links = d.get("result", {}).get("external_links", [])
     for lnk in ext_links:
         dl_url = lnk.get("external_link")
         if dl_url:
-            resp = requests.get(dl_url, timeout=300)
-            resp.raise_for_status()
-            chunk = resp.json()
+            chunk = _download(dl_url)
             if isinstance(chunk, list):
                 rows.extend(chunk)
 
@@ -202,9 +212,7 @@ def read_batch(cfg, full_table, col_names, offset, limit):
         for lnk in cd.get("external_links", []):
             dl_url = lnk.get("external_link")
             if dl_url:
-                resp = requests.get(dl_url, timeout=300)
-                resp.raise_for_status()
-                chunk = resp.json()
+                chunk = _download(dl_url)
                 if isinstance(chunk, list):
                     rows.extend(chunk)
         next_link = cd.get("external_links", [{}])[0].get(
@@ -252,13 +260,21 @@ def escape_val(val, col_type):
         return "NULL"
     s = str(val)
     up = col_type.upper()
+    if up == "VOID":
+        return "NULL"
     if s == "" and "STRING" not in up:
         return "NULL"
+    if s in ("", "None", "null"):
+        if "STRING" in up:
+            return f"'{s.replace(chr(39), chr(39)+chr(39))}'"
+        return "NULL"
     if any(t in up for t in ("INT", "LONG", "BIGINT")):
-        return s if s not in ("", "None", "null") else "NULL"
+        return s
+    if any(t in up for t in ("DOUBLE", "FLOAT", "DECIMAL")):
+        return s
     if any(t in up for t in ("TIMESTAMP", "DATE")):
-        return f"'{s}'" if s not in ("", "None", "null") else "NULL"
-    if any(t in up for t in ("BOOLEAN",)):
+        return f"'{s}'"
+    if "BOOLEAN" in up:
         return s if s.lower() in ("true", "false") else "NULL"
     return f"'{s.replace(chr(39), chr(39)+chr(39))}'"
 
@@ -269,8 +285,10 @@ COMPLEX_TYPE_PREFIXES = ("ARRAY", "MAP", "STRUCT")
 def _cast_expr(col, col_type):
     """Build a SELECT expression that converts a STRING staging column to its
     real type.  Uses from_json for complex types (ARRAY, MAP, STRUCT) because
-    SQL CAST cannot handle those conversions."""
+    SQL CAST cannot handle those conversions.  VOID columns become NULL."""
     up = col_type.upper()
+    if up == "VOID":
+        return f"NULL AS `{col}`"
     if up == "STRING":
         return f"`{col}`"
     if any(up.startswith(p) for p in COMPLEX_TYPE_PREFIXES):
@@ -394,7 +412,6 @@ def transfer_large(fq, cols, src_catalog, tgt_catalog, read_cols=None):
     real_cols = ", ".join(f"`{c}` {t}" for c, t in col_items_full)
     exec_sql(TARGET, f"CREATE TABLE {full_tgt} ({real_cols}) USING delta")
 
-    read_col_set = set(col_names)
     tgt_col_list = ", ".join(f"`{c}`" for c in col_names)
     casts = ", ".join(_cast_expr(c, t) for c, t in r_cols.items())
     exec_sql(TARGET,
@@ -495,7 +512,8 @@ def run_notebook_direct(name, notebook_path, catalog):
         return False
 
     print(f"    Run ID: {run_id}")
-    while True:
+    deadline = time.time() + 3600
+    while time.time() < deadline:
         time.sleep(10)
         p = requests.get(
             f"{TARGET['host']}/api/2.0/jobs/runs/get?run_id={run_id}",
@@ -511,6 +529,8 @@ def run_notebook_direct(name, notebook_path, catalog):
             else:
                 print(f"    {name}: FAILED ({rs})")
                 return False
+    print(f"    {name}: TIMEOUT (1h)")
+    return False
 
 
 def regenerate_derived(catalog):
