@@ -17,6 +17,7 @@ Usage:
     python3 scripts/clone_workspace.py --skip-etl      # bronze only
     python3 scripts/clone_workspace.py --verify-only   # compare counts
     python3 scripts/clone_workspace.py --tables t1,t2  # specific tables
+    python3 scripts/clone_workspace.py --resume        # retry only failed/mismatched
 """
 import os
 import sys
@@ -553,6 +554,10 @@ def main():
         "--tables",
         help="Comma-separated list of specific tables to replicate",
     )
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="Skip tables where source and target row counts already match",
+    )
     args = parser.parse_args()
 
     schema_def = load_schema()
@@ -580,10 +585,14 @@ def main():
 
     to_replicate = bronze_tables(schema_def, table_filter)
     print(f"\n  Tables to replicate: {len(to_replicate)}")
+    mode_parts = []
+    if args.resume:
+        mode_parts.append("RESUME (skip matched)")
     if args.skip_etl:
-        print(f"  Mode: BRONZE ONLY (--skip-etl)")
-    else:
-        print(f"  Mode: FULL CLONE (bronze + regenerate derived)")
+        mode_parts.append("BRONZE ONLY")
+    if not mode_parts:
+        mode_parts.append("FULL CLONE (bronze + regenerate derived)")
+    print(f"  Mode: {' | '.join(mode_parts)}")
     print("=" * 60)
 
     print(f"\nPhase 1: Bootstrap (validate_deployment.py)")
@@ -599,9 +608,26 @@ def main():
     print("-" * 40)
 
     results = {}
+    skipped = 0
     t_start = time.time()
     for fq in sorted(to_replicate):
         cols = to_replicate[fq]
+
+        if args.resume:
+            full_src = f"{src_cat}.{fq}"
+            full_tgt = f"{tgt_cat}.{fq}"
+            try:
+                s = row_count(SOURCE, full_src)
+                t = row_count(TARGET, full_tgt)
+                if s == t and s >= 0:
+                    results[fq] = (s, t, "OK")
+                    print(f"  {fq}: {s} rows  [SKIP - already matches]")
+                    sys.stdout.flush()
+                    skipped += 1
+                    continue
+            except Exception:
+                pass
+
         try:
             src_cnt, tgt_cnt = replicate_table(fq, cols, src_cat, tgt_cat)
             match = "OK" if src_cnt == tgt_cnt else "MISMATCH"
@@ -614,6 +640,8 @@ def main():
 
     elapsed = time.time() - t_start
     print(f"\n  Bronze replication done in {elapsed:.0f}s")
+    if skipped:
+        print(f"  Skipped (already matched): {skipped}")
 
     failed = [fq for fq, (_, _, s) in results.items() if s != "OK"]
     if failed:
