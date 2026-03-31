@@ -263,6 +263,21 @@ def escape_val(val, col_type):
     return f"'{s.replace(chr(39), chr(39)+chr(39))}'"
 
 
+COMPLEX_TYPE_PREFIXES = ("ARRAY", "MAP", "STRUCT")
+
+
+def _cast_expr(col, col_type):
+    """Build a SELECT expression that converts a STRING staging column to its
+    real type.  Uses from_json for complex types (ARRAY, MAP, STRUCT) because
+    SQL CAST cannot handle those conversions."""
+    up = col_type.upper()
+    if up == "STRING":
+        return f"`{col}`"
+    if any(up.startswith(p) for p in COMPLEX_TYPE_PREFIXES):
+        return f"from_json(`{col}`, '{col_type}') AS `{col}`"
+    return f"CAST(`{col}` AS {col_type}) AS `{col}`"
+
+
 # ---------------------------------------------------------------------------
 # Transfer strategies
 # ---------------------------------------------------------------------------
@@ -373,10 +388,7 @@ def transfer_large(fq, cols, src_catalog, tgt_catalog):
     exec_sql(TARGET, f"DROP TABLE IF EXISTS {full_tgt}")
     real_cols = ", ".join(f"`{c}` {t}" for c, t in col_items)
     exec_sql(TARGET, f"CREATE TABLE {full_tgt} ({real_cols}) USING delta")
-    casts = ", ".join(
-        f"CAST(`{c}` AS {t}) AS `{c}`" if t.upper() != "STRING" else f"`{c}`"
-        for c, t in col_items
-    )
+    casts = ", ".join(_cast_expr(c, t) for c, t in col_items)
     exec_sql(TARGET, f"INSERT INTO {full_tgt} SELECT {casts} FROM {staging_tbl}",
              poll_limit=1200)
 
@@ -662,6 +674,32 @@ def main():
         print(f"\nPhase 3: Regenerate Derived Layers")
         print("-" * 40)
         regenerate_derived(tgt_cat)
+
+    # -- Fallback: regenerate failed derived tables from bronze --
+    if failed and not args.bronze_only:
+        nb_base = os.getenv("MLS_NOTEBOOK_BASE", "/Shared/mls_2_0")
+        etl_for_table = {
+            "dash_silver.media": ("Dash Silver Media ETL",
+                                  f"{nb_base}/01_dash_silver_media_etl"),
+            "dash_silver.property": ("Dash Silver Property ETL",
+                                     f"{nb_base}/01_dash_silver_property_etl"),
+            "dash_silver.property_features": ("Dash Silver Features ETL",
+                                              f"{nb_base}/01b_dash_silver_features_etl"),
+            "exports.homesoverseas": ("Export HomeOverseas",
+                                      f"{nb_base}/04a_export_homesoverseas_etl"),
+        }
+        regen = [fq for fq in failed if fq in etl_for_table]
+        if regen:
+            print(f"\nPhase 3: Regenerate {len(regen)} failed derived table(s)")
+            print("-" * 40)
+            for fq in regen:
+                name, path = etl_for_table[fq]
+                ok = run_notebook_direct(name, path, tgt_cat)
+                if ok:
+                    results[fq] = (results[fq][0], -1, "REGENERATED")
+                    print(f"    {fq}: regenerated from bronze")
+            failed = [fq for fq, (_, _, s) in results.items()
+                      if s not in ("OK", "REGENERATED")]
 
     # -- Verify --
     print(f"\nPhase 4: Verification")
