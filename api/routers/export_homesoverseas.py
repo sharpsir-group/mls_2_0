@@ -355,8 +355,8 @@ async def homesoverseas_xml():
     sql = f"""
         SELECT *
         FROM {catalog}.exports.homesoverseas
-        ORDER BY objectid
-        LIMIT 10000
+        ORDER BY listing_created_date DESC, objectid DESC
+        LIMIT 1000
     """
 
     result = await connector.execute_query(sql)
