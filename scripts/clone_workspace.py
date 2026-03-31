@@ -149,9 +149,11 @@ def row_count(cfg, full_table):
 
 
 def read_batch(cfg, full_table, col_names, offset, limit):
-    """Read rows using EXTERNAL_LINKS disposition (no 25 MiB result limit)."""
+    """Read rows using EXTERNAL_LINKS disposition (no 25 MiB result limit).
+    ORDER BY first column for deterministic pagination on Delta tables."""
     col_list = ", ".join(f"`{c}`" for c in col_names)
-    stmt = f"SELECT {col_list} FROM {full_table} LIMIT {limit} OFFSET {offset}"
+    order_col = f"`{col_names[0]}`"
+    stmt = f"SELECT {col_list} FROM {full_table} ORDER BY {order_col} LIMIT {limit} OFFSET {offset}"
     url = f"{cfg['host']}/api/2.0/sql/statements"
     hdr = {"Authorization": f"Bearer {cfg['token']}",
            "Content-Type": "application/json"}
