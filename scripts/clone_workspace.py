@@ -281,12 +281,15 @@ def _cast_expr(col, col_type):
 # ---------------------------------------------------------------------------
 # Transfer strategies
 # ---------------------------------------------------------------------------
-def transfer_small(fq, cols, src_catalog, tgt_catalog):
-    """INSERT INTO ... VALUES for tables under SMALL_TABLE_THRESHOLD rows."""
+def transfer_small(fq, cols, src_catalog, tgt_catalog, read_cols=None):
+    """INSERT INTO ... VALUES for tables under SMALL_TABLE_THRESHOLD rows.
+    `read_cols` overrides which columns are read from source (for corrupted-
+    column retry); the target table is always created with the full `cols`."""
     full_src = f"{src_catalog}.{fq}"
     full_tgt = f"{tgt_catalog}.{fq}"
-    col_names = list(cols.keys())
-    col_types = list(cols.values())
+    r_cols = read_cols if read_cols is not None else cols
+    col_names = list(r_cols.keys())
+    col_types = list(r_cols.values())
 
     src_cnt = row_count(SOURCE, full_src)
     print(f"  {fq}: {src_cnt} rows (small-table INSERT)")
@@ -320,12 +323,15 @@ def transfer_small(fq, cols, src_catalog, tgt_catalog):
     return src_cnt, tgt_cnt
 
 
-def transfer_large(fq, cols, src_catalog, tgt_catalog):
-    """JSONL + all-STRING staging table + INSERT with CAST."""
+def transfer_large(fq, cols, src_catalog, tgt_catalog, read_cols=None):
+    """JSONL + all-STRING staging table + INSERT with CAST.
+    `read_cols` overrides which columns are read from source; the target
+    table is created with the full `cols` schema."""
     full_src = f"{src_catalog}.{fq}"
     full_tgt = f"{tgt_catalog}.{fq}"
-    col_names = list(cols.keys())
-    col_items = list(cols.items())
+    r_cols = read_cols if read_cols is not None else cols
+    col_names = list(r_cols.keys())
+    col_items_full = list(cols.items())
 
     schema_name = fq.split(".")[0]
     safe = fq.replace(".", "_")
@@ -338,13 +344,12 @@ def transfer_large(fq, cols, src_catalog, tgt_catalog):
     print(f"  {fq}: {src_cnt} rows, {len(col_names)} cols (JSONL+staging, batch={batch})")
     sys.stdout.flush()
 
-    # Ensure staging volume exists
     try:
         exec_sql(TARGET, f"CREATE VOLUME IF NOT EXISTS {tgt_catalog}.{schema_name}.staging")
     except Exception:
         pass
 
-    # Step 1: Upload JSONL
+    # Step 1: Upload JSONL (only readable columns)
     rm_volume_dir(TARGET, stage_dir)
     off, part, tot = 0, 0, 0
     t0 = time.time()
@@ -363,12 +368,12 @@ def transfer_large(fq, cols, src_catalog, tgt_catalog):
         print(f"    upload [{tot:>8}/{src_cnt}] {rate:.0f} r/s ETA {eta:.0f}s")
         sys.stdout.flush()
 
-    # Step 2: Create all-STRING staging table
+    # Step 2: Staging table (only readable columns, all STRING)
     col_defs = ", ".join(f"`{c}` STRING" for c in col_names)
     exec_sql(TARGET, f"DROP TABLE IF EXISTS {staging_tbl}")
     exec_sql(TARGET, f"CREATE TABLE {staging_tbl} ({col_defs}) USING delta")
 
-    # Step 3: COPY INTO staging (zero type conflicts)
+    # Step 3: COPY INTO staging
     print(f"    COPY INTO staging...")
     sys.stdout.flush()
     exec_sql(TARGET, f"""
@@ -379,17 +384,21 @@ def transfer_large(fq, cols, src_catalog, tgt_catalog):
         COPY_OPTIONS ('force' = 'true')
     """, poll_limit=1200)
 
-    # Step 4: Verify staging count, then DROP + CREATE real table and INSERT with CAST
+    # Step 4: Create target with FULL schema, INSERT only readable columns
     stg_cnt = row_count(TARGET, staging_tbl)
     if stg_cnt != src_cnt:
         print(f"    WARNING: staging has {stg_cnt} rows, expected {src_cnt}")
     print(f"    INSERT with CAST into target...")
     sys.stdout.flush()
     exec_sql(TARGET, f"DROP TABLE IF EXISTS {full_tgt}")
-    real_cols = ", ".join(f"`{c}` {t}" for c, t in col_items)
+    real_cols = ", ".join(f"`{c}` {t}" for c, t in col_items_full)
     exec_sql(TARGET, f"CREATE TABLE {full_tgt} ({real_cols}) USING delta")
-    casts = ", ".join(_cast_expr(c, t) for c, t in col_items)
-    exec_sql(TARGET, f"INSERT INTO {full_tgt} SELECT {casts} FROM {staging_tbl}",
+
+    read_col_set = set(col_names)
+    tgt_col_list = ", ".join(f"`{c}`" for c in col_names)
+    casts = ", ".join(_cast_expr(c, t) for c, t in r_cols.items())
+    exec_sql(TARGET,
+             f"INSERT INTO {full_tgt} ({tgt_col_list}) SELECT {casts} FROM {staging_tbl}",
              poll_limit=1200)
 
     # Step 5: Cleanup
@@ -400,8 +409,20 @@ def transfer_large(fq, cols, src_catalog, tgt_catalog):
     return src_cnt, tgt_cnt
 
 
+def _detect_bad_columns(error_msg):
+    """Parse 'Cannot find column index for attribute X' errors and return
+    the set of column names that are unreadable."""
+    import re
+    bad = set()
+    for m in re.finditer(r"Cannot find column index for attribute '([^'#]+)", error_msg):
+        bad.add(m.group(1))
+    return bad
+
+
 def replicate_table(fq, cols, src_catalog, tgt_catalog):
-    """Pick the right transfer strategy and return (src_count, tgt_count)."""
+    """Pick the right transfer strategy and return (src_count, tgt_count).
+    If a read fails due to corrupted Delta columns, retry excluding those
+    columns (filled with NULL on the target)."""
     full_src = f"{src_catalog}.{fq}"
     try:
         cnt = row_count(SOURCE, full_src)
@@ -409,10 +430,24 @@ def replicate_table(fq, cols, src_catalog, tgt_catalog):
         print(f"  {fq}: SKIP (source error: {e})")
         return -1, -1
 
-    if cnt <= SMALL_TABLE_THRESHOLD:
-        return transfer_small(fq, cols, src_catalog, tgt_catalog)
-    else:
-        return transfer_large(fq, cols, src_catalog, tgt_catalog)
+    try:
+        if cnt <= SMALL_TABLE_THRESHOLD:
+            return transfer_small(fq, cols, src_catalog, tgt_catalog)
+        else:
+            return transfer_large(fq, cols, src_catalog, tgt_catalog)
+    except RuntimeError as e:
+        bad = _detect_bad_columns(str(e))
+        if not bad:
+            raise
+        good = {c: t for c, t in cols.items() if c not in bad}
+        print(f"    Retrying without corrupted column(s): {bad}")
+        sys.stdout.flush()
+        if cnt <= SMALL_TABLE_THRESHOLD:
+            return transfer_small(fq, cols, src_catalog, tgt_catalog,
+                                  read_cols=good)
+        else:
+            return transfer_large(fq, cols, src_catalog, tgt_catalog,
+                                  read_cols=good)
 
 
 # ---------------------------------------------------------------------------
