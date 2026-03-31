@@ -16,9 +16,6 @@ START_TIME=$(date '+%Y-%m-%d %H:%M:%S %Z')
 START_SECONDS=$(date +%s)
 HOSTNAME=$(hostname)
 
-# Email configuration
-EMAIL_TO="sseregin@sharp-sothebys-realty.com"
-
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/all_sources_cdc_${DATE}.log"
 API_TEST_LOG="$LOG_DIR/api_test_${DATE}.log"
@@ -30,6 +27,8 @@ if [ -f "$MLS2_ROOT/.env" ]; then
     set +a
 fi
 DATABRICKS_CATALOG="${DATABRICKS_CATALOG:-mls_2_0}"
+EMAIL_FROM="${RESEND_EMAIL_FROM:-MLS Pipeline <noreply@humaticai.com>}"
+EMAIL_TO="${RESEND_EMAIL_TO:-}"
 
 # Source status tracking (records = total, updates = changed in this run)
 CY_STATUS="PENDING"
@@ -419,9 +418,10 @@ HTMLEOF
     json_payload=$(python3 -c "
 import json, sys
 html = sys.stdin.read()
+recipients = [e.strip() for e in '$EMAIL_TO'.split(',') if e.strip()]
 print(json.dumps({
-    'from': 'MLS Pipeline <noreply@humaticai.com>',
-    'to': ['$EMAIL_TO'],
+    'from': '$EMAIL_FROM',
+    'to': recipients,
     'subject': '$subject',
     'html': html
 }))
@@ -643,11 +643,17 @@ echo "✅ All Sources CDC Pipeline Complete! Status: $OVERALL_STATUS" | tee -a "
 
 # Send email report
 echo "" | tee -a "$LOG_FILE"
-echo "📧 Sending email report to $EMAIL_TO..." | tee -a "$LOG_FILE"
-if send_email_report "$OVERALL_STATUS"; then
-    echo "✅ Email sent successfully" | tee -a "$LOG_FILE"
+if [ -z "$EMAIL_TO" ]; then
+    echo "⚠️ RESEND_EMAIL_TO not set, skipping email" | tee -a "$LOG_FILE"
+elif [ -z "${RESEND_API_KEY:-}" ]; then
+    echo "⚠️ RESEND_API_KEY not set, skipping email" | tee -a "$LOG_FILE"
 else
-    echo "⚠️ Failed to send email" | tee -a "$LOG_FILE"
+    echo "📧 Sending email report to $EMAIL_TO..." | tee -a "$LOG_FILE"
+    if send_email_report "$OVERALL_STATUS"; then
+        echo "✅ Email sent successfully" | tee -a "$LOG_FILE"
+    else
+        echo "⚠️ Failed to send email" | tee -a "$LOG_FILE"
+    fi
 fi
 
 exit 0
