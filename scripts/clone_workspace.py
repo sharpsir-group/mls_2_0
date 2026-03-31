@@ -5,19 +5,20 @@
 """
 MLS 2.0 Cross-Workspace Clone Tool
 
-Replicates bronze-level data from a source Databricks workspace into your
-local workspace, then regenerates derived layers (silver/gold/exports)
-using the existing ETL notebooks.
+Replicates all tables from a source Databricks workspace into your
+local workspace.  By default copies every table (bronze, silver, gold,
+exports) directly for an exact clone.  Use --bronze-only to replicate
+only bronze and regenerate derived layers via ETL notebooks.
 
 Requires CLONE_SOURCE_* vars in .env (see .env.example section 6).
 Your workspace uses the standard DATABRICKS_* vars.
 
 Usage:
-    python3 scripts/clone_workspace.py                 # full clone
-    python3 scripts/clone_workspace.py --skip-etl      # bronze only
+    python3 scripts/clone_workspace.py                 # full clone (all tables)
+    python3 scripts/clone_workspace.py --resume        # retry only failed/mismatched
+    python3 scripts/clone_workspace.py --bronze-only   # bronze + regenerate derived
     python3 scripts/clone_workspace.py --verify-only   # compare counts
     python3 scripts/clone_workspace.py --tables t1,t2  # specific tables
-    python3 scripts/clone_workspace.py --resume        # retry only failed/mismatched
 """
 import os
 import sys
@@ -543,8 +544,8 @@ def main():
         description="MLS 2.0 Cross-Workspace Clone Tool"
     )
     parser.add_argument(
-        "--skip-etl", action="store_true",
-        help="Replicate bronze only, skip silver/gold/export regeneration",
+        "--bronze-only", action="store_true",
+        help="Replicate only bronze tables, then regenerate derived via ETL",
     )
     parser.add_argument(
         "--verify-only", action="store_true",
@@ -578,20 +579,26 @@ def main():
         ok = verify_all(schema_def, src_cat, tgt_cat)
         return 0 if ok else 1
 
-    # -- Replicate bronze --
+    # -- Build replication list --
     table_filter = None
     if args.tables:
         table_filter = set(t.strip() for t in args.tables.split(","))
 
-    to_replicate = bronze_tables(schema_def, table_filter)
+    if args.bronze_only:
+        to_replicate = bronze_tables(schema_def, table_filter)
+    else:
+        tbl = all_tables(schema_def)
+        to_replicate = {fq: cols for fq, cols in tbl.items()
+                        if not table_filter or fq in table_filter}
+
     print(f"\n  Tables to replicate: {len(to_replicate)}")
     mode_parts = []
     if args.resume:
         mode_parts.append("RESUME (skip matched)")
-    if args.skip_etl:
-        mode_parts.append("BRONZE ONLY")
-    if not mode_parts:
-        mode_parts.append("FULL CLONE (bronze + regenerate derived)")
+    if args.bronze_only:
+        mode_parts.append("BRONZE ONLY + regenerate derived")
+    else:
+        mode_parts.append("FULL CLONE (all tables)")
     print(f"  Mode: {' | '.join(mode_parts)}")
     print("=" * 60)
 
@@ -604,7 +611,8 @@ def main():
     if vd.returncode != 0:
         print("WARNING: validate_deployment.py reported issues")
 
-    print(f"\nPhase 2: Replicate Bronze ({len(to_replicate)} tables)")
+    label = "Bronze" if args.bronze_only else "All"
+    print(f"\nPhase 2: Replicate {label} ({len(to_replicate)} tables)")
     print("-" * 40)
 
     results = {}
@@ -639,7 +647,7 @@ def main():
         sys.stdout.flush()
 
     elapsed = time.time() - t_start
-    print(f"\n  Bronze replication done in {elapsed:.0f}s")
+    print(f"\n  Replication done in {elapsed:.0f}s")
     if skipped:
         print(f"  Skipped (already matched): {skipped}")
 
@@ -649,8 +657,8 @@ def main():
         for fq in failed:
             print(f"    {fq}: {results[fq][2]}")
 
-    # -- Regenerate derived layers --
-    if not args.skip_etl and not args.tables:
+    # -- Regenerate derived layers (only in bronze-only mode) --
+    if args.bronze_only and not args.tables:
         print(f"\nPhase 3: Regenerate Derived Layers")
         print("-" * 40)
         regenerate_derived(tgt_cat)
