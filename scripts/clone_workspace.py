@@ -74,6 +74,16 @@ if not TARGET["host"].startswith("https://"):
 BATCH_SIZE = 2000
 SMALL_TABLE_THRESHOLD = 500
 
+
+def batch_size_for(col_count):
+    """Keep batches reasonable for upload chunking, even though EXTERNAL_LINKS
+    removes the 25 MiB read limit."""
+    if col_count > 300:
+        return 500
+    if col_count > 100:
+        return 1000
+    return BATCH_SIZE
+
 # ---------------------------------------------------------------------------
 # Schema
 # ---------------------------------------------------------------------------
@@ -137,17 +147,66 @@ def row_count(cfg, full_table):
 
 
 def read_batch(cfg, full_table, col_names, offset, limit):
+    """Read rows using EXTERNAL_LINKS disposition (no 25 MiB result limit)."""
     col_list = ", ".join(f"`{c}`" for c in col_names)
-    d = exec_sql(cfg, f"SELECT {col_list} FROM {full_table} LIMIT {limit} OFFSET {offset}")
-    rows = d.get("result", {}).get("data_array", [])
-    for lnk in d.get("result", {}).get("external_links", []):
-        u = lnk.get("external_link")
-        if u:
-            resp = requests.get(u, timeout=300)
+    stmt = f"SELECT {col_list} FROM {full_table} LIMIT {limit} OFFSET {offset}"
+    url = f"{cfg['host']}/api/2.0/sql/statements"
+    hdr = {"Authorization": f"Bearer {cfg['token']}",
+           "Content-Type": "application/json"}
+
+    r = requests.post(url, headers=hdr, json={
+        "warehouse_id": cfg["warehouse_id"],
+        "statement": stmt,
+        "wait_timeout": "50s",
+        "disposition": "EXTERNAL_LINKS",
+        "format": "JSON_ARRAY",
+    }, timeout=120)
+    r.raise_for_status()
+    d = r.json()
+
+    st = d.get("status", {}).get("state", "")
+    sid = d["statement_id"]
+    if st in ("PENDING", "RUNNING"):
+        for _ in range(600):
+            time.sleep(5)
+            p = requests.get(f"{url}/{sid}", headers=hdr, timeout=60)
+            p.raise_for_status()
+            d = p.json()
+            st = d.get("status", {}).get("state", "")
+            if st not in ("PENDING", "RUNNING"):
+                break
+    if st != "SUCCEEDED":
+        msg = d.get("status", {}).get("error", {}).get("message", "?")[:400]
+        raise RuntimeError(f"SQL {st}: {msg}")
+
+    rows = []
+    ext_links = d.get("result", {}).get("external_links", [])
+    for lnk in ext_links:
+        dl_url = lnk.get("external_link")
+        if dl_url:
+            resp = requests.get(dl_url, timeout=300)
             resp.raise_for_status()
-            ch = resp.json()
-            if isinstance(ch, list):
-                rows.extend(ch)
+            chunk = resp.json()
+            if isinstance(chunk, list):
+                rows.extend(chunk)
+
+    next_link = (ext_links[0].get("next_chunk_internal_link")
+                 if ext_links else None)
+    while next_link:
+        cr = requests.get(f"{cfg['host']}{next_link}", headers={
+            "Authorization": f"Bearer {cfg['token']}"}, timeout=300)
+        cr.raise_for_status()
+        cd = cr.json()
+        for lnk in cd.get("external_links", []):
+            dl_url = lnk.get("external_link")
+            if dl_url:
+                resp = requests.get(dl_url, timeout=300)
+                resp.raise_for_status()
+                chunk = resp.json()
+                if isinstance(chunk, list):
+                    rows.extend(chunk)
+        next_link = cd.get("external_links", [{}])[0].get(
+            "next_chunk_internal_link") if cd.get("external_links") else None
     return rows
 
 
@@ -258,7 +317,8 @@ def transfer_large(fq, cols, src_catalog, tgt_catalog):
     staging_tbl = f"{tgt_catalog}.{schema_name}._stg_{safe}"
 
     src_cnt = row_count(SOURCE, full_src)
-    print(f"  {fq}: {src_cnt} rows (JSONL+staging)")
+    batch = batch_size_for(len(col_names))
+    print(f"  {fq}: {src_cnt} rows, {len(col_names)} cols (JSONL+staging, batch={batch})")
     sys.stdout.flush()
 
     # Ensure staging volume exists
@@ -272,7 +332,7 @@ def transfer_large(fq, cols, src_catalog, tgt_catalog):
     off, part, tot = 0, 0, 0
     t0 = time.time()
     while off < src_cnt:
-        rows = read_batch(SOURCE, full_src, col_names, off, BATCH_SIZE)
+        rows = read_batch(SOURCE, full_src, col_names, off, batch)
         if not rows:
             break
         upload_file(TARGET, f"{stage_dir}/p{part:06d}.jsonl",
