@@ -216,7 +216,10 @@ def transfer_small(fq, cols, src_catalog, tgt_catalog):
     print(f"  {fq}: {src_cnt} rows (small-table INSERT)")
     sys.stdout.flush()
 
-    exec_sql(TARGET, f"TRUNCATE TABLE {full_tgt}")
+    col_items = list(cols.items())
+    exec_sql(TARGET, f"DROP TABLE IF EXISTS {full_tgt}")
+    real_cols = ", ".join(f"`{c}` {t}" for c, t in col_items)
+    exec_sql(TARGET, f"CREATE TABLE {full_tgt} ({real_cols}) USING delta")
 
     rows = read_batch(SOURCE, full_src, col_names, 0, src_cnt + 100)
     if not rows:
@@ -250,7 +253,8 @@ def transfer_large(fq, cols, src_catalog, tgt_catalog):
 
     schema_name = fq.split(".")[0]
     safe = fq.replace(".", "_")
-    stage_dir = f"/Volumes/{tgt_catalog}/{schema_name}/staging/{safe}"
+    run_id = str(int(time.time()))
+    stage_dir = f"/Volumes/{tgt_catalog}/{schema_name}/staging/{safe}_{run_id}"
     staging_tbl = f"{tgt_catalog}.{schema_name}._stg_{safe}"
 
     src_cnt = row_count(SOURCE, full_src)
@@ -298,10 +302,15 @@ def transfer_large(fq, cols, src_catalog, tgt_catalog):
         COPY_OPTIONS ('force' = 'true')
     """, poll_limit=1200)
 
-    # Step 4: Truncate real table + INSERT with CAST
+    # Step 4: Verify staging count, then DROP + CREATE real table and INSERT with CAST
+    stg_cnt = row_count(TARGET, staging_tbl)
+    if stg_cnt != src_cnt:
+        print(f"    WARNING: staging has {stg_cnt} rows, expected {src_cnt}")
     print(f"    INSERT with CAST into target...")
     sys.stdout.flush()
-    exec_sql(TARGET, f"TRUNCATE TABLE {full_tgt}")
+    exec_sql(TARGET, f"DROP TABLE IF EXISTS {full_tgt}")
+    real_cols = ", ".join(f"`{c}` {t}" for c, t in col_items)
+    exec_sql(TARGET, f"CREATE TABLE {full_tgt} ({real_cols}) USING delta")
     casts = ", ".join(
         f"CAST(`{c}` AS {t}) AS `{c}`" if t.upper() != "STRING" else f"`{c}`"
         for c, t in col_items
