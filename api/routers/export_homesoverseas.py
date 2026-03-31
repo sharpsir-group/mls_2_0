@@ -355,7 +355,9 @@ async def homesoverseas_xml():
     sql = f"""
         SELECT *
         FROM {catalog}.exports.homesoverseas
-        ORDER BY objectid DESC
+        ORDER BY
+            CASE WHEN title_ru IS NOT NULL AND title_ru != '' THEN 0 ELSE 1 END,
+            objectid DESC
         LIMIT 1000
     """
 
