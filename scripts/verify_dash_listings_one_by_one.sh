@@ -14,7 +14,9 @@ MLS2_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Load environment
 if [ -f "$MLS2_ROOT/.env" ]; then
-    export $(grep -v '^#' "$MLS2_ROOT/.env" | xargs)
+    set -a
+    source "$MLS2_ROOT/.env"
+    set +a
 fi
 
 RESO_API="${RESO_API_URL:-http://localhost:3900}"
