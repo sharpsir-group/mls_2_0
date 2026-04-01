@@ -75,30 +75,27 @@ cp .env.example .env
 All settings are stored in `.env` (copy from `.env.example`):
 
 ```bash
-# Qobrix API (primary CRM source)
-QOBRIX_API_USER=<your-api-user-uuid>
-QOBRIX_API_KEY=<your-api-key>
-QOBRIX_API_BASE_URL=https://<instance>.qobrix.com/api/v2
-
 # Databricks
 DATABRICKS_HOST=https://<workspace>.cloud.databricks.com
 DATABRICKS_TOKEN=<your-token>
-DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/<warehouse-id>
-DATABRICKS_CATALOG=mls_2_0
+DATABRICKS_WAREHOUSE_ID=<your-warehouse-id>
+DATABRICKS_CATALOG=mls2
 
-# Multi-source office keys
-SRC_1_OFFICE_KEY=<your-office-key-1>
-SRC_2_OFFICE_KEY=<your-office-key-2>
-SRC_3_OFFICE_KEY=<your-office-key-3>
+# Data sources (SRC_1 = Qobrix API, SRC_2 = DASH file, SRC_3 = DASH API)
+SRC_1_OFFICE_KEY=SHARPSIR-CY-001
+SRC_1_API_USER=<your-qobrix-api-user-uuid>
+SRC_1_API_KEY=<your-qobrix-api-key>
+SRC_1_API_URL=https://<instance>.qobrix.com/api/v2
 
 # RESO Web API Server
 RESO_API_HOST=0.0.0.0
 RESO_API_PORT=3900
 
-# OAuth 2.0
-OAUTH_CLIENT_ID=reso-client-xxx
-OAUTH_CLIENT_SECRET=<secret>
+# OAuth 2.0 (numbered clients, one per office)
 OAUTH_JWT_SECRET=<secret>
+OAUTH_CLIENT_1_ID=reso-client-xxx
+OAUTH_CLIENT_1_SECRET=<secret>
+OAUTH_CLIENT_1_OFFICES=SHARPSIR-CY-001
 ```
 
 Generate OAuth secrets with: `openssl rand -hex 32`
@@ -195,10 +192,10 @@ ProxyPassReverse /reso/ http://127.0.0.1:3900/
 
 ### Databricks Catalog Structure
 
-Unity Catalog: **`mls_2_0`**
+Unity Catalog: **`mls2`**
 
 ```
-mls_2_0 (catalog)
+mls2 (catalog)
 ├── qobrix_bronze (17+ tables)
 │   ├── properties, agents, contacts, users
 │   ├── property_media, property_viewings, opportunities
@@ -260,7 +257,7 @@ mls_2_0 (catalog)
 #### 3. Create Unity Catalog
 
 1. Go to **Catalog** → **Create Catalog** (or run [init_uc_catalog_mls_2_0.sql](scripts/sql/init_uc_catalog_mls_2_0.sql))
-2. Name: **`mls_2_0`**
+2. Name: **`mls2`**
 3. Schemas are created by the SQL script or by notebooks on first run
 
 #### 4. Generate Access Token
@@ -330,8 +327,7 @@ Edit `.env` with the **target** workspace credentials:
 DATABRICKS_HOST=https://dbc-XXXX.cloud.databricks.com
 DATABRICKS_TOKEN=<target-workspace-token>
 DATABRICKS_WAREHOUSE_ID=<target-warehouse-id>
-DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/<target-warehouse-id>
-DATABRICKS_CATALOG=mls_2_0
+DATABRICKS_CATALOG=mls2
 
 # Source workspace (for cloning data)
 CLONE_SOURCE_HOST=https://dbc-YYYY.cloud.databricks.com
@@ -356,7 +352,15 @@ export PATH="$HOME/.local/bin:$PATH"
 databricks sql execute --sql "$(cat scripts/sql/init_uc_catalog_mls_2_0.sql)"
 ```
 
-#### Step 4: Clone Data from Source Workspace
+#### Step 4: Load Data
+
+**Option A — Full pipeline (recommended):** Run the ETL from scratch if the target has API access to data sources:
+
+```bash
+./scripts/run_pipeline.sh all
+```
+
+**Option B — Clone from source workspace (experimental):** Use only when the target cannot reach the data sources directly:
 
 ```bash
 # Full clone — all tables (bronze, silver, gold, exports)
@@ -427,8 +431,9 @@ Create `/opt/bitnami/apache/conf/vhosts/mls-sharpsir.conf`:
     SSLCertificateKeyFile /etc/letsencrypt/live/mls.your-domain.com/privkey.pem
 
     ProxyPreserveHost On
-    ProxyPass / http://127.0.0.1:3900/
-    ProxyPassReverse / http://127.0.0.1:3900/
+    RedirectMatch ^/reso$ /reso/
+    ProxyPass        /reso/ http://127.0.0.1:3900/
+    ProxyPassReverse /reso/ http://127.0.0.1:3900/
 
     RequestHeader set X-Forwarded-Proto "https"
     RequestHeader set X-Forwarded-Port "443"
@@ -467,10 +472,10 @@ Add (offset by 1 hour from source if both run daily):
 
 ```bash
 # API health
-curl -s https://mls.your-domain.com/health | python3 -m json.tool
+curl -s https://mls.your-domain.com/reso/health | python3 -m json.tool
 
 # HomeOverseas feed
-curl -sI https://mls.your-domain.com/export/homesoverseas.xml
+curl -sI https://mls.your-domain.com/reso/export/homesoverseas.xml
 
 # PM2 status
 pm2 status
@@ -479,6 +484,8 @@ pm2 status
 </details>
 
 ### Cloning Data Between Workspaces
+
+> **Experimental** — The clone tool works but has known limitations with large Delta tables. Prefer running a full pipeline (`run_pipeline.sh all`) on the target workspace when possible. Use cloning only when the target has no direct API access to the data sources.
 
 <details>
 <summary>Expand for clone tool reference</summary>
@@ -506,7 +513,7 @@ CLONE_SOURCE_CATALOG=mls2
 DATABRICKS_HOST=https://dbc-YYYY.cloud.databricks.com
 DATABRICKS_TOKEN=<token>
 DATABRICKS_WAREHOUSE_ID=<warehouse-id>
-DATABRICKS_CATALOG=mls_2_0
+DATABRICKS_CATALOG=mls2
 ```
 
 #### Commands
