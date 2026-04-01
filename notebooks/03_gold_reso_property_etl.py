@@ -388,7 +388,7 @@ SELECT
     b.industrial_type                             AS X_IndustrialType,
     b.hotel_type                                  AS X_HotelType,
     b.building_type                               AS X_BuildingType,
-    b.investment_type                             AS X_InvestmentType,
+    NULL                                          AS X_InvestmentType,
     TRY_CAST(b.customer_parking AS INT)           AS X_CustomerParking,
     b.additional_features                         AS X_AdditionalFeatures,
     b.interior_features                           AS X_InteriorFeatures,
