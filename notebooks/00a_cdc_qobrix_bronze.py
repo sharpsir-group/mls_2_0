@@ -232,7 +232,7 @@ def get_last_sync(entity: str):
     if result and result[0][0]:
         return result[0][0]
     
-    print(f"   ⚠️  No previous sync for {entity} — will fetch ALL records (bootstrap)")
+    print(f"   ⚠️  No previous sync metadata for {entity}")
     return None
 
 

@@ -148,20 +148,6 @@ get_source_status() {
 # Function to send HTML email report
 send_email_report() {
     local overall_status="$1"
-    local status_color="#10b981"
-    local status_bg="#ecfdf5"
-    local status_icon="&#10003;"
-    
-    if [ "$overall_status" = "FAILED" ]; then
-        status_color="#ef4444"
-        status_bg="#fef2f2"
-        status_icon="&#10007;"
-    elif [ "$overall_status" = "WARNING" ]; then
-        status_color="#f59e0b"
-        status_bg="#fffbeb"
-        status_icon="&#9888;"
-    fi
-    
     local subject="[MLS 2.0] All Sources CDC ${overall_status} - ${DATE}"
     
     # Calculate duration

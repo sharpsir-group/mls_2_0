@@ -4,7 +4,7 @@
 # See LICENSE file for details.
 # MLS 2.0 Data Integrity Test - Qobrix API vs RESO
 # Usage: ./scripts/verify_data_integrity.sh
-# Run from: mls_2_0/ directory
+# Run from: repository root (this project) directory
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,7 +21,7 @@ else
     exit 1
 fi
 
-DATABRICKS_CATALOG="${DATABRICKS_CATALOG:-mls_2_0}"
+DATABRICKS_CATALOG="${DATABRICKS_CATALOG:-mls2}"
 
 # Extract host without https://
 DB_HOST="${DATABRICKS_HOST#https://}"

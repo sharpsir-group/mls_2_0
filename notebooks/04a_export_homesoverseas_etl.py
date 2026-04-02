@@ -23,7 +23,7 @@
 # MAGIC 
 # MAGIC **Spec:** HomeOverseas.ru XML Feed Technical Requirements V4 (1.05.2023)
 # MAGIC 
-# MAGIC **Run After:** 03_gold_reso_property_etl.py / 03_cdc_gold_reso_property_etl.py
+# MAGIC **Run After:** 03_gold_reso_property_etl.py
 
 # COMMAND ----------
 
@@ -36,8 +36,8 @@ import os
 from pyspark.sql.functions import col
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType
 
-dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
-catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls2")
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls2").strip() or "mls2"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql("CREATE SCHEMA IF NOT EXISTS exports")
 

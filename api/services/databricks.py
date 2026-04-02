@@ -20,7 +20,7 @@ class DatabricksConnector:
         host = (self.settings.databricks_host or "").strip()
         if not host:
             raise ValueError(
-                "DATABRICKS_HOST is not set. Add it to mls_2_0/.env (e.g. DATABRICKS_HOST=https://xxx.cloud.databricks.com)"
+                "DATABRICKS_HOST is not set. Add it to the repository root `.env` (e.g. DATABRICKS_HOST=https://xxx.cloud.databricks.com)"
             )
         if host.startswith("https://"):
             self.base_url = host.rstrip("/")

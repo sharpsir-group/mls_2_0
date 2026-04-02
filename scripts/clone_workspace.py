@@ -61,7 +61,7 @@ TARGET = {
     "host": os.getenv("DATABRICKS_HOST", "").strip().rstrip("/"),
     "token": os.getenv("DATABRICKS_TOKEN", "").strip(),
     "warehouse_id": os.getenv("DATABRICKS_WAREHOUSE_ID", "").strip(),
-    "catalog": os.getenv("DATABRICKS_CATALOG", "mls_2_0").strip(),
+    "catalog": os.getenv("DATABRICKS_CATALOG", "mls2").strip(),
 }
 
 for cfg_name, cfg in [("CLONE_SOURCE", SOURCE), ("DATABRICKS (target)", TARGET)]:

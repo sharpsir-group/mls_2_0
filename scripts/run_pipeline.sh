@@ -4,7 +4,7 @@
 # See LICENSE file for details.
 # MLS 2.0 Pipeline Runner
 # Usage: ./scripts/run_pipeline.sh [bronze|silver|gold|integrity|all]
-# Run from: mls_2_0/ directory
+# Run from: repository root (this project) directory
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,7 +23,7 @@ else
 fi
 
 export MLS2_ROOT
-# Unity Catalog for all Delta tables (isolated namespace; see scripts/sql/init_uc_catalog_mls_2_0.sql)
+# Unity Catalog for all Delta tables (isolated namespace; see scripts/sql/ for UC init SQL)
 DATABRICKS_CATALOG="${DATABRICKS_CATALOG:?DATABRICKS_CATALOG not set in .env}"
 # Workspace folder for notebooks (match import: MLS_NOTEBOOK_BASE=/mls_etl/notebooks in .env if needed)
 MLS_NOTEBOOK_BASE="${MLS_NOTEBOOK_BASE:-/Shared/mls_2_0}"
@@ -396,7 +396,7 @@ else:
         exec "$0" cdc
         ;;
     cdc)
-        echo "🔄 CDC Mode: Smart incremental pipeline (only changed entities)"
+        echo "🔄 CDC Mode: Full incremental sync (Bronze CDC + full Silver/Gold rebuild)"
         echo ""
         echo "📦 Stage 1: CDC Bronze (incremental data from API)"
         run_notebook "MLS 2.0 - Qobrix CDC Bronze" "${MLS_NOTEBOOK_BASE}/00a_cdc_qobrix_bronze" "true" 39600

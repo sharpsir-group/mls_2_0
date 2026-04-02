@@ -6,7 +6,6 @@ export PATH="/home/bitnami/.local/bin:/home/bitnami/.nvm/versions/node/v20.19.5/
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MLS2_ROOT="$(dirname "$SCRIPT_DIR")"
 LOG_FILE="$MLS2_ROOT/logs/full_refresh_$(date +%Y-%m-%d).log"
-EMAIL_TO="${RESEND_EMAIL_TO:-sseregin@sharp-sothebys-realty.com}"
 START_TIME=$(date '+%Y-%m-%d %H:%M:%S %Z')
 
 # Load environment
@@ -15,6 +14,7 @@ if [ -f "$MLS2_ROOT/.env" ]; then
     source "$MLS2_ROOT/.env"
     set +a
 fi
+EMAIL_TO="${RESEND_EMAIL_TO:-sseregin@sharp-sothebys-realty.com}"
 
 echo "╔══════════════════════════════════════════════════════════════╗" | tee "$LOG_FILE"
 echo "║  MLS 2.0 FULL REFRESH - One-time Fix                         ║" | tee -a "$LOG_FILE"
@@ -26,12 +26,8 @@ cd "$MLS2_ROOT"
 # Run full refresh
 if "$SCRIPT_DIR/run_pipeline.sh" all >> "$LOG_FILE" 2>&1; then
     STATUS="SUCCESS"
-    STATUS_COLOR="#10b981"
-    STATUS_ICON="&#10003;"
 else
     STATUS="FAILED"
-    STATUS_COLOR="#ef4444"
-    STATUS_ICON="&#10007;"
 fi
 
 END_TIME=$(date '+%Y-%m-%d %H:%M:%S %Z')

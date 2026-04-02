@@ -17,7 +17,7 @@ import os
 import re
 
 
-# Find the .env file: prefer mls_2_0/.env, fallback to api/.env
+# Find the .env file: prefer repository root `.env`, fallback to api/.env
 API_DIR = Path(__file__).parent
 MLS2_ROOT = API_DIR.parent
 ENV_FILE = MLS2_ROOT / ".env"
@@ -196,7 +196,7 @@ class Settings(BaseSettings):
     databricks_host: str = ""
     databricks_token: str = ""
     databricks_warehouse_id: str = ""
-    databricks_catalog: str = "mls_2_0"
+    databricks_catalog: str = "mls2"
     databricks_schema: str = "reso_gold"
     
     # API server settings

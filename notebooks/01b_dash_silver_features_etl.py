@@ -28,8 +28,8 @@
 
 import os
 
-dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
-catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls2")
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls2").strip() or "mls2"
 spark.sql(f"USE CATALOG {catalog}")
 
 print("Using catalog:", catalog)

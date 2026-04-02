@@ -4,7 +4,7 @@
 # See LICENSE file for details.
 # Import MLS 2.0 notebooks to Databricks workspace
 # Usage: ./scripts/import_notebooks.sh
-# Run from: mls_2_0/ directory
+# Run from: repository root (this project) directory
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

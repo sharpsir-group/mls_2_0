@@ -26,7 +26,7 @@ else
     echo "   Copy .env.example to .env and fill in your values."
     exit 1
 fi
-DATABRICKS_CATALOG="${DATABRICKS_CATALOG:-mls_2_0}"
+DATABRICKS_CATALOG="${DATABRICKS_CATALOG:-mls2}"
 
 # Suppress CLI warning
 export DATABRICKS_CLI_DO_NOT_SHOW_UPGRADE_MESSAGE=1

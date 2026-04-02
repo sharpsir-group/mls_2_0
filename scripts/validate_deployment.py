@@ -14,7 +14,7 @@ Usage:
     python3 scripts/validate_deployment.py --check      # validate only (no changes)
     python3 scripts/validate_deployment.py --verbose     # show column details
 
-Run from: mls_2_0/ directory (or any — the script locates .env automatically).
+Run from: repository root (or any — the script locates .env automatically).
 """
 import os
 import sys
@@ -50,7 +50,7 @@ if ENV_FILE.exists():
 DATABRICKS_HOST = os.getenv("DATABRICKS_HOST", "").strip().rstrip("/")
 DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN", "").strip()
 DATABRICKS_WAREHOUSE_ID = os.getenv("DATABRICKS_WAREHOUSE_ID", "").strip()
-CATALOG = os.getenv("DATABRICKS_CATALOG", "mls_2_0").strip()
+CATALOG = os.getenv("DATABRICKS_CATALOG", "mls2").strip()
 
 if DATABRICKS_HOST and not DATABRICKS_HOST.startswith("https://"):
     DATABRICKS_HOST = f"https://{DATABRICKS_HOST}"
