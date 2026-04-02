@@ -241,17 +241,19 @@ print(json.dumps(d))
             
             if [ "$result_state" = "SUCCESS" ]; then
                 # Capture notebook exit value (dbutils.notebook.exit())
+                # Per Databricks docs: for multi-task runs, get-output requires
+                # the task-level run_id, not the parent run_id.
                 local nb_output=""
-                nb_output=$(echo "$status_json" | python3 -c "
+                local task_run_id
+                task_run_id=$(echo "$status_json" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 tasks = d.get('tasks', [])
-if tasks:
-    result = tasks[0].get('output', {}).get('notebook_output', {}).get('result', '')
-    if result: print(result)
+if tasks and 'run_id' in tasks[0]:
+    print(tasks[0]['run_id'])
 " 2>/dev/null)
-                if [ -z "$nb_output" ]; then
-                    nb_output=$(databricks runs get-output --run-id "$run_id" 2>/dev/null | python3 -c "
+                if [ -n "$task_run_id" ]; then
+                    nb_output=$(databricks runs get-output --run-id "$task_run_id" 2>/dev/null | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 r = d.get('notebook_output', {}).get('result', '')

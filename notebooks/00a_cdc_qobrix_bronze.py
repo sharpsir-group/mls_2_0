@@ -202,8 +202,8 @@ if _meta_count == 0:
 
     _refresh_result = dbutils.notebook.run(
         "./00_full_refresh_qobrix_bronze",
-        timeout_seconds=36000,
-        arguments={
+        36000,
+        {
             "DATABRICKS_CATALOG": catalog,
             "QOBRIX_API_USER": qobrix_api_user,
             "QOBRIX_API_KEY": qobrix_api_key,
