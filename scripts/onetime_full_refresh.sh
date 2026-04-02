@@ -9,6 +9,31 @@ LOG_FILE="$MLS2_ROOT/logs/full_refresh_$(date +%Y-%m-%d).log"
 EMAIL_TO="sseregin@sharp-sothebys-realty.com"
 START_TIME=$(date '+%Y-%m-%d %H:%M:%S %Z')
 
+# Load environment
+if [ -f "$MLS2_ROOT/.env" ]; then
+    set -a
+    source "$MLS2_ROOT/.env"
+    set +a
+fi
+
+# Wake up SQL warehouse if stopped
+if [ -n "$DATABRICKS_WAREHOUSE_ID" ] && [ -n "$DATABRICKS_HOST" ] && [ -n "$DATABRICKS_TOKEN" ]; then
+    WH_STATE=$(curl -s "$DATABRICKS_HOST/api/2.0/sql/warehouses/$DATABRICKS_WAREHOUSE_ID" \
+        -H "Authorization: Bearer $DATABRICKS_TOKEN" \
+        | python3 -c "import sys,json; print(json.load(sys.stdin).get('state','UNKNOWN'))" 2>/dev/null)
+    if [ "$WH_STATE" = "STOPPED" ]; then
+        curl -s -X POST "$DATABRICKS_HOST/api/2.0/sql/warehouses/$DATABRICKS_WAREHOUSE_ID/start" \
+            -H "Authorization: Bearer $DATABRICKS_TOKEN" -H "Content-Type: application/json" >/dev/null 2>&1
+        for i in $(seq 1 30); do
+            sleep 5
+            WH_STATE=$(curl -s "$DATABRICKS_HOST/api/2.0/sql/warehouses/$DATABRICKS_WAREHOUSE_ID" \
+                -H "Authorization: Bearer $DATABRICKS_TOKEN" \
+                | python3 -c "import sys,json; print(json.load(sys.stdin).get('state','UNKNOWN'))" 2>/dev/null)
+            [ "$WH_STATE" = "RUNNING" ] && break
+        done
+    fi
+fi
+
 echo "╔══════════════════════════════════════════════════════════════╗" | tee "$LOG_FILE"
 echo "║  MLS 2.0 FULL REFRESH - One-time Fix                         ║" | tee -a "$LOG_FILE"
 echo "║  $START_TIME                                  ║" | tee -a "$LOG_FILE"

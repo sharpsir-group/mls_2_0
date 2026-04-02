@@ -26,9 +26,27 @@ if [ -f "$MLS2_ROOT/.env" ]; then
     source "$MLS2_ROOT/.env"
     set +a
 fi
-DATABRICKS_CATALOG="${DATABRICKS_CATALOG:-mls_2_0}"
+DATABRICKS_CATALOG="${DATABRICKS_CATALOG:-mls2}"
 EMAIL_FROM="${RESEND_EMAIL_FROM:-MLS Pipeline <noreply@humaticai.com>}"
 EMAIL_TO="${RESEND_EMAIL_TO:-}"
+
+# Wake up SQL warehouse if stopped (Serverless auto-stops after inactivity)
+if [ -n "$DATABRICKS_WAREHOUSE_ID" ] && [ -n "$DATABRICKS_HOST" ] && [ -n "$DATABRICKS_TOKEN" ]; then
+    WH_STATE=$(curl -s "$DATABRICKS_HOST/api/2.0/sql/warehouses/$DATABRICKS_WAREHOUSE_ID" \
+        -H "Authorization: Bearer $DATABRICKS_TOKEN" \
+        | python3 -c "import sys,json; print(json.load(sys.stdin).get('state','UNKNOWN'))" 2>/dev/null)
+    if [ "$WH_STATE" = "STOPPED" ]; then
+        curl -s -X POST "$DATABRICKS_HOST/api/2.0/sql/warehouses/$DATABRICKS_WAREHOUSE_ID/start" \
+            -H "Authorization: Bearer $DATABRICKS_TOKEN" -H "Content-Type: application/json" >/dev/null 2>&1
+        for i in $(seq 1 30); do
+            sleep 5
+            WH_STATE=$(curl -s "$DATABRICKS_HOST/api/2.0/sql/warehouses/$DATABRICKS_WAREHOUSE_ID" \
+                -H "Authorization: Bearer $DATABRICKS_TOKEN" \
+                | python3 -c "import sys,json; print(json.load(sys.stdin).get('state','UNKNOWN'))" 2>/dev/null)
+            [ "$WH_STATE" = "RUNNING" ] && break
+        done
+    fi
+fi
 
 # Source status tracking (records = total, updates = changed in this run)
 CY_STATUS="PENDING"
