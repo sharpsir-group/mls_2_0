@@ -51,12 +51,12 @@ import json as _json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Widgets (job base_parameters from scripts/run_pipeline.sh)
-dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls2")
 dbutils.widgets.text("QOBRIX_API_USER", "")
 dbutils.widgets.text("QOBRIX_API_KEY", "")
 dbutils.widgets.text("QOBRIX_API_BASE_URL", "")
 
-catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls2").strip() or "mls2"
 schema = "qobrix_bronze"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"USE SCHEMA {schema}")
@@ -495,3 +495,61 @@ for table in tables:
         print(f"   {table:25s} (not created)")
 
 print("-" * 50)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Seed CDC Metadata
+# MAGIC 
+# MAGIC After a full refresh, seed `cdc_metadata` so the next CDC run has valid
+# MAGIC starting timestamps and does not fall into recovery mode.
+
+# COMMAND ----------
+
+print("\n" + "=" * 80)
+print("Seeding cdc_metadata for CDC runs")
+print("=" * 80)
+
+spark.sql("""
+    CREATE TABLE IF NOT EXISTS cdc_metadata (
+        entity_name STRING,
+        last_sync_timestamp TIMESTAMP,
+        last_modified_timestamp STRING,
+        records_processed INT,
+        sync_status STRING,
+        sync_started_at TIMESTAMP,
+        sync_completed_at TIMESTAMP
+    )
+    USING DELTA
+""")
+
+cdc_entities = [
+    "properties", "agents", "contacts", "property_viewings",
+    "opportunities", "users", "projects", "project_features",
+    "property_types", "property_subtypes", "locations",
+    "media_categories", "property_translations_ru"
+]
+
+for entity in cdc_entities:
+    spark.sql(f"""
+        MERGE INTO cdc_metadata AS target
+        USING (SELECT '{entity}' AS entity_name) AS source
+        ON target.entity_name = source.entity_name
+        WHEN MATCHED THEN UPDATE SET
+            last_sync_timestamp = CURRENT_TIMESTAMP(),
+            last_modified_timestamp = DATE_FORMAT(CURRENT_TIMESTAMP(), "yyyy-MM-dd'T'HH:mm:ss'Z'"),
+            records_processed = 0,
+            sync_status = 'SUCCESS',
+            sync_started_at = CURRENT_TIMESTAMP(),
+            sync_completed_at = CURRENT_TIMESTAMP()
+        WHEN NOT MATCHED THEN INSERT (
+            entity_name, last_sync_timestamp, last_modified_timestamp,
+            records_processed, sync_status, sync_started_at, sync_completed_at
+        ) VALUES (
+            '{entity}', CURRENT_TIMESTAMP(),
+            DATE_FORMAT(CURRENT_TIMESTAMP(), "yyyy-MM-dd'T'HH:mm:ss'Z'"),
+            0, 'SUCCESS', CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP()
+        )
+    """)
+
+print(f"Seeded {len(cdc_entities)} entities in cdc_metadata -- CDC is ready")

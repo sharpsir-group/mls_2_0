@@ -115,12 +115,9 @@ Generate OAuth secrets with: `openssl rand -hex 32`
 #### CDC — Incremental Sync
 
 ```bash
-./scripts/run_pipeline.sh cdc             # Smart CDC (recommended for daily use)
-./scripts/run_pipeline.sh cdc-catchup     # Reset metadata + full re-fetch (recovery)
-./scripts/run_pipeline.sh cdc-all         # Force all entities through CDC pipeline
+./scripts/run_pipeline.sh cdc             # Full incremental sync (Bronze CDC + full Silver/Gold rebuild)
+./scripts/run_pipeline.sh cdc-catchup     # Reset metadata → triggers self-recovery on next CDC run
 ./scripts/run_pipeline.sh cdc-bronze      # CDC bronze only
-./scripts/run_pipeline.sh cdc-silver      # CDC silver property only
-./scripts/run_pipeline.sh cdc-gold        # CDC gold (property + contacts)
 ```
 
 #### Exports
@@ -136,9 +133,9 @@ The CDC pipeline uses `cdc_metadata` in `qobrix_bronze` to track the last succes
 | Scenario | Behavior |
 |---|---|
 | **Normal daily run** | Fetches changes since last sync (minutes to seconds) |
-| **First run / empty catalog** | No metadata → defaults to `2020-01-01` → fetches ALL records |
+| **First run / empty catalog** | Self-recovery: delegates to full refresh notebook, seeds `cdc_metadata`, sends notification email |
 | **Missed several days** | Picks up from last successful sync timestamp (self-healing) |
-| **Table corruption** | Run `cdc-catchup` to reset metadata and re-fetch everything |
+| **Table corruption** | Run `cdc-catchup` to reset metadata → next CDC auto-recovers via full refresh |
 
 #### Cron Schedule
 
@@ -577,7 +574,7 @@ python3 scripts/fetch_dash_api.py --source SHARPSIR-KZ-001
 
 #### Email Notifications
 
-CDC reports are sent via Resend API. Configure in `.env`:
+All pipeline notifications (CDC completion, full refresh completion, recovery alerts) use the same branded HTML template via `scripts/send_email.py` and the Resend API. Configure in `.env`:
 
 ```bash
 RESEND_API_KEY=re_your_key_here
@@ -586,6 +583,8 @@ RESEND_EMAIL_TO=user1@example.com,user2@example.com
 ```
 
 If `RESEND_EMAIL_TO` or `RESEND_API_KEY` is empty, email sending is silently skipped.
+
+Email statuses: **SUCCESS** (green), **WARNING** (amber), **FAILED** (red), **RECOVERY** (orange).
 
 </details>
 
@@ -675,9 +674,7 @@ mls_2_0/
 │   ├── 00a_cdc_*.py                # CDC incremental bronze
 │   ├── 01_dash_silver_*.py         # DASH silver transforms
 │   ├── 02_silver_*.py              # Qobrix silver transforms
-│   ├── 02_cdc_silver_*.py          # CDC silver transforms
 │   ├── 03_gold_*.py                # Gold RESO transforms
-│   ├── 03_cdc_gold_*.py            # CDC gold transforms
 │   ├── 04a_export_*.py             # Export feeds
 │   └── 10_verify_*.py              # Integrity tests
 ├── scripts/
@@ -688,6 +685,7 @@ mls_2_0/
 │   ├── import_notebooks.sh         # Import to Databricks
 │   ├── pm2-manage.sh               # API management
 │   ├── run_pipeline.sh             # ETL orchestration
+│   ├── send_email.py               # Branded email sender (Resend API)
 │   ├── verify_api_integrity.sh     # Qobrix ↔ RESO API verification
 │   └── verify_dash_api_integrity.sh
 └── logs/                           # CDC run logs (auto-created)

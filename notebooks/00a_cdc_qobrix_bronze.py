@@ -60,13 +60,16 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pyspark.sql.functions import lit, current_timestamp
 
 # Widgets (job base_parameters from scripts/run_pipeline.sh)
-dbutils.widgets.text("DATABRICKS_CATALOG", "mls_2_0")
+dbutils.widgets.text("DATABRICKS_CATALOG", "mls2")
 dbutils.widgets.text("QOBRIX_API_USER", "")
 dbutils.widgets.text("QOBRIX_API_KEY", "")
 dbutils.widgets.text("QOBRIX_API_BASE_URL", "")
 dbutils.widgets.text("CDC_TEST_LIMIT", "0")
+dbutils.widgets.text("RESEND_API_KEY", "")
+dbutils.widgets.text("RESEND_EMAIL_FROM", "")
+dbutils.widgets.text("RESEND_EMAIL_TO", "")
 
-catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls_2_0").strip() or "mls_2_0"
+catalog = (os.getenv("DATABRICKS_CATALOG") or dbutils.widgets.get("DATABRICKS_CATALOG") or "mls2").strip() or "mls2"
 schema = "qobrix_bronze"
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"USE SCHEMA {schema}")
@@ -134,11 +137,89 @@ spark.sql("""
     USING DELTA
 """)
 
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Self-Recovery Check
+# MAGIC
+# MAGIC If `cdc_metadata` has no SUCCESS rows, the catalog was likely dropped or
+# MAGIC this is a first run. Delegate to the full refresh notebook, which seeds
+# MAGIC metadata at the end, so subsequent CDC runs are incremental.
+
+# COMMAND ----------
+
+_meta_count = spark.sql("SELECT COUNT(*) FROM cdc_metadata WHERE sync_status = 'SUCCESS'").collect()[0][0]
+
+if _meta_count == 0:
+    print("=" * 80)
+    print("⚠️  RECOVERY MODE -- cdc_metadata has no SUCCESS rows")
+    print("    Delegating to full refresh notebook ...")
+    print("=" * 80)
+
+    _resend_key = os.getenv("RESEND_API_KEY") or dbutils.widgets.get("RESEND_API_KEY")
+    _resend_from = os.getenv("RESEND_EMAIL_FROM") or dbutils.widgets.get("RESEND_EMAIL_FROM")
+    _resend_to = os.getenv("RESEND_EMAIL_TO") or dbutils.widgets.get("RESEND_EMAIL_TO")
+
+    if _resend_key and _resend_from and _resend_to:
+        try:
+            _ctx = dbutils.notebook.entry_point.getDbutils().notebook().getContext()
+            _host = _ctx.browserHostName().get()
+            _run_id = _ctx.currentRunId().id()
+            _job_url = f"https://{_host}/#job/list/runs/{_run_id}"
+
+            _html_body = f"""
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+              <div style="background:#1a1a2e;padding:20px;text-align:center;color:#fff">
+                <h2 style="margin:0">Sharp | Sotheby's International Realty</h2>
+                <p style="margin:4px 0 0;opacity:.8">MLS 2.0 Pipeline</p>
+              </div>
+              <div style="background:#f97316;padding:12px 20px;text-align:center;color:#fff">
+                <strong>⚠️ RECOVERY MODE ACTIVATED</strong>
+              </div>
+              <div style="padding:20px;background:#fff">
+                <p><code>cdc_metadata</code> has no SUCCESS rows — the CDC notebook
+                is automatically running a <strong>full refresh</strong> to rebuild
+                all Bronze tables and seed metadata.</p>
+                <p>This process typically takes <strong>~8 hours</strong>. A completion
+                email will follow once the full pipeline finishes.</p>
+                <p><a href="{_job_url}" style="color:#2563eb">Monitor this run in Databricks UI</a></p>
+              </div>
+              <div style="background:#f5f5f5;padding:12px 20px;text-align:center;font-size:12px;color:#666">
+                Catalog: <strong>{catalog}</strong> | Server: {os.uname().nodename}
+              </div>
+            </div>
+            """
+
+            requests.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {_resend_key}", "Content-Type": "application/json"},
+                json={"from": _resend_from, "to": [_resend_to], "subject": "[MLS 2.0] CDC RECOVERY MODE — Full Refresh Started", "html": _html_body},
+                timeout=15,
+            )
+            print("Recovery notification email sent")
+        except Exception as _email_err:
+            print(f"Could not send recovery email: {_email_err}")
+
+    _refresh_result = dbutils.notebook.run(
+        "./00_full_refresh_qobrix_bronze",
+        timeout_seconds=36000,
+        arguments={
+            "DATABRICKS_CATALOG": catalog,
+            "QOBRIX_API_USER": qobrix_api_user,
+            "QOBRIX_API_KEY": qobrix_api_key,
+            "QOBRIX_API_BASE_URL": api_base_url,
+        },
+    )
+    print(f"Full refresh notebook returned: {_refresh_result}")
+    dbutils.notebook.exit("RECOVERY_FULL_REFRESH")
+
+# COMMAND ----------
+
 def get_last_sync(entity: str):
     """Get the last sync timestamp for an entity.
     
-    Returns the timestamp string, or None if no previous sync exists
-    (fresh catalog / first run) — caller should fetch ALL records.
+    Returns the timestamp string, or None if no previous sync exists.
+    After self-recovery removal this should never be None during normal operation.
     """
     result = spark.sql(f"""
         SELECT last_modified_timestamp 
@@ -218,47 +299,10 @@ def fetch_records_by_filter(endpoint: str, search_param: str, page_size: int = 1
     return all_records
 
 
-def fetch_all_records(endpoint: str, page_size: int = 100) -> list:
-    """Fetch ALL records from an endpoint (no date filter). Used for bootstrap / first run."""
-    all_records = []
-    page = 1
-    has_more = True
-
-    print(f"   Fetching ALL records (bootstrap mode)...")
-    while has_more:
-        url = f"{api_base_url}{endpoint}"
-        params = {"limit": page_size, "page": page}
-        try:
-            response = requests.get(url, headers=headers, params=params, timeout=timeout_seconds)
-            response.raise_for_status()
-            data = response.json()
-            records = data.get("data", [])
-            all_records.extend(records)
-            pagination = data.get("pagination", {})
-            has_more = bool(pagination.get("has_next_page", False))
-            page += 1
-            if cdc_test_limit > 0 and len(all_records) >= cdc_test_limit:
-                all_records = all_records[:cdc_test_limit]
-                has_more = False
-                print(f"   ⚠️  TEST MODE: capped at {cdc_test_limit} records")
-            elif page % 5 == 0:
-                print(f"   Fetched {len(all_records)} records so far...")
-        except Exception as e:
-            print(f"   Error fetching {endpoint} page {page}: {e}")
-            has_more = False
-
-    print(f"   Total: {len(all_records)} records")
-    return all_records
-
-
 def fetch_modified_records(endpoint: str, since_timestamp, page_size: int = 100) -> list:
-    """Fetch records new or modified since a timestamp.
-    
-    If since_timestamp is None (no previous sync), fetches ALL records
-    in a single pass without any date filter.
-    """
+    """Fetch records new or modified since a timestamp."""
     if since_timestamp is None:
-        return fetch_all_records(endpoint, page_size)
+        raise ValueError(f"No sync metadata for {endpoint}. Run full refresh first.")
 
     modified_param = f"modified>='{since_timestamp}'"
     print(f"   Fetching modified records (modified >= {since_timestamp})...")

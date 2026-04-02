@@ -6,7 +6,7 @@ export PATH="/home/bitnami/.local/bin:/home/bitnami/.nvm/versions/node/v20.19.5/
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MLS2_ROOT="$(dirname "$SCRIPT_DIR")"
 LOG_FILE="$MLS2_ROOT/logs/full_refresh_$(date +%Y-%m-%d).log"
-EMAIL_TO="sseregin@sharp-sothebys-realty.com"
+EMAIL_TO="${RESEND_EMAIL_TO:-sseregin@sharp-sothebys-realty.com}"
 START_TIME=$(date '+%Y-%m-%d %H:%M:%S %Z')
 
 # Load environment
@@ -14,24 +14,6 @@ if [ -f "$MLS2_ROOT/.env" ]; then
     set -a
     source "$MLS2_ROOT/.env"
     set +a
-fi
-
-# Wake up SQL warehouse if stopped
-if [ -n "$DATABRICKS_WAREHOUSE_ID" ] && [ -n "$DATABRICKS_HOST" ] && [ -n "$DATABRICKS_TOKEN" ]; then
-    WH_STATE=$(curl -s "$DATABRICKS_HOST/api/2.0/sql/warehouses/$DATABRICKS_WAREHOUSE_ID" \
-        -H "Authorization: Bearer $DATABRICKS_TOKEN" \
-        | python3 -c "import sys,json; print(json.load(sys.stdin).get('state','UNKNOWN'))" 2>/dev/null)
-    if [ "$WH_STATE" = "STOPPED" ]; then
-        curl -s -X POST "$DATABRICKS_HOST/api/2.0/sql/warehouses/$DATABRICKS_WAREHOUSE_ID/start" \
-            -H "Authorization: Bearer $DATABRICKS_TOKEN" -H "Content-Type: application/json" >/dev/null 2>&1
-        for i in $(seq 1 30); do
-            sleep 5
-            WH_STATE=$(curl -s "$DATABRICKS_HOST/api/2.0/sql/warehouses/$DATABRICKS_WAREHOUSE_ID" \
-                -H "Authorization: Bearer $DATABRICKS_TOKEN" \
-                | python3 -c "import sys,json; print(json.load(sys.stdin).get('state','UNKNOWN'))" 2>/dev/null)
-            [ "$WH_STATE" = "RUNNING" ] && break
-        done
-    fi
 fi
 
 echo "╔══════════════════════════════════════════════════════════════╗" | tee "$LOG_FILE"
@@ -64,48 +46,38 @@ echo "$API_OUTPUT" >> "$LOG_FILE"
 PROPS_TOTAL=$(grep -oP 'properties\s*\|\s*\K\d+' "$LOG_FILE" | head -1 || echo "0")
 CONTACTS_TOTAL=$(grep -oP 'contacts\s*\|\s*\K\d+' "$LOG_FILE" | head -1 || echo "0")
 
-# Send HTML email
-cat << MAIL_EOF | msmtp "$EMAIL_TO"
-From: sergey.seregin@gmail.com
-To: $EMAIL_TO
-Subject: [MLS 2.0] Full Refresh $STATUS - $(date '+%Y-%m-%d')
-Content-Type: text/html; charset=UTF-8
+# Escape API output for HTML
+API_OUTPUT_HTML=$(echo "$API_OUTPUT" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
 
-<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#f5f5f5;font-family:Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5;padding:40px 20px;">
-<tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;box-shadow:0 4px 6px rgba(0,0,0,0.1);">
-  <tr><td style="padding:40px;text-align:center;border-bottom:1px solid #e5e5e5;">
-    <img src="https://humaticai.com/assets/sharp-sothebys-logo-dark.png" alt="Sharp Sotheby's" style="max-width:250px;">
-    <h2 style="margin:20px 0 0;font-size:22px;color:#5b9a9a;">MLS 2.0 Full Refresh</h2>
-    <p style="margin:5px 0 0;color:#888;">One-time Data Sync</p>
-  </td></tr>
-  <tr><td style="padding:30px;text-align:center;background:$([ "$STATUS" = "SUCCESS" ] && echo "#ecfdf5" || echo "#fef2f2");">
-    <span style="display:inline-block;width:50px;height:50px;line-height:50px;border-radius:50%;background:$STATUS_COLOR;color:#fff;font-size:24px;">$STATUS_ICON</span>
-    <h3 style="margin:15px 0 0;color:$STATUS_COLOR;">$STATUS</h3>
-  </td></tr>
-  <tr><td style="padding:30px;">
-    <table width="100%">
-      <tr><td width="50%"><p style="margin:0;font-size:12px;color:#888;">STARTED</p><p style="margin:5px 0;font-size:14px;">$START_TIME</p></td>
-          <td width="50%"><p style="margin:0;font-size:12px;color:#888;">COMPLETED</p><p style="margin:5px 0;font-size:14px;">$END_TIME</p></td></tr>
-    </table>
-  </td></tr>
-  <tr><td style="padding:0 30px 30px;">
-    <h4 style="margin:0 0 15px;color:#5b9a9a;border-bottom:2px solid #5b9a9a;padding-bottom:10px;">API Integrity Test Results</h4>
-    <pre style="background:#1a1a2e;color:#e5e5e5;padding:15px;border-radius:4px;font-size:11px;overflow-x:auto;white-space:pre-wrap;">$API_OUTPUT</pre>
-  </td></tr>
-  <tr><td style="padding:20px 30px;background:#1a1a2e;border-radius:0 0 8px 8px;text-align:center;">
-    <p style="margin:0;font-size:12px;color:#888;">Server: $(hostname)</p>
-    <p style="margin:10px 0 0;font-size:11px;color:#666;">Sharp Sotheby's International Realty</p>
-  </td></tr>
-</table>
-</td></tr>
-</table>
-</body>
-</html>
-MAIL_EOF
+INNER_BODY=$(cat << BODYEOF
+                    <tr>
+                        <td style="padding: 30px 40px 20px 40px;">
+                            <table width="100%" cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td width="50%" style="padding: 10px 0;">
+                                        <p style="margin: 0; font-size: 12px; color: #888; text-transform: uppercase;">Started</p>
+                                        <p style="margin: 5px 0 0 0; font-size: 14px; color: #1a1a2e;">$START_TIME</p>
+                                    </td>
+                                    <td width="50%" style="padding: 10px 0;">
+                                        <p style="margin: 0; font-size: 12px; color: #888; text-transform: uppercase;">Completed</p>
+                                        <p style="margin: 5px 0 0 0; font-size: 14px; color: #1a1a2e;">$END_TIME</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0 40px 30px 40px;">
+                            <h4 style="margin: 0 0 15px 0; font-size: 14px; color: #5b9a9a; text-transform: uppercase; letter-spacing: 1px; border-bottom: 2px solid #5b9a9a; padding-bottom: 10px;">API Integrity Test Results</h4>
+                            <pre style="background: #1a1a2e; color: #e5e5e5; padding: 15px; border-radius: 4px; font-size: 11px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;">$API_OUTPUT_HTML</pre>
+                        </td>
+                    </tr>
+BODYEOF
+)
+
+python3 "$SCRIPT_DIR/send_email.py" \
+    --subject "[MLS 2.0] Full Refresh $STATUS - $(date '+%Y-%m-%d')" \
+    --status "$STATUS" \
+    --body-html "$INNER_BODY"
 
 echo "Email sent to $EMAIL_TO"

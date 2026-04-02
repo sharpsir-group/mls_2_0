@@ -24,7 +24,7 @@ fi
 
 export MLS2_ROOT
 # Unity Catalog for all Delta tables (isolated namespace; see scripts/sql/init_uc_catalog_mls_2_0.sql)
-DATABRICKS_CATALOG="${DATABRICKS_CATALOG:-mls_2_0}"
+DATABRICKS_CATALOG="${DATABRICKS_CATALOG:?DATABRICKS_CATALOG not set in .env}"
 # Workspace folder for notebooks (match import: MLS_NOTEBOOK_BASE=/mls_etl/notebooks in .env if needed)
 MLS_NOTEBOOK_BASE="${MLS_NOTEBOOK_BASE:-/Shared/mls_2_0}"
 export DATABRICKS_CATALOG MLS_NOTEBOOK_BASE
@@ -129,6 +129,7 @@ run_notebook() {
     local name="$1"
     local path="$2"
     local notebook_type="$3"  # "bronze" (needs API creds), "gold" (needs office key), or "false" (no params)
+    local timeout_sec="${4:-0}"  # task-level timeout_seconds (0 = no timeout)
     local job_start_time=$(date +%s)
     
     echo "🚀 Running: $name"
@@ -139,6 +140,9 @@ run_notebook() {
         local api_key="${SRC_1_API_KEY:-$QOBRIX_API_KEY}"
         local api_url="${SRC_1_API_URL:-$QOBRIX_API_BASE_URL}"
         local test_limit="${CDC_TEST_LIMIT:-0}"
+        local resend_api_key="${RESEND_API_KEY:-}"
+        local resend_email_from="${RESEND_EMAIL_FROM:-}"
+        local resend_email_to="${RESEND_EMAIL_TO:-}"
         local json='{
           "run_name": "'"$name"'",
           "tasks": [{
@@ -150,7 +154,10 @@ run_notebook() {
                 "QOBRIX_API_KEY": "'"$api_key"'",
                 "QOBRIX_API_BASE_URL": "'"$api_url"'",
                 "DATABRICKS_CATALOG": "'"$DATABRICKS_CATALOG"'",
-                "CDC_TEST_LIMIT": "'"$test_limit"'"
+                "CDC_TEST_LIMIT": "'"$test_limit"'",
+                "RESEND_API_KEY": "'"$resend_api_key"'",
+                "RESEND_EMAIL_FROM": "'"$resend_email_from"'",
+                "RESEND_EMAIL_TO": "'"$resend_email_to"'"
               }
             }
           }]
@@ -190,6 +197,16 @@ run_notebook() {
         }'
     fi
     
+    # Inject timeout_seconds into the task if provided
+    if [ "$timeout_sec" -gt 0 ] 2>/dev/null; then
+        json=$(python3 -c "
+import json, sys
+d = json.loads(sys.argv[1])
+d['tasks'][0]['timeout_seconds'] = int(sys.argv[2])
+print(json.dumps(d))
+" "$json" "$timeout_sec")
+    fi
+    
     local result=$(databricks runs submit --json "$json" 2>&1 | grep -v "^WARN:")
     local run_id=$(echo "$result" | grep -o '"run_id":[[:space:]]*[0-9]*' | grep -o '[0-9]*')
     
@@ -223,15 +240,43 @@ run_notebook() {
             local job_duration_fmt=$(format_duration $job_duration)
             
             if [ "$result_state" = "SUCCESS" ]; then
-                echo "   ✅ $name completed successfully (${job_duration_fmt})"
+                # Capture notebook exit value (dbutils.notebook.exit())
+                local nb_output=""
+                nb_output=$(echo "$status_json" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+tasks = d.get('tasks', [])
+if tasks:
+    result = tasks[0].get('output', {}).get('notebook_output', {}).get('result', '')
+    if result: print(result)
+" 2>/dev/null)
+                if [ -z "$nb_output" ]; then
+                    nb_output=$(databricks runs get-output --run-id "$run_id" 2>/dev/null | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+r = d.get('notebook_output', {}).get('result', '')
+if r: print(r)
+" 2>/dev/null)
+                fi
+                if [ "$nb_output" = "RECOVERY_FULL_REFRESH" ]; then
+                    echo "   ⚠️  RECOVERY MODE: $name triggered full refresh (${job_duration_fmt})"
+                else
+                    echo "   ✅ $name completed successfully (${job_duration_fmt})"
+                fi
+                [ -n "$nb_output" ] && echo "   Notebook output: $nb_output"
                 return 0
+            elif [ "$result_state" = "TIMEDOUT" ]; then
+                echo "   ⏰ $name timed out -- job exceeded timeout_seconds limit (${job_duration_fmt})"
+                return 1
+            elif [ "$result_state" = "CANCELLED" ]; then
+                echo "   🚫 $name was cancelled (${job_duration_fmt})"
+                return 1
             else
                 echo "   ❌ $name failed: $result_state (${job_duration_fmt})"
                 echo ""
                 echo "   ┌─────────────────────────────────────────────────────────────────"
                 echo "   │ ERROR DETAILS"
                 echo "   ├─────────────────────────────────────────────────────────────────"
-                # Get and display detailed error
                 get_error_details "$run_id" "$status_json" | sed 's/^/   │ /'
                 echo "   └─────────────────────────────────────────────────────────────────"
                 echo ""
@@ -251,62 +296,62 @@ case "$1" in
     # FULL REFRESH COMMANDS (initial load, recovery)
     # ═══════════════════════════════════════════════════════════════════════════
     bronze)
-        run_notebook "MLS 2.0 - Qobrix Bronze Full Refresh" "${MLS_NOTEBOOK_BASE}/00_full_refresh_qobrix_bronze" "true"
+        run_notebook "MLS 2.0 - Qobrix Bronze Full Refresh" "${MLS_NOTEBOOK_BASE}/00_full_refresh_qobrix_bronze" "true" 36000
         ;;
     silver-property)
-        run_notebook "MLS 2.0 - Qobrix Silver Property ETL" "${MLS_NOTEBOOK_BASE}/02_silver_qobrix_property_etl" "false"
+        run_notebook "MLS 2.0 - Qobrix Silver Property ETL" "${MLS_NOTEBOOK_BASE}/02_silver_qobrix_property_etl" "false" 1800
         ;;
     silver-agent)
-        run_notebook "MLS 2.0 - Qobrix Silver Agent ETL" "${MLS_NOTEBOOK_BASE}/02a_silver_qobrix_agent_etl" "false"
+        run_notebook "MLS 2.0 - Qobrix Silver Agent ETL" "${MLS_NOTEBOOK_BASE}/02a_silver_qobrix_agent_etl" "false" 1800
         ;;
     silver-contact)
-        run_notebook "MLS 2.0 - Qobrix Silver Contact ETL" "${MLS_NOTEBOOK_BASE}/02b_silver_qobrix_contact_etl" "false"
+        run_notebook "MLS 2.0 - Qobrix Silver Contact ETL" "${MLS_NOTEBOOK_BASE}/02b_silver_qobrix_contact_etl" "false" 1800
         ;;
     silver-media)
-        run_notebook "MLS 2.0 - Qobrix Silver Media ETL" "${MLS_NOTEBOOK_BASE}/02c_silver_qobrix_media_etl" "false"
+        run_notebook "MLS 2.0 - Qobrix Silver Media ETL" "${MLS_NOTEBOOK_BASE}/02c_silver_qobrix_media_etl" "false" 1800
         ;;
     silver-viewing)
-        run_notebook "MLS 2.0 - Qobrix Silver Viewing ETL" "${MLS_NOTEBOOK_BASE}/02d_silver_qobrix_viewing_etl" "false"
+        run_notebook "MLS 2.0 - Qobrix Silver Viewing ETL" "${MLS_NOTEBOOK_BASE}/02d_silver_qobrix_viewing_etl" "false" 1800
         ;;
     silver|silver-all)
-        run_notebook "MLS 2.0 - Qobrix Silver Property ETL" "${MLS_NOTEBOOK_BASE}/02_silver_qobrix_property_etl" "false"
-        run_notebook "MLS 2.0 - Qobrix Silver Agent ETL" "${MLS_NOTEBOOK_BASE}/02a_silver_qobrix_agent_etl" "false"
-        run_notebook "MLS 2.0 - Qobrix Silver Contact ETL" "${MLS_NOTEBOOK_BASE}/02b_silver_qobrix_contact_etl" "false"
-        run_notebook "MLS 2.0 - Qobrix Silver Media ETL" "${MLS_NOTEBOOK_BASE}/02c_silver_qobrix_media_etl" "false"
-        run_notebook "MLS 2.0 - Qobrix Silver Viewing ETL" "${MLS_NOTEBOOK_BASE}/02d_silver_qobrix_viewing_etl" "false"
+        run_notebook "MLS 2.0 - Qobrix Silver Property ETL" "${MLS_NOTEBOOK_BASE}/02_silver_qobrix_property_etl" "false" 1800
+        run_notebook "MLS 2.0 - Qobrix Silver Agent ETL" "${MLS_NOTEBOOK_BASE}/02a_silver_qobrix_agent_etl" "false" 1800
+        run_notebook "MLS 2.0 - Qobrix Silver Contact ETL" "${MLS_NOTEBOOK_BASE}/02b_silver_qobrix_contact_etl" "false" 1800
+        run_notebook "MLS 2.0 - Qobrix Silver Media ETL" "${MLS_NOTEBOOK_BASE}/02c_silver_qobrix_media_etl" "false" 1800
+        run_notebook "MLS 2.0 - Qobrix Silver Viewing ETL" "${MLS_NOTEBOOK_BASE}/02d_silver_qobrix_viewing_etl" "false" 1800
         echo ""
         echo "🎉 All Silver tables created!"
         ;;
     gold-property)
-        run_notebook "MLS 2.0 - RESO Gold Property ETL" "${MLS_NOTEBOOK_BASE}/03_gold_reso_property_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Property ETL" "${MLS_NOTEBOOK_BASE}/03_gold_reso_property_etl" "gold" 1800
         ;;
     gold-member)
-        run_notebook "MLS 2.0 - RESO Gold Member ETL" "${MLS_NOTEBOOK_BASE}/03a_gold_reso_member_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Member ETL" "${MLS_NOTEBOOK_BASE}/03a_gold_reso_member_etl" "gold" 1800
         ;;
     gold-office)
-        run_notebook "MLS 2.0 - RESO Gold Office ETL" "${MLS_NOTEBOOK_BASE}/03b_gold_reso_office_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Office ETL" "${MLS_NOTEBOOK_BASE}/03b_gold_reso_office_etl" "gold" 1800
         ;;
     gold-media)
-        run_notebook "MLS 2.0 - RESO Gold Media ETL" "${MLS_NOTEBOOK_BASE}/03c_gold_reso_media_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Media ETL" "${MLS_NOTEBOOK_BASE}/03c_gold_reso_media_etl" "gold" 1800
         ;;
     gold-contacts)
-        run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "${MLS_NOTEBOOK_BASE}/03d_gold_reso_contacts_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "${MLS_NOTEBOOK_BASE}/03d_gold_reso_contacts_etl" "gold" 1800
         ;;
     gold-showing)
-        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "${MLS_NOTEBOOK_BASE}/03e_gold_reso_showingappointment_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "${MLS_NOTEBOOK_BASE}/03e_gold_reso_showingappointment_etl" "gold" 1800
         ;;
     gold|gold-all)
-        run_notebook "MLS 2.0 - RESO Gold Property ETL" "${MLS_NOTEBOOK_BASE}/03_gold_reso_property_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold Member ETL" "${MLS_NOTEBOOK_BASE}/03a_gold_reso_member_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold Office ETL" "${MLS_NOTEBOOK_BASE}/03b_gold_reso_office_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold Media ETL" "${MLS_NOTEBOOK_BASE}/03c_gold_reso_media_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "${MLS_NOTEBOOK_BASE}/03d_gold_reso_contacts_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "${MLS_NOTEBOOK_BASE}/03e_gold_reso_showingappointment_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Property ETL" "${MLS_NOTEBOOK_BASE}/03_gold_reso_property_etl" "gold" 1800
+        run_notebook "MLS 2.0 - RESO Gold Member ETL" "${MLS_NOTEBOOK_BASE}/03a_gold_reso_member_etl" "gold" 1800
+        run_notebook "MLS 2.0 - RESO Gold Office ETL" "${MLS_NOTEBOOK_BASE}/03b_gold_reso_office_etl" "gold" 1800
+        run_notebook "MLS 2.0 - RESO Gold Media ETL" "${MLS_NOTEBOOK_BASE}/03c_gold_reso_media_etl" "gold" 1800
+        run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "${MLS_NOTEBOOK_BASE}/03d_gold_reso_contacts_etl" "gold" 1800
+        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "${MLS_NOTEBOOK_BASE}/03e_gold_reso_showingappointment_etl" "gold" 1800
         echo ""
         echo "🎉 All RESO Gold tables created!"
         ;;
     integrity)
-        run_notebook "MLS 2.0 - Qobrix vs RESO Integrity Test" "${MLS_NOTEBOOK_BASE}/10_verify_data_integrity_qobrix_vs_reso" "true"
+        run_notebook "MLS 2.0 - Qobrix vs RESO Integrity Test" "${MLS_NOTEBOOK_BASE}/10_verify_data_integrity_qobrix_vs_reso" "true" 1800
         ;;
     
     # ═══════════════════════════════════════════════════════════════════════════
@@ -314,20 +359,7 @@ case "$1" in
     # ═══════════════════════════════════════════════════════════════════════════
     cdc-bronze)
         echo "🔄 CDC Mode: Incremental bronze sync"
-        run_notebook "MLS 2.0 - Qobrix CDC Bronze" "${MLS_NOTEBOOK_BASE}/00a_cdc_qobrix_bronze" "true"
-        ;;
-    cdc-silver)
-        echo "🔄 CDC Mode: Incremental silver sync"
-        run_notebook "MLS 2.0 - Qobrix CDC Silver Property" "${MLS_NOTEBOOK_BASE}/02_cdc_silver_property_etl" "false"
-        ;;
-    cdc-gold)
-        echo "🔄 CDC Mode: Incremental gold sync"
-        run_notebook "MLS 2.0 - RESO CDC Gold Property" "${MLS_NOTEBOOK_BASE}/03_cdc_gold_reso_property_etl" "gold"
-        run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "${MLS_NOTEBOOK_BASE}/03d_cdc_gold_reso_contacts_etl" "gold"
-        ;;
-    cdc-gold-contacts)
-        echo "🔄 CDC Mode: Incremental gold contacts sync"
-        run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "${MLS_NOTEBOOK_BASE}/03d_cdc_gold_reso_contacts_etl" "gold"
+        run_notebook "MLS 2.0 - Qobrix CDC Bronze" "${MLS_NOTEBOOK_BASE}/00a_cdc_qobrix_bronze" "true" 39600
         ;;
     test-cdc)
         echo "🧪 TEST MODE: CDC with ${2:-10} records per entity"
@@ -363,41 +395,11 @@ else:
         echo ""
         exec "$0" cdc
         ;;
-    cdc-all)
-        echo "🔄 CDC Mode: Full incremental pipeline (ALL entities - forced)"
-        echo ""
-        echo "📦 Stage 1: CDC Bronze (incremental data from API)"
-        run_notebook "MLS 2.0 - Qobrix CDC Bronze" "${MLS_NOTEBOOK_BASE}/00a_cdc_qobrix_bronze" "true"
-        echo ""
-        echo "🔄 Stage 2: Silver (all entities)"
-        run_notebook "MLS 2.0 - Qobrix Silver Property ETL" "${MLS_NOTEBOOK_BASE}/02_silver_qobrix_property_etl" "false"
-        run_notebook "MLS 2.0 - Qobrix Silver Agent ETL" "${MLS_NOTEBOOK_BASE}/02a_silver_qobrix_agent_etl" "false"
-        run_notebook "MLS 2.0 - Qobrix Silver Contact ETL" "${MLS_NOTEBOOK_BASE}/02b_silver_qobrix_contact_etl" "false"
-        run_notebook "MLS 2.0 - Qobrix Silver Media ETL" "${MLS_NOTEBOOK_BASE}/02c_silver_qobrix_media_etl" "false"
-        run_notebook "MLS 2.0 - Qobrix Silver Viewing ETL" "${MLS_NOTEBOOK_BASE}/02d_silver_qobrix_viewing_etl" "false"
-        echo ""
-        echo "🏆 Stage 3: Gold (all RESO entities - CDC where available)"
-        run_notebook "MLS 2.0 - RESO CDC Gold Property" "${MLS_NOTEBOOK_BASE}/03_cdc_gold_reso_property_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold Member ETL" "${MLS_NOTEBOOK_BASE}/03a_gold_reso_member_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold Office ETL" "${MLS_NOTEBOOK_BASE}/03b_gold_reso_office_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold Media ETL" "${MLS_NOTEBOOK_BASE}/03c_gold_reso_media_etl" "gold"
-        run_notebook "MLS 2.0 - RESO CDC Gold Contacts" "${MLS_NOTEBOOK_BASE}/03d_cdc_gold_reso_contacts_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "${MLS_NOTEBOOK_BASE}/03e_gold_reso_showingappointment_etl" "gold"
-        echo ""
-        echo "📤 Stage 4: Exports"
-        run_notebook "MLS 2.0 - Export HomeOverseas XML Feed" "${MLS_NOTEBOOK_BASE}/04a_export_homesoverseas_etl" "false"
-        echo ""
-        SCRIPT_END_TIME=$(date +%s)
-        TOTAL_DURATION=$((SCRIPT_END_TIME - SCRIPT_START_TIME))
-        echo "🎉 CDC pipeline completed! All entities synced."
-        echo ""
-        echo "⏱️  Total time: $(format_duration $TOTAL_DURATION)"
-        ;;
     cdc)
         echo "🔄 CDC Mode: Smart incremental pipeline (only changed entities)"
         echo ""
         echo "📦 Stage 1: CDC Bronze (incremental data from API)"
-        run_notebook "MLS 2.0 - Qobrix CDC Bronze" "${MLS_NOTEBOOK_BASE}/00a_cdc_qobrix_bronze" "true"
+        run_notebook "MLS 2.0 - Qobrix CDC Bronze" "${MLS_NOTEBOOK_BASE}/00a_cdc_qobrix_bronze" "true" 39600
         
         # Show bronze table counts report with MOST RECENT CDC run data
         echo ""
@@ -410,7 +412,7 @@ else:
 import json, os
 from pathlib import Path
 root = Path(os.environ["MLS2_ROOT"])
-uc = os.environ.get("DATABRICKS_CATALOG", "mls_2_0")
+uc = os.environ["DATABRICKS_CATALOG"]
 sql = (root / "scripts" / "sql" / "cdc_bronze_counts.sql").read_text().replace("__CATALOG__", uc)
 print(json.dumps({
     "warehouse_id": os.environ["DATABRICKS_WAREHOUSE_ID"],
@@ -483,26 +485,26 @@ except Exception as ex:
         echo ""
         echo "🔄 Stage 2: Silver (sync Bronze → Silver)"
         
-        run_notebook "MLS 2.0 - Qobrix Silver Property ETL" "${MLS_NOTEBOOK_BASE}/02_silver_qobrix_property_etl" "false"
-        run_notebook "MLS 2.0 - Qobrix Silver Media ETL" "${MLS_NOTEBOOK_BASE}/02c_silver_qobrix_media_etl" "false"
-        run_notebook "MLS 2.0 - Qobrix Silver Agent ETL" "${MLS_NOTEBOOK_BASE}/02a_silver_qobrix_agent_etl" "false"
-        run_notebook "MLS 2.0 - Qobrix Silver Contact ETL" "${MLS_NOTEBOOK_BASE}/02b_silver_qobrix_contact_etl" "false"
-        run_notebook "MLS 2.0 - Qobrix Silver Viewing ETL" "${MLS_NOTEBOOK_BASE}/02d_silver_qobrix_viewing_etl" "false"
+        run_notebook "MLS 2.0 - Qobrix Silver Property ETL" "${MLS_NOTEBOOK_BASE}/02_silver_qobrix_property_etl" "false" 1800
+        run_notebook "MLS 2.0 - Qobrix Silver Media ETL" "${MLS_NOTEBOOK_BASE}/02c_silver_qobrix_media_etl" "false" 1800
+        run_notebook "MLS 2.0 - Qobrix Silver Agent ETL" "${MLS_NOTEBOOK_BASE}/02a_silver_qobrix_agent_etl" "false" 1800
+        run_notebook "MLS 2.0 - Qobrix Silver Contact ETL" "${MLS_NOTEBOOK_BASE}/02b_silver_qobrix_contact_etl" "false" 1800
+        run_notebook "MLS 2.0 - Qobrix Silver Viewing ETL" "${MLS_NOTEBOOK_BASE}/02d_silver_qobrix_viewing_etl" "false" 1800
         
         echo ""
         echo "🏆 Stage 3: Gold (sync Silver → Gold RESO)"
         # Use full refresh ETLs (CREATE OR REPLACE) to avoid schema mismatch issues
         
-        run_notebook "MLS 2.0 - RESO Gold Property ETL" "${MLS_NOTEBOOK_BASE}/03_gold_reso_property_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold Media ETL" "${MLS_NOTEBOOK_BASE}/03c_gold_reso_media_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold Member ETL" "${MLS_NOTEBOOK_BASE}/03a_gold_reso_member_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold Office ETL" "${MLS_NOTEBOOK_BASE}/03b_gold_reso_office_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "${MLS_NOTEBOOK_BASE}/03d_gold_reso_contacts_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "${MLS_NOTEBOOK_BASE}/03e_gold_reso_showingappointment_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Property ETL" "${MLS_NOTEBOOK_BASE}/03_gold_reso_property_etl" "gold" 1800
+        run_notebook "MLS 2.0 - RESO Gold Media ETL" "${MLS_NOTEBOOK_BASE}/03c_gold_reso_media_etl" "gold" 1800
+        run_notebook "MLS 2.0 - RESO Gold Member ETL" "${MLS_NOTEBOOK_BASE}/03a_gold_reso_member_etl" "gold" 1800
+        run_notebook "MLS 2.0 - RESO Gold Office ETL" "${MLS_NOTEBOOK_BASE}/03b_gold_reso_office_etl" "gold" 1800
+        run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "${MLS_NOTEBOOK_BASE}/03d_gold_reso_contacts_etl" "gold" 1800
+        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "${MLS_NOTEBOOK_BASE}/03e_gold_reso_showingappointment_etl" "gold" 1800
         
         echo ""
         echo "📤 Stage 4: Exports"
-        run_notebook "MLS 2.0 - Export HomeOverseas XML Feed" "${MLS_NOTEBOOK_BASE}/04a_export_homesoverseas_etl" "false"
+        run_notebook "MLS 2.0 - Export HomeOverseas XML Feed" "${MLS_NOTEBOOK_BASE}/04a_export_homesoverseas_etl" "false" 1800
         
         SCRIPT_END_TIME=$(date +%s)
         TOTAL_DURATION=$((SCRIPT_END_TIME - SCRIPT_START_TIME))
@@ -520,7 +522,7 @@ except Exception as ex:
     # EXPORTS (XML feeds for portals)
     # ═══════════════════════════════════════════════════════════════════════════
     export-homesoverseas)
-        run_notebook "MLS 2.0 - Export HomeOverseas XML Feed" "${MLS_NOTEBOOK_BASE}/04a_export_homesoverseas_etl" "false"
+        run_notebook "MLS 2.0 - Export HomeOverseas XML Feed" "${MLS_NOTEBOOK_BASE}/04a_export_homesoverseas_etl" "false" 1800
         ;;
     
     # ═══════════════════════════════════════════════════════════════════════════
@@ -528,28 +530,28 @@ except Exception as ex:
     # ═══════════════════════════════════════════════════════════════════════════
     all)
         echo "📦 Stage 1: Bronze (raw data ingestion)"
-        run_notebook "MLS 2.0 - Qobrix Bronze Full Refresh" "${MLS_NOTEBOOK_BASE}/00_full_refresh_qobrix_bronze" "true"
+        run_notebook "MLS 2.0 - Qobrix Bronze Full Refresh" "${MLS_NOTEBOOK_BASE}/00_full_refresh_qobrix_bronze" "true" 36000
         echo ""
         echo "🔄 Stage 2: Silver (normalized data)"
-        run_notebook "MLS 2.0 - Qobrix Silver Property ETL" "${MLS_NOTEBOOK_BASE}/02_silver_qobrix_property_etl" "false"
-        run_notebook "MLS 2.0 - Qobrix Silver Agent ETL" "${MLS_NOTEBOOK_BASE}/02a_silver_qobrix_agent_etl" "false"
-        run_notebook "MLS 2.0 - Qobrix Silver Contact ETL" "${MLS_NOTEBOOK_BASE}/02b_silver_qobrix_contact_etl" "false"
-        run_notebook "MLS 2.0 - Qobrix Silver Media ETL" "${MLS_NOTEBOOK_BASE}/02c_silver_qobrix_media_etl" "false"
-        run_notebook "MLS 2.0 - Qobrix Silver Viewing ETL" "${MLS_NOTEBOOK_BASE}/02d_silver_qobrix_viewing_etl" "false"
+        run_notebook "MLS 2.0 - Qobrix Silver Property ETL" "${MLS_NOTEBOOK_BASE}/02_silver_qobrix_property_etl" "false" 1800
+        run_notebook "MLS 2.0 - Qobrix Silver Agent ETL" "${MLS_NOTEBOOK_BASE}/02a_silver_qobrix_agent_etl" "false" 1800
+        run_notebook "MLS 2.0 - Qobrix Silver Contact ETL" "${MLS_NOTEBOOK_BASE}/02b_silver_qobrix_contact_etl" "false" 1800
+        run_notebook "MLS 2.0 - Qobrix Silver Media ETL" "${MLS_NOTEBOOK_BASE}/02c_silver_qobrix_media_etl" "false" 1800
+        run_notebook "MLS 2.0 - Qobrix Silver Viewing ETL" "${MLS_NOTEBOOK_BASE}/02d_silver_qobrix_viewing_etl" "false" 1800
         echo ""
         echo "🏆 Stage 3: Gold (RESO-compliant)"
-        run_notebook "MLS 2.0 - RESO Gold Property ETL" "${MLS_NOTEBOOK_BASE}/03_gold_reso_property_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold Member ETL" "${MLS_NOTEBOOK_BASE}/03a_gold_reso_member_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold Office ETL" "${MLS_NOTEBOOK_BASE}/03b_gold_reso_office_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold Media ETL" "${MLS_NOTEBOOK_BASE}/03c_gold_reso_media_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "${MLS_NOTEBOOK_BASE}/03d_gold_reso_contacts_etl" "gold"
-        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "${MLS_NOTEBOOK_BASE}/03e_gold_reso_showingappointment_etl" "gold"
+        run_notebook "MLS 2.0 - RESO Gold Property ETL" "${MLS_NOTEBOOK_BASE}/03_gold_reso_property_etl" "gold" 1800
+        run_notebook "MLS 2.0 - RESO Gold Member ETL" "${MLS_NOTEBOOK_BASE}/03a_gold_reso_member_etl" "gold" 1800
+        run_notebook "MLS 2.0 - RESO Gold Office ETL" "${MLS_NOTEBOOK_BASE}/03b_gold_reso_office_etl" "gold" 1800
+        run_notebook "MLS 2.0 - RESO Gold Media ETL" "${MLS_NOTEBOOK_BASE}/03c_gold_reso_media_etl" "gold" 1800
+        run_notebook "MLS 2.0 - RESO Gold Contacts ETL" "${MLS_NOTEBOOK_BASE}/03d_gold_reso_contacts_etl" "gold" 1800
+        run_notebook "MLS 2.0 - RESO Gold ShowingAppointment ETL" "${MLS_NOTEBOOK_BASE}/03e_gold_reso_showingappointment_etl" "gold" 1800
         echo ""
         echo "📤 Stage 4: Exports"
-        run_notebook "MLS 2.0 - Export HomeOverseas XML Feed" "${MLS_NOTEBOOK_BASE}/04a_export_homesoverseas_etl" "false"
+        run_notebook "MLS 2.0 - Export HomeOverseas XML Feed" "${MLS_NOTEBOOK_BASE}/04a_export_homesoverseas_etl" "false" 1800
         echo ""
         echo "✅ Stage 5: Integrity verification"
-        run_notebook "MLS 2.0 - Qobrix vs RESO Integrity Test" "${MLS_NOTEBOOK_BASE}/10_verify_data_integrity_qobrix_vs_reso" "true"
+        run_notebook "MLS 2.0 - Qobrix vs RESO Integrity Test" "${MLS_NOTEBOOK_BASE}/10_verify_data_integrity_qobrix_vs_reso" "true" 1800
         echo ""
         SCRIPT_END_TIME=$(date +%s)
         TOTAL_DURATION=$((SCRIPT_END_TIME - SCRIPT_START_TIME))
@@ -588,14 +590,10 @@ except Exception as ex:
         echo "═══════════════════════════════════════════════════════════════════════"
         echo "CDC - INCREMENTAL SYNC (recommended for regular updates)"
         echo "═══════════════════════════════════════════════════════════════════════"
-        echo "  cdc                 Smart CDC - only run Silver/Gold for changed entities"
+        echo "  cdc                 Full incremental sync (Bronze CDC + full Silver/Gold rebuild)"
         echo "  test-cdc [N]        Test CDC with N records per entity (default: 10)"
-        echo "  cdc-catchup         Reset CDC metadata + full re-fetch (recovery after outage)"
-        echo "  cdc-all             Force CDC ALL entities (bronze -> silver -> gold)"
+        echo "  cdc-catchup         Reset CDC metadata → triggers self-recovery on next CDC run"
         echo "  cdc-bronze          CDC bronze only (fetch changed records from API)"
-        echo "  cdc-silver          CDC silver property only (incremental transform)"
-        echo "  cdc-gold            CDC gold (property + contacts) incremental RESO transform"
-        echo "  cdc-gold-contacts   CDC gold contacts only (incremental RESO transform)"
         exit 1
         ;;
 esac

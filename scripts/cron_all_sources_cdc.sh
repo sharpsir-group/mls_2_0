@@ -30,24 +30,6 @@ DATABRICKS_CATALOG="${DATABRICKS_CATALOG:-mls2}"
 EMAIL_FROM="${RESEND_EMAIL_FROM:-MLS Pipeline <noreply@humaticai.com>}"
 EMAIL_TO="${RESEND_EMAIL_TO:-}"
 
-# Wake up SQL warehouse if stopped (Serverless auto-stops after inactivity)
-if [ -n "$DATABRICKS_WAREHOUSE_ID" ] && [ -n "$DATABRICKS_HOST" ] && [ -n "$DATABRICKS_TOKEN" ]; then
-    WH_STATE=$(curl -s "$DATABRICKS_HOST/api/2.0/sql/warehouses/$DATABRICKS_WAREHOUSE_ID" \
-        -H "Authorization: Bearer $DATABRICKS_TOKEN" \
-        | python3 -c "import sys,json; print(json.load(sys.stdin).get('state','UNKNOWN'))" 2>/dev/null)
-    if [ "$WH_STATE" = "STOPPED" ]; then
-        curl -s -X POST "$DATABRICKS_HOST/api/2.0/sql/warehouses/$DATABRICKS_WAREHOUSE_ID/start" \
-            -H "Authorization: Bearer $DATABRICKS_TOKEN" -H "Content-Type: application/json" >/dev/null 2>&1
-        for i in $(seq 1 30); do
-            sleep 5
-            WH_STATE=$(curl -s "$DATABRICKS_HOST/api/2.0/sql/warehouses/$DATABRICKS_WAREHOUSE_ID" \
-                -H "Authorization: Bearer $DATABRICKS_TOKEN" \
-                | python3 -c "import sys,json; print(json.load(sys.stdin).get('state','UNKNOWN'))" 2>/dev/null)
-            [ "$WH_STATE" = "RUNNING" ] && break
-        done
-    fi
-fi
-
 # Source status tracking (records = total, updates = changed in this run)
 CY_STATUS="PENDING"
 HU_STATUS="PENDING"
@@ -217,7 +199,7 @@ send_email_report() {
     fi
     
     # Source status colors
-    CY_COLOR=$( [ "$CY_STATUS" = "SUCCESS" ] && echo "#10b981" || echo "#ef4444" )
+    CY_COLOR=$( [ "$CY_STATUS" = "SUCCESS" ] && echo "#10b981" || ( [ "$CY_STATUS" = "RECOVERY" ] && echo "#f97316" || echo "#ef4444" ) )
     HU_COLOR=$( [ "$HU_STATUS" = "SUCCESS" ] && echo "#10b981" || ( [ "$HU_STATUS" = "SKIPPED" ] && echo "#888" || echo "#ef4444" ) )
     KZ_COLOR=$( [ "$KZ_STATUS" = "SUCCESS" ] && echo "#10b981" || ( [ "$KZ_STATUS" = "SKIPPED" ] && echo "#888" || echo "#ef4444" ) )
     
@@ -242,47 +224,9 @@ send_email_report() {
 ${LOG_TAIL}"
     fi
     
-    # Build HTML email body
-    local html_body
-    html_body=$(cat << HTMLEOF
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-    <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f5f5f5; padding: 40px 20px;">
-        <tr>
-            <td align="center">
-                <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-                    <!-- Header -->
-                    <tr>
-                        <td style="padding: 40px 40px 20px 40px; text-align: center; border-bottom: 1px solid #e5e5e5;">
-                            <h1 style="margin: 0; font-size: 28px; font-weight: 300; color: #1a1a2e;">
-                                Sharp <span style="font-weight: 600;">| Sotheby's</span>
-                            </h1>
-                            <p style="margin: 5px 0 0 0; font-size: 11px; color: #666; letter-spacing: 2px; text-transform: uppercase;">International Realty</p>
-                            <div style="width: 60px; height: 2px; background-color: #5b9a9a; margin: 20px auto;"></div>
-                            <h2 style="margin: 0; font-size: 22px; font-weight: 400; font-style: italic; color: #5b9a9a;">MLS 2.0 Pipeline</h2>
-                            <p style="margin: 5px 0 0 0; font-size: 14px; color: #5b9a9a;">All Sources CDC Report</p>
-                        </td>
-                    </tr>
-                    
-                    <!-- Status Banner -->
-                    <tr>
-                        <td style="padding: 0;">
-                            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: ${status_bg};">
-                                <tr>
-                                    <td style="padding: 20px 40px; text-align: center;">
-                                        <span style="display: inline-block; width: 40px; height: 40px; line-height: 40px; border-radius: 50%; background-color: ${status_color}; color: white; font-size: 20px; font-weight: bold;">${status_icon}</span>
-                                        <h3 style="margin: 10px 0 0 0; font-size: 18px; color: ${status_color}; font-weight: 600;">${overall_status}</h3>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                    
+    # Build inner HTML body rows (wrapped by send_email.py template)
+    local inner_body
+    inner_body=$(cat << HTMLEOF
                     <!-- Timing Info -->
                     <tr>
                         <td style="padding: 30px 40px 20px 40px;">
@@ -409,57 +353,14 @@ ${LOG_TAIL}"
                         </td>
                     </tr>
                     
-                    <!-- Footer -->
-                    <tr>
-                        <td style="padding: 20px 40px; background-color: #1a1a2e; border-radius: 0 0 8px 8px; text-align: center;">
-                            <p style="margin: 0; font-size: 12px; color: #888;">Server: ${HOSTNAME}</p>
-                            <p style="margin: 10px 0 0 0; font-size: 11px; color: #666;">Sharp Sotheby's International Realty - $(date '+%Y')</p>
-                        </td>
-                    </tr>
-                </table>
-            </td>
-        </tr>
-    </table>
-</body>
-</html>
 HTMLEOF
 )
     
-    # Send via Resend API
-    local resend_key="${RESEND_API_KEY:-}"
-    if [ -z "$resend_key" ]; then
-        echo "⚠️ RESEND_API_KEY not set, cannot send email" >&2
-        return 1
-    fi
-    
-    local json_payload
-    json_payload=$(python3 -c "
-import json, sys
-html = sys.stdin.read()
-recipients = [e.strip() for e in '$EMAIL_TO'.split(',') if e.strip()]
-print(json.dumps({
-    'from': '$EMAIL_FROM',
-    'to': recipients,
-    'subject': '$subject',
-    'html': html
-}))
-" <<< "$html_body")
-    
-    local response
-    response=$(curl -s -w "\n%{http_code}" -X POST "https://api.resend.com/emails" \
-        -H "Authorization: Bearer $resend_key" \
-        -H "Content-Type: application/json" \
-        -d "$json_payload" 2>&1)
-    
-    local http_code
-    http_code=$(echo "$response" | tail -1)
-    
-    if [ "$http_code" = "200" ]; then
-        return 0
-    else
-        echo "⚠️ Resend API returned HTTP $http_code: $(echo "$response" | head -1)" >&2
-        return 1
-    fi
+    # Send via shared email utility
+    python3 "$SCRIPT_DIR/send_email.py" \
+        --subject "$subject" \
+        --status "$overall_status" \
+        --body-html "$inner_body"
 }
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -490,7 +391,14 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 cd "$MLS2_ROOT"
 if "$SCRIPT_DIR/run_pipeline.sh" cdc >> "$LOG_FILE" 2>&1; then
     CY_STATUS="SUCCESS"
-    echo "✅ Cyprus CDC completed" | tee -a "$LOG_FILE"
+    # Detect if CDC triggered recovery mode (full refresh delegation)
+    if grep -q "RECOVERY MODE" "$LOG_FILE" 2>/dev/null; then
+        CY_STATUS="RECOVERY"
+        OVERALL_STATUS="WARNING"
+        echo "⚠️  Cyprus CDC triggered RECOVERY MODE (full refresh)" | tee -a "$LOG_FILE"
+    else
+        echo "✅ Cyprus CDC completed" | tee -a "$LOG_FILE"
+    fi
     # Extract changes count (sum of all entity changes)
     CY_PROPS_CHG=$(grep -oP "Properties: \K[0-9]+" "$LOG_FILE" 2>/dev/null | tail -1 || echo "0")
     CY_AGENTS_CHG=$(grep -oP "Agents: \K[0-9]+" "$LOG_FILE" 2>/dev/null | tail -1 || echo "0")
