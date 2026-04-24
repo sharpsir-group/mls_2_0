@@ -827,6 +827,121 @@ except Exception as e:
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Step 11b - Construction & Development Field Checks (RESO DD 2.0)
+
+# COMMAND ----------
+
+print("\n" + "=" * 80)
+print("🏗️  CONSTRUCTION & DEVELOPMENT FIELD CHECKS")
+print("=" * 80)
+
+construction_issues = []
+
+# 11b.1 - DevelopmentStatus values must be from the allowed RESO display-form set (or NULL).
+ALLOWED_DEVSTATUS = {"New Construction", "Under Construction", "Proposed", "Existing"}
+try:
+    devstatus_rows = spark.sql("""
+        SELECT DISTINCT DevelopmentStatus, COUNT(*) AS c
+        FROM reso_gold.property
+        WHERE DevelopmentStatus IS NOT NULL
+        GROUP BY DevelopmentStatus
+        ORDER BY c DESC
+    """).collect()
+    print("\n   DevelopmentStatus distribution:")
+    for row in devstatus_rows:
+        marker = "✅" if row["DevelopmentStatus"] in ALLOWED_DEVSTATUS else "❌"
+        print(f"      {marker} {row['DevelopmentStatus']}: {row['c']}")
+        if row["DevelopmentStatus"] not in ALLOWED_DEVSTATUS:
+            construction_issues.append(
+                f"Non-RESO DevelopmentStatus value '{row['DevelopmentStatus']}' found in {row['c']} rows "
+                f"(allowed: {sorted(ALLOWED_DEVSTATUS)})"
+            )
+except Exception as e:
+    construction_issues.append(f"DevelopmentStatus check failed: {e}")
+
+# 11b.2 - NewConstructionYN count in Gold must match the source-side Qobrix rule.
+try:
+    gold_true = spark.sql("""
+        SELECT COUNT(*) AS c FROM reso_gold.property
+        WHERE NewConstructionYN = TRUE AND X_DataSource = 'qobrix'
+    """).collect()[0]["c"]
+    silver_true = spark.sql("""
+        SELECT COUNT(*) AS c FROM qobrix_silver.property
+        WHERE LOWER(new_build) = 'true'
+          AND LOWER(COALESCE(construction_stage, '')) IN
+              ('off_plan','offplans','planning','under_construction','construction_phase','completed')
+          AND LOWER(COALESCE(construction_stage, '')) <> 'resale'
+          AND UPPER(COALESCE(status, 'AC')) NOT IN ('CL','WD')
+    """).collect()[0]["c"]
+    print(f"\n   NewConstructionYN=TRUE (Qobrix branch): gold={gold_true}, silver-derived={silver_true}")
+    if gold_true != silver_true:
+        construction_issues.append(
+            f"NewConstructionYN=TRUE count mismatch: gold={gold_true} vs silver-derived={silver_true}"
+        )
+    else:
+        print("   ✅ NewConstructionYN Qobrix count matches silver-derived expectation")
+except Exception as e:
+    construction_issues.append(f"NewConstructionYN silver-parity check failed: {e}")
+
+# 11b.3 - PropertyCondition = 'New Construction' ⇔ NewConstructionYN = TRUE.
+try:
+    inconsistency = spark.sql("""
+        SELECT COUNT(*) AS c FROM reso_gold.property
+        WHERE (PropertyCondition = 'New Construction' AND (NewConstructionYN IS NULL OR NewConstructionYN = FALSE))
+           OR (NewConstructionYN = TRUE AND (PropertyCondition IS NULL OR PropertyCondition <> 'New Construction'))
+    """).collect()[0]["c"]
+    if inconsistency > 0:
+        construction_issues.append(
+            f"PropertyCondition vs NewConstructionYN inconsistency in {inconsistency} rows "
+            f"(should be logically equivalent)"
+        )
+        print(f"   ❌ PropertyCondition ⇔ NewConstructionYN: {inconsistency} inconsistent rows")
+    else:
+        print("   ✅ PropertyCondition ⇔ NewConstructionYN equivalence holds")
+except Exception as e:
+    construction_issues.append(f"PropertyCondition ⇔ NewConstructionYN check failed: {e}")
+
+# 11b.4 - NewConstructionYN type must be boolean-compatible (TRUE/FALSE/NULL only).
+try:
+    nb_dtype = dict(spark.table("reso_gold.property").dtypes).get("NewConstructionYN")
+    print(f"   NewConstructionYN column dtype: {nb_dtype}")
+    if nb_dtype != "boolean":
+        construction_issues.append(
+            f"NewConstructionYN column dtype is '{nb_dtype}', expected 'boolean' (Edm.Boolean)"
+        )
+except Exception as e:
+    construction_issues.append(f"NewConstructionYN dtype check failed: {e}")
+
+# 11b.5 - Distribution breakdown by OriginatingSystemOfficeKey for visibility.
+try:
+    print("\n   NewConstructionYN / DevelopmentStatus breakdown by OriginatingSystemOfficeKey:")
+    spark.sql("""
+        SELECT
+            OriginatingSystemOfficeKey,
+            X_DataSource,
+            SUM(CASE WHEN NewConstructionYN = TRUE  THEN 1 ELSE 0 END) AS new_construction_true,
+            SUM(CASE WHEN NewConstructionYN = FALSE THEN 1 ELSE 0 END) AS new_construction_false,
+            SUM(CASE WHEN NewConstructionYN IS NULL THEN 1 ELSE 0 END) AS new_construction_null,
+            SUM(CASE WHEN DevelopmentStatus IS NOT NULL THEN 1 ELSE 0 END) AS dev_status_non_null,
+            SUM(CASE WHEN BuilderName IS NOT NULL THEN 1 ELSE 0 END)      AS builder_name_non_null,
+            COUNT(*) AS total
+        FROM reso_gold.property
+        GROUP BY OriginatingSystemOfficeKey, X_DataSource
+        ORDER BY total DESC
+    """).show(truncate=False)
+except Exception as e:
+    construction_issues.append(f"Construction distribution breakdown failed: {e}")
+
+if construction_issues:
+    print(f"\n   ❌ Construction/Development checks found {len(construction_issues)} issue(s):")
+    for i, issue in enumerate(construction_issues, 1):
+        print(f"      {i}. {issue}")
+else:
+    print("\n   ✅ All construction/development field checks passed")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Step 12 - Final Comprehensive Summary
 
 # COMMAND ----------
@@ -852,6 +967,10 @@ print(f"\n🔗 Foreign Key Integrity: {len(fk_issues)} issues")
 for issue in fk_issues:
     print(f"   ⚠️ {issue}")
 
+print(f"\n🏗️  Construction & Development: {len(construction_issues)} issues")
+for issue in construction_issues:
+    print(f"   ⚠️ {issue}")
+
 print(f"\n✅ Property RESO Compliance: {'PASSED' if reso_passed else 'FAILED'}")
 print(f"✅ Property Coverage: {'PASSED' if coverage_passed else 'FAILED'}")
 print(f"{'✅' if integrity_passed else '⚠️'} Property Data Integrity: {'PASSED' if integrity_passed else f'{field_mismatch_count} mismatches'}")
@@ -862,7 +981,8 @@ print("\n" + "=" * 80)
 all_resources_passed = all(r["passed"] for r in resource_checks)
 fk_passed = len(fk_issues) == 0
 
-comprehensive_passed = all_passed and all_resources_passed and field_coverage_passed
+construction_passed = len(construction_issues) == 0
+comprehensive_passed = all_passed and all_resources_passed and field_coverage_passed and construction_passed
 
 if comprehensive_passed and fk_passed:
     print("✅ COMPREHENSIVE DATA INTEGRITY TEST PASSED")

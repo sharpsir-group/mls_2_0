@@ -96,11 +96,57 @@ if qobrix_available:
 if dash_available:
     dash_silver_cols = set([c.lower() for c in spark.table("dash_silver.property").columns])
     print(f"📋 Dash Silver table has {len(dash_silver_cols)} columns")
+else:
+    dash_silver_cols = set()
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## Transform to RESO with Extension Fields
+
+# COMMAND ----------
+
+# Resolve Qobrix bronze column names for BuilderName / BuilderModel dynamically.
+# The Qobrix bronze flattens related `project` / `seller` sub-objects under a prefix
+# (e.g. `project_project_construction_stage`), but the exact denormalized column
+# names for developer-company / project-name are not guaranteed across extracts.
+# Probe a list of likely candidates and fall back to NULL if none exist.
+def _first_bronze_col(candidates, alias="b"):
+    if qobrix_available:
+        for cand in candidates:
+            if cand.lower() in bronze_cols:
+                return f"{alias}.{cand}"
+    return "CAST(NULL AS STRING)"
+
+builder_name_expr = _first_bronze_col([
+    "project_seller_company_name",
+    "project_project_seller_company_name",
+    "seller_seller_company_name",
+    "seller_company_name",
+    "developer_name",
+    "developer_company_name",
+])
+builder_model_expr = _first_bronze_col([
+    "project_project_name",
+    "project_name",
+])
+print(f"🏗️  BuilderName source expr: {builder_name_expr}")
+print(f"🏗️  BuilderModel source expr: {builder_model_expr}")
+
+# Dash DevelopmentStatus best-effort: only map if construction_stage column exists in silver.
+if dash_available and "construction_stage" in dash_silver_cols:
+    dash_devstatus_expr = (
+        "CASE LOWER(COALESCE(d.construction_stage, '')) "
+        "WHEN 'under_construction' THEN 'Under Construction' "
+        "WHEN 'construction_phase' THEN 'Under Construction' "
+        "WHEN 'planning'           THEN 'Proposed' "
+        "WHEN 'off_plan'            THEN 'Proposed' "
+        "WHEN 'completed' THEN CASE WHEN d.is_new_construction THEN 'New Construction' ELSE 'Existing' END "
+        "WHEN 'resale'    THEN 'Existing' "
+        "ELSE NULL END"
+    )
+else:
+    dash_devstatus_expr = "CAST(NULL AS STRING)"
 
 # COMMAND ----------
 
@@ -144,13 +190,52 @@ SELECT
         ELSE 'RESI'
     END                                           AS PropertyClass,
 
-    -- DevelopmentStatus
-    CASE LOWER(COALESCE(b.project_project_construction_stage, ''))
-        WHEN 'offplans'          THEN 'Proposed'
-        WHEN 'construction_phase' THEN 'Under Construction'
-        WHEN 'completed'         THEN 'Complete'
+    -- DevelopmentStatus (RESO DD 2.0 display form; Lookup is "Open", String List Multi).
+    -- Hybrid: prefer property-level construction_stage, fall back to project-level.
+    -- Non-standard legacy value 'Complete' dropped — replaced with 'New Construction' / 'Existing'.
+    CASE
+        WHEN LOWER(b.construction_stage) IN ('under_construction','construction_phase') THEN 'Under Construction'
+        WHEN LOWER(b.construction_stage) IN ('off_plan','offplans','planning')           THEN 'Proposed'
+        WHEN LOWER(b.construction_stage) = 'completed' AND LOWER(b.new_build) = 'true'    THEN 'New Construction'
+        WHEN LOWER(b.construction_stage) = 'resale' OR LOWER(b.new_build) = 'false'       THEN 'Existing'
+        WHEN LOWER(b.project_project_construction_stage) IN ('construction_phase','under_construction') THEN 'Under Construction'
+        WHEN LOWER(b.project_project_construction_stage) IN ('offplans','off_plan','planning')          THEN 'Proposed'
+        WHEN LOWER(b.project_project_construction_stage) = 'completed' AND LOWER(b.new_build) = 'true'   THEN 'New Construction'
         ELSE NULL
     END                                           AS DevelopmentStatus,
+
+    -- NewConstructionYN (RESO DD 2.0 Boolean, form PropertySimple).
+    -- Strict rule approximates RESO's "newly constructed AND not previously occupied":
+    -- require new_build=true, an in-lifecycle construction_stage, not a resale, and status
+    -- not Closed/Withdrawn (CL/WD). Otherwise FALSE for explicit resales / new_build=false,
+    -- NULL when we cannot determine confidently.
+    CASE
+        WHEN LOWER(b.new_build) = 'true'
+             AND LOWER(COALESCE(b.construction_stage, '')) IN ('off_plan','offplans','planning','under_construction','construction_phase','completed')
+             AND LOWER(COALESCE(b.construction_stage, '')) <> 'resale'
+             AND UPPER(COALESCE(s.status, 'AC')) NOT IN ('CL','WD')
+          THEN TRUE
+        WHEN LOWER(b.new_build) = 'false' OR LOWER(COALESCE(b.construction_stage, '')) = 'resale'
+          THEN FALSE
+        ELSE NULL
+    END                                           AS NewConstructionYN,
+
+    -- PropertyCondition (RESO DD 2.0 String List, Multi). Companion flag aligned to
+    -- NewConstructionYN so consumers can filter by either field consistently.
+    CASE
+        WHEN LOWER(b.new_build) = 'true'
+             AND LOWER(COALESCE(b.construction_stage, '')) IN ('off_plan','offplans','planning','under_construction','construction_phase','completed')
+             AND LOWER(COALESCE(b.construction_stage, '')) <> 'resale'
+             AND UPPER(COALESCE(s.status, 'AC')) NOT IN ('CL','WD')
+          THEN 'New Construction'
+        ELSE NULL
+    END                                           AS PropertyCondition,
+
+    -- BuilderName (RESO DD 2.0 String) — developer/seller company, resolved dynamically from bronze.
+    {builder_name_expr}                           AS BuilderName,
+
+    -- BuilderModel (RESO DD 2.0 String) — project / development name, resolved dynamically from bronze.
+    {builder_model_expr}                          AS BuilderModel,
 
     -- Property type mapping
     CASE LOWER(s.property_type)
@@ -451,7 +536,18 @@ SELECT
         ELSE 'RESI'
     END                                           AS PropertyClass,
 
-    NULL                                          AS DevelopmentStatus,
+    -- DevelopmentStatus (best-effort from Dash silver; NULL when construction_stage is not ingested)
+    {dash_devstatus_expr}                         AS DevelopmentStatus,
+
+    -- NewConstructionYN (Dash native boolean)
+    CAST(d.is_new_construction AS BOOLEAN)        AS NewConstructionYN,
+
+    -- PropertyCondition companion flag
+    CASE WHEN d.is_new_construction THEN 'New Construction' ELSE NULL END AS PropertyCondition,
+
+    -- BuilderName / BuilderModel: not exposed in Dash silver today
+    CAST(NULL AS STRING)                          AS BuilderName,
+    CAST(NULL AS STRING)                          AS BuilderModel,
 
     -- Property type
     CASE LOWER(d.property_type)
@@ -677,8 +773,11 @@ SELECT
     NULL                                          AS X_QobrixSellerId,
     d.modified_ts                                 AS X_QobrixModified,
 
-    -- Multi-tenant access control
-    '{dash_hu_office_key}'                        AS OriginatingSystemOfficeKey,
+    -- Multi-tenant access control: use per-row silver office_key so HU/KZ rows carry
+    -- their own OriginatingSystemOfficeKey (SHARPSIR-HU-001 or SHARPSIR-KZ-001).
+    -- Previously this was hardcoded to the HU key, which hid every KZ row from its
+    -- OAuth client and leaked KZ rows into the HU feed.
+    COALESCE(d.office_key, '{dash_hu_office_key}') AS OriginatingSystemOfficeKey,
     'dash_sothebys'                               AS X_DataSource,
 
     -- ETL metadata

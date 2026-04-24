@@ -208,8 +208,10 @@ SELECT
     CAST(m.created_ts AS STRING)                     AS X_QobrixCreated,
     CAST(m.modified_ts AS STRING)                    AS X_QobrixModified,
     
-    -- Multi-tenant access control
-    '{dash_hu_office_key}'                           AS OriginatingSystemOfficeKey,
+    -- Multi-tenant access control: derive office key per-row by joining the media's
+    -- owning property so HU/KZ media carry their own OriginatingSystemOfficeKey.
+    -- Fallback to HU key preserves previous behaviour if the property link is missing.
+    COALESCE(dp.office_key, '{dash_hu_office_key}')  AS OriginatingSystemOfficeKey,
     'dash_sothebys'                                  AS X_DataSource,
     
     -- ETL metadata
@@ -217,6 +219,7 @@ SELECT
     CONCAT('media_batch_', CURRENT_DATE())           AS etl_batch_id
 
 FROM dash_silver.media m
+LEFT JOIN dash_silver.property dp ON CAST(m.property_id AS STRING) = CAST(dp.dash_id AS STRING)
 """
 
 # COMMAND ----------
