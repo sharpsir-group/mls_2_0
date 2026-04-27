@@ -488,7 +488,19 @@ SELECT
     s.qobrix_ref                                  AS X_QobrixRef,
     s.qobrix_source                               AS X_QobrixSource,
     b.legacy_id                                   AS X_QobrixLegacyId,
-    b.seller                                      AS X_QobrixSellerId,
+    -- Seller (Qobrix Contact UUID) keyed to match reso_gold.contacts.ContactKey
+    -- so consumers can join Property -> Contacts directly.
+    CASE WHEN b.seller IS NOT NULL AND b.seller != ''
+         THEN CONCAT('QOBRIX_CONTACT_', b.seller)
+         ELSE NULL END                            AS X_SellerContactKey,
+    -- Audit users (Qobrix User UUIDs) keyed to match reso_gold.member.MemberKey
+    -- (QOBRIX_USER_ prefix is what 03a_gold_reso_member_etl.py emits for users).
+    CASE WHEN b.created_by IS NOT NULL AND b.created_by != ''
+         THEN CONCAT('QOBRIX_USER_', b.created_by)
+         ELSE NULL END                            AS X_CreatedByMemberKey,
+    CASE WHEN b.modified_by IS NOT NULL AND b.modified_by != ''
+         THEN CONCAT('QOBRIX_USER_', b.modified_by)
+         ELSE NULL END                            AS X_ModifiedByMemberKey,
     s.modified_ts                                 AS X_QobrixModified,
 
     -- Multi-tenant access control
@@ -770,7 +782,11 @@ SELECT
     d.dash_ref                                    AS X_QobrixRef,
     d.dash_source                                 AS X_QobrixSource,
     NULL                                          AS X_QobrixLegacyId,
-    NULL                                          AS X_QobrixSellerId,
+    -- Dash silver does not expose seller/audit-user linkage today; emit NULL
+    -- stubs so the UNION ALL schema lines up with the Qobrix branch above.
+    CAST(NULL AS STRING)                          AS X_SellerContactKey,
+    CAST(NULL AS STRING)                          AS X_CreatedByMemberKey,
+    CAST(NULL AS STRING)                          AS X_ModifiedByMemberKey,
     d.modified_ts                                 AS X_QobrixModified,
 
     -- Multi-tenant access control: use per-row silver office_key so HU/KZ rows carry

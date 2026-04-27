@@ -159,6 +159,9 @@ The API aggregates data from multiple sources, identified by:
 | `X_GardenArea` | DECIMAL | Garden size (m²) |
 | `X_Furnished` | STRING | Furnished status |
 | `X_PetsAllowed` | STRING | Pet policy |
+| `X_SellerContactKey` | STRING | Seller contact link (`QOBRIX_CONTACT_<uuid>`); joins to `Contacts.ContactKey` |
+| `X_CreatedByMemberKey` | STRING | User who created the listing in source CRM (`QOBRIX_USER_<uuid>`); joins to `Member.MemberKey` |
+| `X_ModifiedByMemberKey` | STRING | User who last modified the listing in source CRM (`QOBRIX_USER_<uuid>`); joins to `Member.MemberKey` |
 
 ---
 
