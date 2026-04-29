@@ -476,9 +476,15 @@ SELECT
     END AS listing_type,
 
     -- market: primary / secondary
+    -- RESO 2.0 NewConstructionYN is the primary industry filter (Bridge /
+    -- Trestle / Spark / SimplyRETS); fall back to DevelopmentStatus and the
+    -- legacy X_NewBuild extension only when NewConstructionYN is undetermined.
     CASE
-        WHEN LOWER(COALESCE(p.X_NewBuild, '')) = 'true' THEN 'primary'
-        WHEN p.DevelopmentStatus IN ('Proposed', 'Under Construction') THEN 'primary'
+        WHEN p.NewConstructionYN = TRUE                                         THEN 'primary'
+        WHEN p.NewConstructionYN = FALSE                                        THEN 'secondary'
+        WHEN p.DevelopmentStatus IN ('Proposed','Under Construction','New Construction') THEN 'primary'
+        WHEN p.DevelopmentStatus = 'Existing'                                   THEN 'secondary'
+        WHEN LOWER(COALESCE(p.X_NewBuild, '')) = 'true'                         THEN 'primary'
         ELSE 'secondary'
     END AS market,
 

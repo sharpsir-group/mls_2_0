@@ -3,6 +3,9 @@
 __pycache__/
 *.pyc
 api/logs/
+api/venv/
+venv/
+.venv/
 logs/
 # Ignore entire tmp/ directory
 tmp/

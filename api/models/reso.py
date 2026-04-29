@@ -47,12 +47,29 @@ class Property(BaseModel):
     StandardStatus: Optional[str] = None
     MlsStatus: Optional[str] = None
     
-    # Property Type & Class
+    # Property Type & Class (RESO DD 2.0)
+    # PropertyType: Residential | ResidentialLease | CommercialSale |
+    #               CommercialLease | Land | Farm | BusinessOpportunity |
+    #               ManufacturedInPark
     PropertyType: Optional[str] = None
+    # PropertySubType: open list (Apartment, Villa, Penthouse, Office, ...)
     PropertySubType: Optional[str] = None
-    PropertyClass: Optional[str] = None  # RESI, RLSE, COMS, COML, LAND
-    DevelopmentStatus: Optional[str] = None  # Proposed, Under Construction, Complete
-    
+    # Legacy RPRS-style codes (RESI, RLSE, COMS, COML, LAND); kept for
+    # backwards compatibility with downstream consumers but deprecated in
+    # favour of PropertyType.
+    PropertyClass: Optional[str] = None
+    # Lifecycle (RESO DD 2.0)
+    # DevelopmentStatus: Proposed | Under Construction | New Construction | Existing
+    DevelopmentStatus: Optional[str] = None
+    # NewConstructionYN: TRUE for new builds, FALSE for resale, NULL when undetermined
+    NewConstructionYN: Optional[bool] = None
+    # PropertyCondition: multi-value CSV — Fixer | New Construction | To Be Built |
+    #                    Under Construction | Updated/Remodeled
+    PropertyCondition: Optional[str] = None
+    # Builder identity
+    BuilderName: Optional[str] = None
+    BuilderModel: Optional[str] = None  # project / development name
+
     # Location
     City: Optional[str] = None
     StateOrProvince: Optional[str] = None
@@ -75,6 +92,7 @@ class Property(BaseModel):
     LivingArea: Optional[float] = None
     LotSizeSquareFeet: Optional[float] = None
     YearBuilt: Optional[int] = None
+    YearBuiltEffective: Optional[int] = None  # last major renovation year
     
     # Dates
     OriginalEntryTimestamp: Optional[str] = None

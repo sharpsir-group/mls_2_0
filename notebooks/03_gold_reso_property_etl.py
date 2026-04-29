@@ -190,46 +190,93 @@ SELECT
         ELSE 'RESI'
     END                                           AS PropertyClass,
 
-    -- DevelopmentStatus (RESO DD 2.0 display form; Lookup is "Open", String List Multi).
-    -- Hybrid: prefer property-level construction_stage, fall back to project-level.
-    -- Non-standard legacy value 'Complete' dropped — replaced with 'New Construction' / 'Existing'.
+    -- ═══════════════════════════════════════════════════════════════════════════
+    -- LIFECYCLE FIELDS (RESO DD 2.0)
+    -- ═══════════════════════════════════════════════════════════════════════════
+    -- Layered classification ladder (first match wins). Emits DevelopmentStatus,
+    -- NewConstructionYN, and PropertyCondition (multi-value CSV) consistently
+    -- so consumers can filter by any one field.
+    --
+    -- Priority:
+    --   1. custom_resale = true            -> Existing / FALSE / NULL
+    --   2. custom_presale + new_build=true -> Proposed / TRUE  / To Be Built
+    --   3. construction_stage              -> mapped per stage value
+    --   4. construction_stage blank        -> fall back to project_project_*
+    --   5. PropertyCondition appends 'Updated/Remodeled' when renovation_year
+    --      > construction_year (additive token).
+    --
+    -- Default for fully unknown rows: DevelopmentStatus='Existing',
+    -- NewConstructionYN=NULL, PropertyCondition=NULL.
+
+    -- DevelopmentStatus (RESO DD 2.0 display form; Lookup "Open", String List Multi).
     CASE
-        WHEN LOWER(b.construction_stage) IN ('under_construction','construction_phase') THEN 'Under Construction'
-        WHEN LOWER(b.construction_stage) IN ('off_plan','offplans','planning')           THEN 'Proposed'
-        WHEN LOWER(b.construction_stage) = 'completed' AND LOWER(b.new_build) = 'true'    THEN 'New Construction'
-        WHEN LOWER(b.construction_stage) = 'resale' OR LOWER(b.new_build) = 'false'       THEN 'Existing'
-        WHEN LOWER(b.project_project_construction_stage) IN ('construction_phase','under_construction') THEN 'Under Construction'
-        WHEN LOWER(b.project_project_construction_stage) IN ('offplans','off_plan','planning')          THEN 'Proposed'
-        WHEN LOWER(b.project_project_construction_stage) = 'completed' AND LOWER(b.new_build) = 'true'   THEN 'New Construction'
-        ELSE NULL
+        WHEN LOWER(COALESCE(b.custom_resale,'')) = 'true'                                   THEN 'Existing'
+        WHEN LOWER(COALESCE(b.custom_presale,'')) = 'true' AND LOWER(COALESCE(b.new_build,'')) = 'true' THEN 'Proposed'
+        WHEN LOWER(COALESCE(b.construction_stage,'')) IN ('off_plan','offplans','planning')         THEN 'Proposed'
+        WHEN LOWER(COALESCE(b.construction_stage,'')) IN ('construction_phase','under_construction') THEN 'Under Construction'
+        WHEN LOWER(COALESCE(b.construction_stage,'')) = 'resale'                            THEN 'Existing'
+        WHEN LOWER(COALESCE(b.construction_stage,'')) = 'completed' AND LOWER(b.new_build) = 'true'  THEN 'New Construction'
+        WHEN LOWER(COALESCE(b.construction_stage,'')) = 'completed' AND LOWER(b.new_build) = 'false' THEN 'Existing'
+        WHEN LOWER(COALESCE(b.construction_stage,'')) = 'completed' AND b.new_build IS NULL
+             AND COALESCE(b.developer_id,'') <> ''                                          THEN 'New Construction'
+        WHEN LOWER(COALESCE(b.construction_stage,'')) = 'completed'                         THEN 'Existing'
+        -- Project-level fallback when listing-level construction_stage is blank
+        WHEN LOWER(COALESCE(b.project_project_custom_resale,'')) = 'true'                   THEN 'Existing'
+        WHEN LOWER(COALESCE(b.project_project_construction_stage,'')) IN ('off_plan','offplans','planning')         THEN 'Proposed'
+        WHEN LOWER(COALESCE(b.project_project_construction_stage,'')) IN ('construction_phase','under_construction') THEN 'Under Construction'
+        WHEN LOWER(COALESCE(b.project_project_construction_stage,'')) = 'completed' AND LOWER(b.new_build) = 'true' THEN 'New Construction'
+        WHEN LOWER(b.new_build) = 'true'                                                    THEN 'New Construction'
+        WHEN LOWER(b.new_build) = 'false'                                                   THEN 'Existing'
+        ELSE 'Existing'
     END                                           AS DevelopmentStatus,
 
-    -- NewConstructionYN (RESO DD 2.0 Boolean, form PropertySimple).
-    -- Strict rule approximates RESO's "newly constructed AND not previously occupied":
-    -- require new_build=true, an in-lifecycle construction_stage, not a resale, and status
-    -- not Closed/Withdrawn (CL/WD). Otherwise FALSE for explicit resales / new_build=false,
-    -- NULL when we cannot determine confidently.
+    -- NewConstructionYN (RESO DD 2.0 Boolean, PropertySimple). The primary
+    -- industry filter for new-vs-resale (Bridge / Trestle / Spark / SimplyRETS).
     CASE
-        WHEN LOWER(b.new_build) = 'true'
-             AND LOWER(COALESCE(b.construction_stage, '')) IN ('off_plan','offplans','planning','under_construction','construction_phase','completed')
-             AND LOWER(COALESCE(b.construction_stage, '')) <> 'resale'
-             AND UPPER(COALESCE(s.status, 'AC')) NOT IN ('CL','WD')
-          THEN TRUE
-        WHEN LOWER(b.new_build) = 'false' OR LOWER(COALESCE(b.construction_stage, '')) = 'resale'
-          THEN FALSE
+        WHEN LOWER(COALESCE(b.custom_resale,'')) = 'true'                                                THEN FALSE
+        WHEN LOWER(COALESCE(b.custom_presale,'')) = 'true' AND LOWER(COALESCE(b.new_build,'')) = 'true'  THEN TRUE
+        WHEN LOWER(COALESCE(b.construction_stage,'')) IN ('off_plan','offplans','planning','construction_phase','under_construction') THEN TRUE
+        WHEN LOWER(COALESCE(b.construction_stage,'')) = 'resale'                                         THEN FALSE
+        WHEN LOWER(COALESCE(b.construction_stage,'')) = 'completed' AND LOWER(b.new_build) = 'true'      THEN TRUE
+        WHEN LOWER(COALESCE(b.construction_stage,'')) = 'completed' AND LOWER(b.new_build) = 'false'     THEN FALSE
+        WHEN LOWER(COALESCE(b.construction_stage,'')) = 'completed' AND b.new_build IS NULL
+             AND COALESCE(b.developer_id,'') <> ''                                                       THEN TRUE
+        WHEN LOWER(COALESCE(b.project_project_custom_resale,'')) = 'true'                                THEN FALSE
+        WHEN LOWER(COALESCE(b.project_project_construction_stage,'')) IN ('off_plan','offplans','planning','construction_phase','under_construction') THEN TRUE
+        WHEN LOWER(COALESCE(b.project_project_construction_stage,'')) = 'completed' AND LOWER(b.new_build) = 'true' THEN TRUE
+        WHEN LOWER(b.new_build) = 'true'                                                                 THEN TRUE
+        WHEN LOWER(b.new_build) = 'false'                                                                THEN FALSE
         ELSE NULL
     END                                           AS NewConstructionYN,
 
-    -- PropertyCondition (RESO DD 2.0 String List, Multi). Companion flag aligned to
-    -- NewConstructionYN so consumers can filter by either field consistently.
-    CASE
-        WHEN LOWER(b.new_build) = 'true'
-             AND LOWER(COALESCE(b.construction_stage, '')) IN ('off_plan','offplans','planning','under_construction','construction_phase','completed')
-             AND LOWER(COALESCE(b.construction_stage, '')) <> 'resale'
-             AND UPPER(COALESCE(s.status, 'AC')) NOT IN ('CL','WD')
-          THEN 'New Construction'
+    -- PropertyCondition (RESO DD 2.0 String List, Multi). Multi-value CSV;
+    -- token sets are RESO-canonical: Fixer | New Construction | To Be Built |
+    -- Under Construction | Updated/Remodeled.
+    NULLIF(CONCAT_WS(',',
+      CASE
+        WHEN LOWER(COALESCE(b.custom_resale,'')) = 'true'                                                THEN NULL
+        WHEN LOWER(COALESCE(b.custom_presale,'')) = 'true' AND LOWER(COALESCE(b.new_build,'')) = 'true'  THEN 'To Be Built'
+        WHEN LOWER(COALESCE(b.construction_stage,'')) IN ('off_plan','offplans','planning')              THEN 'To Be Built'
+        WHEN LOWER(COALESCE(b.construction_stage,'')) IN ('construction_phase','under_construction')     THEN 'Under Construction'
+        WHEN LOWER(COALESCE(b.construction_stage,'')) = 'resale'                                         THEN NULL
+        WHEN LOWER(COALESCE(b.construction_stage,'')) = 'completed' AND LOWER(b.new_build) = 'true'      THEN 'New Construction'
+        WHEN LOWER(COALESCE(b.construction_stage,'')) = 'completed' AND b.new_build IS NULL
+             AND COALESCE(b.developer_id,'') <> ''                                                       THEN 'New Construction'
+        WHEN LOWER(COALESCE(b.project_project_construction_stage,'')) IN ('off_plan','offplans','planning')              THEN 'To Be Built'
+        WHEN LOWER(COALESCE(b.project_project_construction_stage,'')) IN ('construction_phase','under_construction')     THEN 'Under Construction'
+        WHEN LOWER(COALESCE(b.project_project_construction_stage,'')) = 'completed' AND LOWER(b.new_build) = 'true'      THEN 'New Construction'
         ELSE NULL
-    END                                           AS PropertyCondition,
+      END,
+      -- Additive Updated/Remodeled token: emitted whenever renovation_year is
+      -- a real year and exceeds construction_year by any margin.
+      CASE
+        WHEN TRY_CAST(b.renovation_year AS INT) IS NOT NULL
+         AND TRY_CAST(b.construction_year AS INT) IS NOT NULL
+         AND TRY_CAST(b.renovation_year AS INT) > TRY_CAST(b.construction_year AS INT)
+          THEN 'Updated/Remodeled'
+        ELSE NULL
+      END
+    ), '')                                        AS PropertyCondition,
 
     -- BuilderName (RESO DD 2.0 String) — developer/seller company, resolved dynamically from bronze.
     {builder_name_expr}                           AS BuilderName,
@@ -237,29 +284,47 @@ SELECT
     -- BuilderModel (RESO DD 2.0 String) — project / development name, resolved dynamically from bronze.
     {builder_model_expr}                          AS BuilderModel,
 
-    -- Property type mapping
-    CASE LOWER(s.property_type)
-        WHEN 'apartment'     THEN 'Apartment'
-        WHEN 'house'         THEN 'SingleFamilyDetached'
-        WHEN 'land'          THEN 'Land'
-        WHEN 'office'        THEN 'Office'
-        WHEN 'investment'    THEN 'Commercial'
-        WHEN 'building'      THEN 'Commercial'
-        WHEN 'hotel'         THEN 'Commercial'
-        WHEN 'parking_lot'   THEN 'Parking'
-        WHEN 'retail'        THEN 'Commercial'
-        WHEN 'industrial'    THEN 'Commercial'
-        WHEN 'other'         THEN 'Other'
-        ELSE 'Other'
+    -- RESO PropertyType (high-level class). RESO 2.0 enumeration:
+    -- Residential | ResidentialLease | CommercialSale | CommercialLease |
+    -- Land | Farm | BusinessOpportunity | ManufacturedInPark.
+    -- The detailed type (Apartment/Villa/Office/...) lives in PropertySubType.
+    CASE
+        WHEN LOWER(s.property_type) = 'land' THEN 'Land'
+        WHEN LOWER(s.property_type) IN ('apartment','house') THEN
+            CASE LOWER(COALESCE(s.sale_rent,'for_sale'))
+                WHEN 'for_rent' THEN 'ResidentialLease'
+                ELSE 'Residential'
+            END
+        WHEN LOWER(s.property_type) IN ('office','retail','building','hotel','industrial','investment') THEN
+            CASE LOWER(COALESCE(s.sale_rent,'for_sale'))
+                WHEN 'for_rent' THEN 'CommercialLease'
+                ELSE 'CommercialSale'
+            END
+        WHEN LOWER(s.property_type) = 'parking_lot' THEN 'CommercialSale'
+        ELSE 'Residential'
     END                                           AS PropertyType,
 
-    -- Property subtype
+    -- RESO PropertySubType (open list). Prefer Qobrix subtype label/code; fall
+    -- back to the legacy property_type-driven mapping so older rows still get a
+    -- sensible sub-type.
     COALESCE(
         CAST(ps.label AS STRING),
         CAST(ps.code AS STRING),
         CAST(s.property_subtype_id AS STRING),
-        NULL
-    )                                            AS PropertySubType,
+        CASE LOWER(s.property_type)
+            WHEN 'apartment'   THEN 'Apartment'
+            WHEN 'house'       THEN 'SingleFamilyDetached'
+            WHEN 'land'        THEN 'Land'
+            WHEN 'office'      THEN 'Office'
+            WHEN 'investment'  THEN 'Commercial'
+            WHEN 'building'    THEN 'Commercial'
+            WHEN 'hotel'       THEN 'Commercial'
+            WHEN 'parking_lot' THEN 'Parking'
+            WHEN 'retail'      THEN 'Commercial'
+            WHEN 'industrial'  THEN 'Commercial'
+            ELSE 'Other'
+        END
+    )                                             AS PropertySubType,
 
     -- Beds / baths
     TRY_CAST(s.bedrooms AS INT)                   AS BedroomsTotal,
@@ -455,7 +520,40 @@ SELECT
     TRY_CAST(b.reserve_price_amount AS DECIMAL(18,2))      AS X_ReservePrice,
     TRY_CAST(b.starting_bidding_amount AS DECIMAL(18,2))   AS X_StartingBid,
     b.project                                     AS X_ProjectId,
-    b.developer_id                                AS X_DeveloperId,
+    -- Developer (Qobrix Contact UUID) keyed to match reso_gold.contacts.ContactKey
+    -- so consumers can join Property -> Contacts directly (mirror of X_SellerContactKey).
+    CASE WHEN b.developer_id IS NOT NULL AND b.developer_id != ''
+         THEN CONCAT('QOBRIX_CONTACT_', b.developer_id)
+         ELSE NULL END                            AS X_DeveloperContactKey,
+    -- Lead-source attribution (Qobrix `source` is a free-text channel label,
+    -- e.g. "Bayut", "Spitogatos", "Referral"). Almost always populated.
+    NULLIF(TRIM(b.source), '')                    AS X_LeadSource,
+    -- Date the listing actually went live on the website (distinct from
+    -- ListingContractDate). Bronze stores it as STRING; cast safely to DATE.
+    TRY_CAST(NULLIF(TRIM(b.website_listing_date), '') AS DATE) AS X_WebsiteListingDate,
+    -- Free-text operational note. Cyprus tenant overloads this field with the
+    -- listing-broker name (e.g. "Yanna Dovliatidou") because Qobrix's `agent`
+    -- and `salesperson` UUID fields are usually empty. Surfacing it lets Atlas
+    -- recover broker info best-effort downstream until source data is cleaned.
+    NULLIF(TRIM(b.key_holder_details), '')        AS X_KeyHolderDetails,
+    -- Cyprus tenant convention (per Qobrix admin Elena, 2026-04): the listing
+    -- broker name is appended to the parent Project.name after the last comma,
+    -- e.g. "Project 5 Bedroom Villa in Tremithousa, Paphos, Yanna Dovliatidou".
+    -- Best-effort heuristic: take the last comma-separated segment if it
+    -- (a) contains a space (i.e. multi-word -- a single-word last segment is
+    --     usually a city like "Paphos"), and
+    -- (b) contains no digits (rules out addresses / postal codes).
+    -- Caveat: still has false positives for two-word place names (e.g.
+    -- "Limassol Mouttagiaka"). Consumers should treat this as a hint, not a key.
+    CASE
+        WHEN {builder_model_expr} IS NOT NULL
+         AND INSTR({builder_model_expr}, ',') > 0
+         AND TRIM(REGEXP_EXTRACT({builder_model_expr}, '([^,]+)$', 1)) RLIKE ' '
+         AND TRIM(REGEXP_EXTRACT({builder_model_expr}, '([^,]+)$', 1)) NOT RLIKE '[0-9]'
+         AND LENGTH(TRIM(REGEXP_EXTRACT({builder_model_expr}, '([^,]+)$', 1))) BETWEEN 4 AND 80
+            THEN TRIM(REGEXP_EXTRACT({builder_model_expr}, '([^,]+)$', 1))
+        ELSE NULL
+    END                                           AS X_ListingBrokerName,
     b.featured                                    AS X_Featured,
     b.featured_priority                           AS X_FeaturedPriority,
     b.property_of_the_month                       AS X_PropertyOfTheMonth,
@@ -548,29 +646,59 @@ SELECT
         ELSE 'RESI'
     END                                           AS PropertyClass,
 
-    -- DevelopmentStatus (best-effort from Dash silver; NULL when construction_stage is not ingested)
+    -- ═══════════════════════════════════════════════════════════════════════════
+    -- LIFECYCLE FIELDS (RESO DD 2.0) — Dash branch parity with Qobrix ladder.
+    -- ═══════════════════════════════════════════════════════════════════════════
+    -- Dash silver currently exposes is_new_construction (boolean) and, when
+    -- ingested, construction_stage. We mirror the Qobrix layered ladder using
+    -- whatever signals are available, defaulting to Existing for unknowns.
+
+    -- DevelopmentStatus
     {dash_devstatus_expr}                         AS DevelopmentStatus,
 
-    -- NewConstructionYN (Dash native boolean)
+    -- NewConstructionYN — Dash native boolean (TRUE for new builds, FALSE when
+    -- explicitly resale, NULL otherwise).
     CAST(d.is_new_construction AS BOOLEAN)        AS NewConstructionYN,
 
-    -- PropertyCondition companion flag
-    CASE WHEN d.is_new_construction THEN 'New Construction' ELSE NULL END AS PropertyCondition,
+    -- PropertyCondition (RESO DD 2.0 String List, Multi). Single token at most
+    -- on the Dash branch today (no renovation_year signal in silver).
+    CASE
+        WHEN d.is_new_construction = TRUE  THEN 'New Construction'
+        ELSE NULL
+    END                                           AS PropertyCondition,
 
     -- BuilderName / BuilderModel: not exposed in Dash silver today
     CAST(NULL AS STRING)                          AS BuilderName,
     CAST(NULL AS STRING)                          AS BuilderModel,
 
-    -- Property type
-    CASE LOWER(d.property_type)
-        WHEN 'apartment' THEN 'Apartment'
-        WHEN 'house'     THEN 'SingleFamilyDetached'
-        WHEN 'land'      THEN 'Land'
-        WHEN 'office'    THEN 'Office'
-        ELSE 'Other'
+    -- RESO PropertyType (high-level class).
+    CASE
+        WHEN LOWER(d.property_type) = 'land' THEN 'Land'
+        WHEN LOWER(d.property_type) IN ('apartment','house') THEN
+            CASE LOWER(COALESCE(d.sale_rent,'for_sale'))
+                WHEN 'for_rent' THEN 'ResidentialLease'
+                ELSE 'Residential'
+            END
+        WHEN LOWER(d.property_type) = 'office' THEN
+            CASE LOWER(COALESCE(d.sale_rent,'for_sale'))
+                WHEN 'for_rent' THEN 'CommercialLease'
+                ELSE 'CommercialSale'
+            END
+        ELSE 'Residential'
     END                                           AS PropertyType,
 
-    CAST(d.property_subtype AS STRING)            AS PropertySubType,
+    -- RESO PropertySubType (open list). Prefer Dash native subtype; fall back
+    -- to property_type-driven mapping for older rows.
+    COALESCE(
+        CAST(d.property_subtype AS STRING),
+        CASE LOWER(d.property_type)
+            WHEN 'apartment' THEN 'Apartment'
+            WHEN 'house'     THEN 'SingleFamilyDetached'
+            WHEN 'land'      THEN 'Land'
+            WHEN 'office'    THEN 'Office'
+            ELSE 'Other'
+        END
+    )                                             AS PropertySubType,
 
     -- ═══════════════════════════════════════════════════════════════════════════
     -- RESO STANDARD - Beds / Baths
@@ -747,7 +875,11 @@ SELECT
     NULL AS X_ReservePrice,
     NULL AS X_StartingBid,
     NULL AS X_ProjectId,
-    NULL AS X_DeveloperId,
+    CAST(NULL AS STRING) AS X_DeveloperContactKey,
+    CAST(NULL AS STRING) AS X_LeadSource,
+    CAST(NULL AS DATE)   AS X_WebsiteListingDate,
+    CAST(NULL AS STRING) AS X_KeyHolderDetails,
+    CAST(NULL AS STRING) AS X_ListingBrokerName,
     NULL AS X_Featured,
     NULL AS X_FeaturedPriority,
     NULL AS X_PropertyOfTheMonth,

@@ -72,9 +72,14 @@ The API aggregates data from multiple sources, identified by:
 | `LotSizeSquareFeet` | DECIMAL | Lot size (m²) |
 | `LotSizeAcres` | DECIMAL | Lot size in acres |
 | `YearBuilt` | INT | Year constructed |
+| `YearBuiltEffective` | INT | Last major renovation year |
 | `StoriesTotal` | INT | Number of stories in building |
 | `Stories` | INT | Floor number of unit |
-| `DevelopmentStatus` | ENUM | `Proposed`, `Under Construction`, `Complete` |
+| `DevelopmentStatus` | ENUM | RESO 2.0: `Proposed`, `Under Construction`, `New Construction`, `Existing` |
+| `NewConstructionYN` | BOOL | RESO 2.0 primary new-vs-resale flag |
+| `PropertyCondition` | STRING (CSV, multi) | RESO 2.0 multi-value: `Fixer`, `New Construction`, `To Be Built`, `Under Construction`, `Updated/Remodeled` |
+| `BuilderName` | STRING | RESO 2.0 — developer / seller company |
+| `BuilderModel` | STRING | RESO 2.0 — project / development name |
 
 ### Features
 
@@ -101,7 +106,6 @@ The API aggregates data from multiple sources, identified by:
 | `LotFeatures` | STRING | Lot characteristics |
 | `WaterfrontFeatures` | STRING | Waterfront details |
 | `RoadSurfaceType` | STRING | Road type |
-| `PropertyCondition` | STRING | Property condition |
 | `AssociationAmenities` | STRING | Community amenities |
 
 ### Agent & Office
@@ -162,6 +166,11 @@ The API aggregates data from multiple sources, identified by:
 | `X_SellerContactKey` | STRING | Seller contact link (`QOBRIX_CONTACT_<uuid>`); joins to `Contacts.ContactKey` |
 | `X_CreatedByMemberKey` | STRING | User who created the listing in source CRM (`QOBRIX_USER_<uuid>`); joins to `Member.MemberKey` |
 | `X_ModifiedByMemberKey` | STRING | User who last modified the listing in source CRM (`QOBRIX_USER_<uuid>`); joins to `Member.MemberKey` |
+| `X_DeveloperContactKey` | STRING | Developer contact link (`QOBRIX_CONTACT_<uuid>`); joins to `Contacts.ContactKey` (project/new-build developer) |
+| `X_LeadSource` | STRING | Lead-source attribution from source CRM (e.g. `Bayut`, `Spitogatos`, `Referral`) |
+| `X_WebsiteListingDate` | DATE | Date the listing went live on the consumer website (distinct from `ListingContractDate`) |
+| `X_KeyHolderDetails` | STRING | Free-text operational note. Cyprus tenant overloads this with the listing-broker name when Qobrix `agent`/`salesperson` UUIDs are empty (best-effort fallback) |
+| `X_ListingBrokerName` | STRING | Listing-broker name parsed heuristically from the parent `Project.name` (Cyprus tenant convention: name appended after last comma). Hint, not a key; can have false positives for two-word place names |
 
 ---
 
@@ -270,3 +279,74 @@ Some fields are only available from specific data sources:
 | `DevelopmentStatus` | ✅ | ❌ |
 | `X_SeaView` | ✅ | ❌ |
 | `X_MountainView` | ✅ | ❌ |
+
+---
+
+## Lifecycle classification ladder (Qobrix)
+
+First match wins; emits aligned `DevelopmentStatus`, `NewConstructionYN`, `PropertyCondition`.
+
+| # | Condition | DevelopmentStatus | NewConstructionYN | PropertyCondition |
+|---|-----------|-------------------|--------------------|--------------------|
+| 1 | `custom_resale = 'true'` | `Existing` | `FALSE` | `NULL` |
+| 2 | `custom_presale = 'true' AND new_build = 'true'` | `Proposed` | `TRUE` | `To Be Built` |
+| 3 | `construction_stage IN ('off_plan','offplans','planning')` | `Proposed` | `TRUE` | `To Be Built` |
+| 4 | `construction_stage IN ('construction_phase','under_construction')` | `Under Construction` | `TRUE` | `Under Construction` |
+| 5 | `construction_stage = 'resale'` | `Existing` | `FALSE` | `NULL` |
+| 6 | `construction_stage = 'completed' AND new_build = 'true'` | `New Construction` | `TRUE` | `New Construction` |
+| 7 | `construction_stage = 'completed' AND new_build = 'false'` | `Existing` | `FALSE` | `NULL` |
+| 8 | `construction_stage = 'completed' AND new_build IS NULL AND developer_id IS NOT NULL` | `New Construction` | `TRUE` | `New Construction` |
+| 9 | `construction_stage` blank → `project_project_construction_stage` (mirror rules above) | per rules | per rules | per rules |
+| 10 | Default | `Existing` | `NULL` | `NULL` |
+
+Additive: when `renovation_year > construction_year`, append `Updated/Remodeled` to `PropertyCondition`.
+
+## CDL canonical column mapping (RESO PascalCase ↔ CDL snake_case)
+
+`public.properties` (Atlas Supabase, after `20260428100000_canonical_reso_lifecycle`):
+
+| RESO field | CDL column |
+|---|---|
+| `StandardStatus` | `standard_status` |
+| `PropertyType` | `property_type` |
+| `PropertySubType` | `property_sub_type` |
+| `BedroomsTotal` | `bedrooms_total` |
+| `BathroomsTotalInteger` | `bathrooms_total_integer` |
+| `LivingArea` | `living_area` |
+| `ListPrice` | `list_price` |
+| `UnparsedAddress` | `unparsed_address` |
+| `PublicRemarks` | `public_remarks_en` |
+| `ListAgentKey` | `list_agent_key` |
+| `ListAgentFullName` | `list_agent_full_name` |
+| `ModifiedByMemberKey` | `modified_by_member_key` |
+| `BuilderName` | `builder_name` |
+| `BuilderModel` | `builder_model` |
+| `DevelopmentStatus` | `development_status` |
+| `NewConstructionYN` | `new_construction_yn` |
+| `PropertyCondition` | `property_condition` |
+| `YearBuilt` | `year_built` |
+| `YearBuiltEffective` | `year_built_effective` |
+
+## Value canonicalization (StandardStatus migration)
+
+Pre-migration legacy values in `public.properties.status` were collapsed display labels.
+Post-migration, `standard_status` carries RESO StandardStatus verbatim.
+
+| Legacy value | RESO StandardStatus |
+|---|---|
+| `For Sale` | `Active` |
+| `Sold` | `Closed` |
+| `Off Market` | `Withdrawn` |
+
+## Dash filter chip ↔ RESO field reference
+
+For Atlas Lovable FE / Dash syndication consumers — single-field expressions:
+
+| Dash chip | RESO expression |
+|---|---|
+| Off-plan | `PropertyCondition` contains `To Be Built` OR `DevelopmentStatus = 'Proposed'` |
+| Under construction | `PropertyCondition` contains `Under Construction` OR `DevelopmentStatus = 'Under Construction'` |
+| Ready / new | `PropertyCondition` contains `New Construction` OR `DevelopmentStatus = 'New Construction'` |
+| Resale | `NewConstructionYN = FALSE` OR `DevelopmentStatus = 'Existing'` |
+| Renovated | `PropertyCondition` contains `Updated/Remodeled` |
+

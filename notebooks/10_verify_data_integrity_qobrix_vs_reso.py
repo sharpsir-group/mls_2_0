@@ -883,23 +883,70 @@ try:
 except Exception as e:
     construction_issues.append(f"NewConstructionYN silver-parity check failed: {e}")
 
-# 11b.3 - PropertyCondition = 'New Construction' ⇔ NewConstructionYN = TRUE.
+# 11b.3 - PropertyCondition (multi-value CSV, RESO 2.0) <-> NewConstructionYN.
+# Tokens treated as new-build: 'New Construction', 'Under Construction', 'To Be Built'.
+# Equivalence: NewConstructionYN=TRUE iff at least one new-build token is present;
+#              NewConstructionYN=FALSE iff no new-build token is present.
+# 'Updated/Remodeled' is additive and orthogonal to NewConstructionYN.
+NEW_BUILD_TOKENS_RE = ",(New Construction|Under Construction|To Be Built),"
 try:
-    inconsistency = spark.sql("""
+    inconsistency = spark.sql(f"""
         SELECT COUNT(*) AS c FROM reso_gold.property
-        WHERE (PropertyCondition = 'New Construction' AND (NewConstructionYN IS NULL OR NewConstructionYN = FALSE))
-           OR (NewConstructionYN = TRUE AND (PropertyCondition IS NULL OR PropertyCondition <> 'New Construction'))
+        WHERE
+          (NewConstructionYN = TRUE
+             AND (PropertyCondition IS NULL
+                  OR NOT (CONCAT(',', PropertyCondition, ',') RLIKE '{NEW_BUILD_TOKENS_RE}')))
+          OR (NewConstructionYN = FALSE
+              AND PropertyCondition IS NOT NULL
+              AND CONCAT(',', PropertyCondition, ',') RLIKE '{NEW_BUILD_TOKENS_RE}')
     """).collect()[0]["c"]
     if inconsistency > 0:
         construction_issues.append(
             f"PropertyCondition vs NewConstructionYN inconsistency in {inconsistency} rows "
-            f"(should be logically equivalent)"
+            f"(new-build tokens must align with NewConstructionYN=TRUE)"
         )
         print(f"   ❌ PropertyCondition ⇔ NewConstructionYN: {inconsistency} inconsistent rows")
     else:
         print("   ✅ PropertyCondition ⇔ NewConstructionYN equivalence holds")
 except Exception as e:
     construction_issues.append(f"PropertyCondition ⇔ NewConstructionYN check failed: {e}")
+
+# 11b.3a - DevelopmentStatus must be populated for every row (RESO Atlas mandate).
+try:
+    null_ds = spark.sql("""
+        SELECT COUNT(*) AS c FROM reso_gold.property
+        WHERE DevelopmentStatus IS NULL
+    """).collect()[0]["c"]
+    if null_ds > 0:
+        construction_issues.append(
+            f"DevelopmentStatus IS NULL on {null_ds} rows; expected 0 (Atlas canonical mandate)"
+        )
+        print(f"   ❌ DevelopmentStatus NULL: {null_ds} rows (expected 0)")
+    else:
+        print("   ✅ DevelopmentStatus populated on every row")
+except Exception as e:
+    construction_issues.append(f"DevelopmentStatus NULL check failed: {e}")
+
+# 11b.3b - PropertyCondition tokens must all be in the RESO 2.0 standard set:
+#   Fixer | New Construction | To Be Built | Under Construction | Updated/Remodeled
+ALLOWED_PC_TOKENS = ("Fixer", "New Construction", "To Be Built",
+                     "Under Construction", "Updated/Remodeled")
+try:
+    invalid_tokens = spark.sql(f"""
+        SELECT explode(split(PropertyCondition, ',')) AS tok
+        FROM reso_gold.property
+        WHERE PropertyCondition IS NOT NULL
+    """).filter(f"trim(tok) NOT IN ({','.join(repr(t) for t in ALLOWED_PC_TOKENS)})").count()
+    if invalid_tokens > 0:
+        construction_issues.append(
+            f"PropertyCondition: {invalid_tokens} tokens outside RESO standard set "
+            f"({ALLOWED_PC_TOKENS})"
+        )
+        print(f"   ❌ PropertyCondition non-RESO tokens: {invalid_tokens}")
+    else:
+        print("   ✅ PropertyCondition tokens all in RESO standard set")
+except Exception as e:
+    construction_issues.append(f"PropertyCondition token validation failed: {e}")
 
 # 11b.4 - NewConstructionYN type must be boolean-compatible (TRUE/FALSE/NULL only).
 try:
