@@ -238,13 +238,22 @@ print(json.dumps(d))
 " "$json" "$timeout_sec")
     fi
     
-    local result=$(databricks jobs submit --json "$json" 2>&1 | grep -v "^WARN:")
-    # `databricks jobs submit` (CLI >= 0.205) returns BOTH a top-level `run_id`
+    # `databricks jobs submit` (CLI >= 0.205) BLOCKS until the run reaches
+    # TERMINATED unless `--no-wait` is passed; with the default ~20-minute
+    # client-side timeout, any long-running notebook (we use timeout_seconds
+    # up to 39600s for cdc-bronze) makes submit return `Error: timed out:`
+    # even though the actual job continues running on Databricks. We force
+    # `--no-wait` so submit returns immediately with the parent run_id and
+    # the polling loop below drives state-tracking and the configured
+    # timeout_sec, instead of being capped by CLI's hidden default.
+    local result
+    result=$(databricks jobs submit --no-wait --json "$json" 2>&1 | grep -v "^WARN:")
+    # `databricks jobs submit` returns BOTH a top-level `run_id`
     # (parent multi-task run) AND a nested `tasks[0].run_id` (task run id).
     # The legacy regex `grep -o '"run_id":...' | grep -o '[0-9]*'` matched
-    # both, joined them with newline, and downstream `databricks jobs get-run
-    # --run-id "<id>\n<id>"` silently hung in a polling loop. We now extract
-    # only the top-level run_id via python so polling is unambiguous.
+    # both, joined them with newline, and downstream `databricks jobs get-run`
+    # silently hung in a polling loop. We now extract only the top-level
+    # run_id via python so polling is unambiguous.
     local run_id
     run_id=$(echo "$result" | python3 -c "
 import sys, json

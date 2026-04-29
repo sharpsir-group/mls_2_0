@@ -541,15 +541,57 @@ if modified_properties:
     print("\n3️⃣  Fetching media for modified properties...")
     property_ids = [p.get("id") for p in modified_properties if p.get("id")]
     modified_media = fetch_media_for_properties(property_ids)
-    
+
     if modified_media:
-        print(f"   Found: {len(modified_media)} media items")
-        cdc_changes["media"] = len(modified_media)
+        # ─── DUPLICATE-PROOF MERGE ──────────────────────────────────────────
+        # fetch_media_for_properties() iterates 3 categories per property
+        # (photos/documents/floorplans). The Qobrix API regularly returns the
+        # SAME media id under multiple categories, so `modified_media` can
+        # contain N copies of one id. Without de-dup, merge_to_bronze() did
+        # DELETE WHERE id IN (...) once and then `append`'d all N copies,
+        # producing 2-86x duplication per id (root cause of the 60% blowup
+        # observed on PROD: 215k rows where ~80k are unique).
+        #
+        # Fix:
+        #   1) Dedupe `modified_media` by id (last category wins, preserving
+        #      the most recent attribution).
+        #   2) DELETE by property_id (clears all media for changed properties,
+        #      same as before).
+        #   3) DELETE by id (catches the cross-property edge-case where one
+        #      media is attached to multiple properties).
+        #   4) merge_to_bronze() then runs its DELETE+APPEND on the deduped
+        #      list, leaving exactly one row per id.
+
+        unique_by_id: dict = {}
+        for m in modified_media:
+            mid = m.get("id")
+            if mid:
+                unique_by_id[mid] = m
+        deduped_media = list(unique_by_id.values())
+        print(
+            f"   Found: {len(modified_media)} media items "
+            f"(raw, with category duplicates)"
+        )
+        print(
+            f"   After de-dup by id: {len(deduped_media)} unique media items"
+        )
+        cdc_changes["media"] = len(deduped_media)
+
         existing_tables = [t.name for t in spark.catalog.listTables()]
         if "property_media" in existing_tables:
-            for prop_id in property_ids:
-                spark.sql(f"DELETE FROM property_media WHERE property_id = '{prop_id}'")
-        merge_to_bronze(modified_media, "property_media", "id")
+            prop_ids_str = "', '".join(p for p in property_ids if p)
+            if prop_ids_str:
+                spark.sql(
+                    f"DELETE FROM property_media "
+                    f"WHERE property_id IN ('{prop_ids_str}')"
+                )
+            media_ids_str = "', '".join(unique_by_id.keys())
+            if media_ids_str:
+                spark.sql(
+                    f"DELETE FROM property_media "
+                    f"WHERE id IN ('{media_ids_str}')"
+                )
+        merge_to_bronze(deduped_media, "property_media", "id")
     
     # Update metadata
     update_sync_metadata("properties", merged_count, max_modified, "SUCCESS", started_at)
