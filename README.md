@@ -51,6 +51,12 @@ Source 3:  DASH API    → dash_bronze   → dash_silver    ─┘            �
 
 ### Quick Start
 
+> **Requirement:** Databricks CLI **>= 0.298** (the unified `databricks jobs
+> {submit,get-run,get-run-output}` verbs replaced the removed `databricks runs ...`
+> subcommands). `scripts/run_pipeline.sh` exits with an explicit error if a
+> lower version is detected. Install via:
+> `curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh`
+
 ```bash
 # Clone
 git clone https://github.com/sharpsir-group/mls_2_0.git
@@ -106,7 +112,8 @@ Generate OAuth secrets with: `openssl rand -hex 32`
 
 ```bash
 ./scripts/run_pipeline.sh bronze           # Raw data from Qobrix API
-./scripts/run_pipeline.sh silver           # All silver tables
+./scripts/run_pipeline.sh silver           # All Qobrix silver tables
+./scripts/run_pipeline.sh silver-dash      # DASH silver tables (property, property_features, media)
 ./scripts/run_pipeline.sh gold             # All RESO gold tables
 ./scripts/run_pipeline.sh all              # Full pipeline (bronze → silver → gold → integrity)
 ./scripts/run_pipeline.sh integrity        # Data integrity verification
@@ -115,10 +122,17 @@ Generate OAuth secrets with: `openssl rand -hex 32`
 #### CDC — Incremental Sync
 
 ```bash
-./scripts/run_pipeline.sh cdc             # Full incremental sync (Bronze CDC + full Silver/Gold rebuild)
-./scripts/run_pipeline.sh cdc-catchup     # Reset metadata → triggers self-recovery on next CDC run
+./scripts/run_pipeline.sh cdc             # Full incremental sync (Bronze CDC → Qobrix Silver → DASH Silver → Gold → Exports)
 ./scripts/run_pipeline.sh cdc-bronze      # CDC bronze only
+./scripts/run_pipeline.sh silver-dash     # Manually rebuild dash_silver.{property, property_features, media}
+./scripts/run_pipeline.sh cdc-catchup     # Reset metadata → next CDC must self-recover (use only when bronze tables are corrupt)
 ```
+
+> **Heads-up on `cdc-catchup`:** clears `qobrix_bronze.cdc_metadata` so the
+> next `cdc` run is forced to fetch ALL records via the
+> "no last_sync → full refresh" code path in
+> `00a_cdc_qobrix_bronze.py::get_last_sync()`. Snapshot
+> `qobrix_bronze.cdc_metadata` first if you may need to roll back.
 
 #### Exports
 
@@ -145,11 +159,16 @@ The CDC pipeline uses `cdc_metadata` in `qobrix_bronze` to track the last succes
 ```
 
 The cron script orchestrates all sources sequentially:
-1. **Source 1** — Qobrix CDC via Databricks notebooks
+1. **Source 1** — Qobrix CDC via Databricks notebooks (incl. DASH silver as Stage 2b inside the cdc workflow, so HU/KZ rows reach `reso_gold.{property,media}`)
 2. **Source 2** — DASH API fetch
 3. **Source 3** — DASH file sync
 4. **API integration tests** — verify data integrity
 5. **Email report** — HTML summary sent via Resend API
+
+The cron script's status banner (`✅ SUCCESS` / `⚠️ WARNING` / `❌ FAILED`) is
+now driven by `OVERALL_STATUS` and the script exits non-zero when any critical
+source fails; the previous behaviour was a hardcoded green banner + `exit 0`
+that masked failures from log-greppers and external watchdogs.
 
 ### RESO Web API
 
@@ -265,9 +284,15 @@ mls2 (catalog)
 
 #### 5. Install & Configure CLI
 
+> **The legacy `databricks-cli` PyPI package is unsupported.** The current
+> Databricks CLI is a Go binary (>= 0.205); `scripts/run_pipeline.sh` requires
+> >= 0.298 because it uses the unified `databricks jobs {submit,get-run,
+> get-run-output}` verbs.
+
 ```bash
-pip install databricks-cli
-databricks configure --token
+curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+databricks --version            # must report >= 0.298
+databricks configure --token    # paste host + token from step 4
 ```
 
 #### 6. Import & Run
@@ -284,7 +309,9 @@ databricks configure --token
 | `DIRECTORY_PROTECTED` error | Use `/Shared/` path (not `/Repos/`) |
 | `INVALID_PARAMETER_VALUE` | Use multi-task format with `tasks` array |
 | SQL Warehouse not starting | Check warehouse status, may need to wake up |
-| `No such command 'submit'` | Requires legacy databricks-cli (v0.18) |
+| `unknown command "runs"` | CLI >= 0.205 unifies `runs *` under `jobs *`. Update the script (already done in this repo) and ensure CLI >= 0.298 |
+| `Error: timed out:` from `databricks jobs submit` | Submit blocks until TERMINATED with a hidden ~20m timeout; long-running notebooks need `databricks jobs submit --no-wait ...` (already wired in `run_pipeline.sh`) |
+| `unknown flag: --run-id` | CLI >= 0.205 takes RUN_ID as a positional arg: `databricks jobs get-run RUN_ID` (no flag) |
 
 </details>
 

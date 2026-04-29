@@ -365,6 +365,17 @@ case "$1" in
     silver-contact)
         run_notebook "MLS 2.0 - Qobrix Silver Contact ETL" "${MLS_NOTEBOOK_BASE}/02b_silver_qobrix_contact_etl" "false" 1800
         ;;
+    silver-dash)
+        # DASH silver branch (3 notebooks): syncs DASH bronze (HU/KZ via
+        # scripts/load_dash_bronze.py) into dash_silver.{property,
+        # property_features, media}. Idempotent (CREATE OR REPLACE).
+        # Order: property first (creates the row spine and per-row office_key
+        # used by features/media), then features (joined back to property),
+        # then media. Each is small (<5 min) on PROD volumes.
+        run_notebook "MLS 2.0 - DASH Silver Property ETL" "${MLS_NOTEBOOK_BASE}/01_dash_silver_property_etl" "false" 1800
+        run_notebook "MLS 2.0 - DASH Silver Features ETL" "${MLS_NOTEBOOK_BASE}/01b_dash_silver_features_etl" "false" 1800
+        run_notebook "MLS 2.0 - DASH Silver Media ETL" "${MLS_NOTEBOOK_BASE}/01_dash_silver_media_etl" "false" 1800
+        ;;
     silver-media)
         run_notebook "MLS 2.0 - Qobrix Silver Media ETL" "${MLS_NOTEBOOK_BASE}/02c_silver_qobrix_media_etl" "false" 1800
         ;;
@@ -548,7 +559,19 @@ except Exception as ex:
         run_notebook "MLS 2.0 - Qobrix Silver Agent ETL" "${MLS_NOTEBOOK_BASE}/02a_silver_qobrix_agent_etl" "false" 1800
         run_notebook "MLS 2.0 - Qobrix Silver Contact ETL" "${MLS_NOTEBOOK_BASE}/02b_silver_qobrix_contact_etl" "false" 1800
         run_notebook "MLS 2.0 - Qobrix Silver Viewing ETL" "${MLS_NOTEBOOK_BASE}/02d_silver_qobrix_viewing_etl" "false" 1800
-        
+
+        echo ""
+        echo "🔄 Stage 2b: DASH Silver (sync DASH bronze → silver)"
+        # DASH silver was historically only built on the DEV workspace;
+        # PROD's reso_gold.media missed the ~2.3k DASH (HU+KZ) media rows
+        # because dash_silver.{property,media,property_features} simply
+        # didn't exist in mls2 on PROD. Including it in the cdc workflow
+        # so the 3 dash_silver tables exist on every workspace and the
+        # downstream gold-media/gold-property notebooks pick them up.
+        run_notebook "MLS 2.0 - DASH Silver Property ETL" "${MLS_NOTEBOOK_BASE}/01_dash_silver_property_etl" "false" 1800
+        run_notebook "MLS 2.0 - DASH Silver Features ETL" "${MLS_NOTEBOOK_BASE}/01b_dash_silver_features_etl" "false" 1800
+        run_notebook "MLS 2.0 - DASH Silver Media ETL" "${MLS_NOTEBOOK_BASE}/01_dash_silver_media_etl" "false" 1800
+
         echo ""
         echo "🏆 Stage 3: Gold (sync Silver → Gold RESO)"
         # Use full refresh ETLs (CREATE OR REPLACE) to avoid schema mismatch issues
