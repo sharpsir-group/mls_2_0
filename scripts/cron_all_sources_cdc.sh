@@ -551,7 +551,17 @@ if [ "$CY_STATUS" = "FAILED" ]; then
     OVERALL_STATUS="FAILED"
 fi
 
-echo "✅ All Sources CDC Pipeline Complete! Status: $OVERALL_STATUS" | tee -a "$LOG_FILE"
+# Final status banner: must reflect the actual OVERALL_STATUS so that
+# log-grepping (`grep -E "✅|⚠️|❌" log`) and visual review give consistent
+# answers. Previously this line was hardcoded "✅ ...", which masked Cyprus CDC
+# failures (and any other source FAILURE) as a green run for both readers and
+# any downstream tooling that pattern-matched on the leading emoji.
+case "$OVERALL_STATUS" in
+    SUCCESS) echo "✅ All Sources CDC Pipeline Complete! Status: SUCCESS"      | tee -a "$LOG_FILE" ;;
+    WARNING) echo "⚠️ All Sources CDC Pipeline Complete with WARNINGS"          | tee -a "$LOG_FILE" ;;
+    FAILED)  echo "❌ All Sources CDC Pipeline FAILED"                          | tee -a "$LOG_FILE" ;;
+    *)       echo "❓ All Sources CDC Pipeline finished with unknown status: $OVERALL_STATUS" | tee -a "$LOG_FILE" ;;
+esac
 
 # Send email report
 echo "" | tee -a "$LOG_FILE"
@@ -568,4 +578,13 @@ else
     fi
 fi
 
-exit 0
+# Propagate real status to the cron exit code so monitoring (cron mail,
+# external watchdogs) see actual failures. WARNING => exit 0 by design:
+# partial-source warnings (HU/KZ optional sources) shouldn't trip nightly
+# alerts as long as the critical Cyprus CDC succeeded.
+case "$OVERALL_STATUS" in
+    SUCCESS) exit 0 ;;
+    WARNING) exit 0 ;;
+    FAILED)  exit 1 ;;
+    *)       exit 1 ;;
+esac

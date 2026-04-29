@@ -6,10 +6,41 @@
 # Usage: ./scripts/run_pipeline.sh [bronze|silver|gold|integrity|all]
 # Run from: repository root (this project) directory
 
-set -e
+set -eE
+# set -eE => errexit + errtrace: ERR trap is inherited by functions and
+# subshells, so a failing run_notebook (return 1) propagates up cleanly even
+# when called inside a case-block, function, or subshell.
+trap 'rc=$?; echo ""; echo "❌ run_pipeline.sh aborted: exit $rc at line $LINENO (cmd: $BASH_COMMAND)"; exit $rc' ERR
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MLS2_ROOT="$(dirname "$SCRIPT_DIR")"
 PROJECT_ROOT="$(dirname "$MLS2_ROOT")"
+
+# Databricks CLI minimum version guard.
+# CLI < 0.205 used `databricks runs ...` subcommands; CLI >= 0.205 unifies them
+# under `databricks jobs submit | get-run | get-run-output`. Pre-0.298 was where
+# this script broke silently in PROD (the cron host was upgraded but the script
+# still called the removed `runs` verbs). Fail loudly and explicitly.
+MIN_CLI_VERSION="0.298"
+if ! command -v databricks >/dev/null 2>&1; then
+    echo "❌ Error: 'databricks' CLI not found in PATH"
+    echo "   Install: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh"
+    exit 2
+fi
+CLI_VER=$(databricks --version 2>&1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
+if [ -z "$CLI_VER" ]; then
+    echo "❌ Error: could not parse 'databricks --version' output"
+    databricks --version 2>&1 | head -3
+    exit 2
+fi
+LOWEST=$(printf '%s\n%s\n' "$MIN_CLI_VERSION" "$CLI_VER" | sort -V | head -1)
+if [ "$LOWEST" != "$MIN_CLI_VERSION" ]; then
+    echo "❌ Error: databricks CLI v${CLI_VER} is below the required minimum v${MIN_CLI_VERSION}"
+    echo "   This script uses 'databricks jobs submit/get-run/get-run-output'"
+    echo "   which require CLI >= 0.205 (we pin 0.298 to match host installation)."
+    echo "   Upgrade: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh"
+    exit 2
+fi
 
 # Load credentials
 if [ -f "$MLS2_ROOT/.env" ]; then
@@ -78,7 +109,7 @@ except: pass
     local target_run_id="${task_run_id:-$run_id}"
     
     # Get full output from runs get-output
-    local output_json=$(databricks runs get-output --run-id "$target_run_id" 2>&1 | grep -v "^WARN:")
+    local output_json=$(databricks jobs get-run-output "$target_run_id" 2>&1 | grep -v "^WARN:")
     
     # Parse and display detailed error info
     echo "$output_json" | python3 -c "
@@ -207,9 +238,25 @@ print(json.dumps(d))
 " "$json" "$timeout_sec")
     fi
     
-    local result=$(databricks runs submit --json "$json" 2>&1 | grep -v "^WARN:")
-    local run_id=$(echo "$result" | grep -o '"run_id":[[:space:]]*[0-9]*' | grep -o '[0-9]*')
-    
+    local result=$(databricks jobs submit --json "$json" 2>&1 | grep -v "^WARN:")
+    # `databricks jobs submit` (CLI >= 0.205) returns BOTH a top-level `run_id`
+    # (parent multi-task run) AND a nested `tasks[0].run_id` (task run id).
+    # The legacy regex `grep -o '"run_id":...' | grep -o '[0-9]*'` matched
+    # both, joined them with newline, and downstream `databricks jobs get-run
+    # --run-id "<id>\n<id>"` silently hung in a polling loop. We now extract
+    # only the top-level run_id via python so polling is unambiguous.
+    local run_id
+    run_id=$(echo "$result" | python3 -c "
+import sys, json
+try:
+    d = json.loads(sys.stdin.read())
+    rid = d.get('run_id')
+    if rid:
+        print(rid)
+except Exception:
+    pass
+" 2>/dev/null)
+
     if [ -z "$run_id" ]; then
         echo "   ❌ Failed to submit job"
         echo "   $result"
@@ -220,7 +267,7 @@ print(json.dumps(d))
     
     local last_state=""
     while true; do
-        local status_json=$(databricks runs get --run-id "$run_id" 2>&1 | grep -v "^WARN:")
+        local status_json=$(databricks jobs get-run "$run_id" 2>&1 | grep -v "^WARN:")
         local state=$(echo "$status_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('state',d.get('status',{})).get('life_cycle_state','') if isinstance(d.get('state',d.get('status',{})),dict) else '')" 2>/dev/null)
         local result_state=$(echo "$status_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('state',d.get('status',{})).get('result_state','') if isinstance(d.get('state',d.get('status',{})),dict) else '')" 2>/dev/null)
         
@@ -253,7 +300,7 @@ if tasks and 'run_id' in tasks[0]:
     print(tasks[0]['run_id'])
 " 2>/dev/null)
                 if [ -n "$task_run_id" ]; then
-                    nb_output=$(databricks runs get-output --run-id "$task_run_id" 2>/dev/null | python3 -c "
+                    nb_output=$(databricks jobs get-run-output "$task_run_id" 2>/dev/null | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 r = d.get('notebook_output', {}).get('result', '')

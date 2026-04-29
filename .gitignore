@@ -7,6 +7,11 @@ api/venv/
 venv/
 .venv/
 logs/
+# Local snapshots taken before destructive operations (cleanup phases, manual
+# rebuilds, etc). Naming convention: <file>.bak.YYYYMMDD or <file>.bak.<tag>.
+*.bak
+*.bak.[0-9]*
+crontab.bak.*
 # Ignore entire tmp/ directory
 tmp/
 # Ignore Dash source data files
