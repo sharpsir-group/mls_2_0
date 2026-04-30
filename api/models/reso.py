@@ -85,7 +85,27 @@ class Property(BaseModel):
     ListPrice: Optional[float] = None
     OriginalListPrice: Optional[float] = None
     ClosePrice: Optional[float] = None
-    
+    # RESO DD 2.0 canonical lease amount (paired with LeaseAmountFrequency).
+    # Populated on the lease side of a Cyprus dual sale-and-rent listing.
+    LeaseAmount: Optional[float] = None
+    # RESO Lookup: Annually | Monthly | SeeRemarks | Weekly
+    LeaseAmountFrequency: Optional[str] = None
+
+    # Listing engagement (RESO DD 2.0)
+    # ListingService: EntryOnly | FullService | LimitedService.
+    # Atlas drives the operational 3-bucket chip (Listing/Marketing/Rent) from
+    # ListingService + PropertyType.
+    ListingService: Optional[str] = None
+    # ListingAgreement: ExclusiveAgency | ExclusiveRightToLease | ExclusiveRightToSell |
+    #                   ExclusiveRightWithException | Net | Open | Probate.
+    # Contractual exclusivity - never inferred. mls_2_0 emits ExclusiveAgency only when
+    # the Cyprus custom_exclusive_listing flag proves it; otherwise 'Open' or NULL.
+    ListingAgreement: Optional[str] = None
+    # Cyprus dual sale-and-rent listings fan out into two Property records; these
+    # cross-reference flags let consumers find the sibling without proprietary keys.
+    LeaseConsideredYN: Optional[bool] = None  # TRUE on the sale primary
+    SaleConsideredYN: Optional[bool] = None   # TRUE on the lease sibling
+
     # Details
     BedroomsTotal: Optional[int] = None
     BathroomsTotalInteger: Optional[int] = None
