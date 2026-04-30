@@ -989,6 +989,209 @@ else:
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Step 11c - RESO ListingService / ListingAgreement / Lease cross-references
+# MAGIC
+# MAGIC Validates the canonical RESO listing-engagement signals emitted by the
+# MAGIC Cyprus tenant adapter. These fields are what Atlas uses to compute the
+# MAGIC operational 3-bucket chip (Listing / Marketing / Rent), so consumers
+# MAGIC see only RESO DD values - never Cyprus-specific columns.
+
+# COMMAND ----------
+
+print("\n" + "=" * 80)
+print("STEP 11c: RESO ListingService / ListingAgreement / Dual-listing checks")
+print("=" * 80)
+
+engagement_issues: List[str] = []
+
+# Allowed RESO 2.0 lookup values
+ALLOWED_LISTING_SERVICE   = {"EntryOnly", "FullService", "LimitedService"}
+ALLOWED_LISTING_AGREEMENT = {
+    "ExclusiveAgency", "ExclusiveRightToLease", "ExclusiveRightToSell",
+    "ExclusiveRightWithException", "Net", "Open", "Probate",
+}
+
+# 11c.1 - ListingService values must all be in the RESO 3-value lookup (or NULL).
+try:
+    bad_ls = spark.sql(f"""
+        SELECT DISTINCT ListingService, COUNT(*) AS c
+        FROM reso_gold.property
+        WHERE ListingService IS NOT NULL
+          AND ListingService NOT IN ({','.join([f"'{v}'" for v in ALLOWED_LISTING_SERVICE])})
+        GROUP BY ListingService
+    """).collect()
+    if bad_ls:
+        for row in bad_ls:
+            engagement_issues.append(
+                f"Non-RESO ListingService value '{row['ListingService']}' on {row['c']} rows"
+            )
+        print(f"   ❌ ListingService non-RESO values: {len(bad_ls)}")
+    else:
+        print("   ✅ ListingService values all in RESO 3-value lookup (or NULL)")
+except Exception as e:
+    engagement_issues.append(f"ListingService enum check failed: {e}")
+
+# 11c.2 - ListingAgreement values must all be in the RESO 7-value lookup (or NULL).
+try:
+    bad_la = spark.sql(f"""
+        SELECT DISTINCT ListingAgreement, COUNT(*) AS c
+        FROM reso_gold.property
+        WHERE ListingAgreement IS NOT NULL
+          AND ListingAgreement NOT IN ({','.join([f"'{v}'" for v in ALLOWED_LISTING_AGREEMENT])})
+        GROUP BY ListingAgreement
+    """).collect()
+    if bad_la:
+        for row in bad_la:
+            engagement_issues.append(
+                f"Non-RESO ListingAgreement value '{row['ListingAgreement']}' on {row['c']} rows"
+            )
+        print(f"   ❌ ListingAgreement non-RESO values: {len(bad_la)}")
+    else:
+        print("   ✅ ListingAgreement values all in RESO 7-value lookup (or NULL)")
+except Exception as e:
+    engagement_issues.append(f"ListingAgreement enum check failed: {e}")
+
+# 11c.3 - Cross-field observability (informational): ListingAgreement and
+# ListingService are INDEPENDENT RESO DD fields. A property can have an
+# exclusive contract (ListingAgreement) without an engaged broker
+# (ListingService = NULL) - e.g. owner-direct exclusive where the service
+# level is not yet determined. We surface the cross-tab as a reporting
+# signal but do NOT treat the combination as a violation.
+try:
+    rows = spark.sql("""
+        SELECT
+          COUNT(*) AS total_with_agreement,
+          SUM(CASE WHEN ListingService = 'FullService'    THEN 1 ELSE 0 END) AS with_full_service,
+          SUM(CASE WHEN ListingService IS NULL            THEN 1 ELSE 0 END) AS service_null,
+          SUM(CASE WHEN ListingService NOT IN ('FullService') AND ListingService IS NOT NULL THEN 1 ELSE 0 END) AS other_service
+        FROM reso_gold.property
+        WHERE ListingAgreement IS NOT NULL
+    """).collect()[0]
+    print(
+        f"   ℹ️  Agreement x Service cross-tab: total={rows['total_with_agreement']} "
+        f"FullService={rows['with_full_service']} NULL={rows['service_null']} other={rows['other_service']}"
+    )
+except Exception as e:
+    engagement_issues.append(f"Cross-field cross-tab check failed: {e}")
+
+# 11c.4 - Coverage: ListingService = 'FullService' count >= count of silver rows
+# with key_holder_details NOT NULL OR custom_listing_property = 'Yes'.
+try:
+    silver_engaged = spark.sql("""
+        SELECT COUNT(*) AS c
+        FROM qobrix_silver.property s
+        LEFT JOIN qobrix_bronze.properties b
+            ON CAST(s.qobrix_id AS STRING) = CAST(b.id AS STRING)
+        WHERE LOWER(COALESCE(s.custom_listing_property, '')) = 'yes'
+           OR (b.key_holder_details IS NOT NULL AND TRIM(b.key_holder_details) <> '')
+    """).collect()[0]["c"]
+    gold_full = spark.sql("""
+        SELECT COUNT(*) AS c
+        FROM reso_gold.property
+        WHERE ListingService = 'FullService'
+          AND X_DataSource = 'qobrix'
+    """).collect()[0]["c"]
+    print(f"   Silver engaged (key_holder OR custom_listing_property=Yes): {silver_engaged}")
+    print(f"   Gold ListingService='FullService' (qobrix): {gold_full}")
+    if gold_full < silver_engaged:
+        engagement_issues.append(
+            f"Coverage gap: {silver_engaged - gold_full} silver-engaged rows missing FullService in gold"
+        )
+    else:
+        print("   ✅ Coverage: gold FullService count >= silver engaged count")
+except Exception as e:
+    engagement_issues.append(f"Coverage check failed: {e}")
+
+# 11c.5 - Dual-listing pair invariant: every '_LEASE' row has a sibling primary
+# (ListingKey without the suffix) with LeaseConsideredYN = TRUE; every primary
+# with LeaseConsideredYN = TRUE has a '_LEASE' sibling with SaleConsideredYN = TRUE.
+try:
+    orphan_leases = spark.sql("""
+        SELECT COUNT(*) AS c
+        FROM reso_gold.property l
+        LEFT JOIN reso_gold.property p
+            ON p.ListingKey = SUBSTRING(l.ListingKey, 1, LENGTH(l.ListingKey) - LENGTH('_LEASE'))
+        WHERE l.ListingKey LIKE '%\\_LEASE' ESCAPE '\\'
+          AND (p.ListingKey IS NULL OR p.LeaseConsideredYN IS DISTINCT FROM TRUE)
+    """).collect()[0]["c"]
+    orphan_primaries = spark.sql("""
+        SELECT COUNT(*) AS c
+        FROM reso_gold.property p
+        LEFT JOIN reso_gold.property l
+            ON l.ListingKey = CONCAT(p.ListingKey, '_LEASE')
+        WHERE p.LeaseConsideredYN = TRUE
+          AND (l.ListingKey IS NULL OR l.SaleConsideredYN IS DISTINCT FROM TRUE)
+    """).collect()[0]["c"]
+    if orphan_leases > 0:
+        engagement_issues.append(
+            f"Dual-listing pair: {orphan_leases} '_LEASE' rows missing sibling primary with "
+            f"LeaseConsideredYN = TRUE"
+        )
+    if orphan_primaries > 0:
+        engagement_issues.append(
+            f"Dual-listing pair: {orphan_primaries} LeaseConsideredYN=TRUE primaries missing "
+            f"'_LEASE' sibling with SaleConsideredYN = TRUE"
+        )
+    if orphan_leases == 0 and orphan_primaries == 0:
+        print("   ✅ Dual-listing pair invariant: every primary <-> lease sibling pair complete")
+except Exception as e:
+    engagement_issues.append(f"Dual-listing pair check failed: {e}")
+
+# 11c.6 - Lease coverage: count(PropertyType IN ('ResidentialLease','CommercialLease'))
+# in gold = count(silver where sale_rent='for_rent') + count(silver where sale_rent='for_sale_and_rent').
+try:
+    silver_rent  = spark.sql("SELECT COUNT(*) AS c FROM qobrix_silver.property WHERE LOWER(COALESCE(sale_rent,''))='for_rent'").collect()[0]["c"]
+    silver_dual  = spark.sql("SELECT COUNT(*) AS c FROM qobrix_silver.property WHERE LOWER(COALESCE(sale_rent,''))='for_sale_and_rent'").collect()[0]["c"]
+    gold_lease   = spark.sql("""
+        SELECT COUNT(*) AS c FROM reso_gold.property
+        WHERE PropertyType IN ('ResidentialLease','CommercialLease')
+          AND X_DataSource = 'qobrix'
+    """).collect()[0]["c"]
+    expected = silver_rent + silver_dual
+    print(f"   Silver for_rent: {silver_rent}; Silver for_sale_and_rent: {silver_dual}; "
+          f"Gold lease (qobrix): {gold_lease}; expected: {expected}")
+    if gold_lease != expected:
+        engagement_issues.append(
+            f"Lease coverage mismatch: gold lease rows={gold_lease}, expected={expected} "
+            f"(for_rent={silver_rent} + for_sale_and_rent={silver_dual})"
+        )
+    else:
+        print("   ✅ Lease coverage: gold lease count = silver (for_rent + for_sale_and_rent)")
+except Exception as e:
+    engagement_issues.append(f"Lease coverage check failed: {e}")
+
+# 11c.7 - Distribution breakdown for visibility
+try:
+    print("\n   ListingService distribution by OriginatingSystemOfficeKey:")
+    spark.sql("""
+        SELECT
+            OriginatingSystemOfficeKey,
+            X_DataSource,
+            SUM(CASE WHEN ListingService = 'FullService' THEN 1 ELSE 0 END) AS full_service,
+            SUM(CASE WHEN ListingService IS NULL         THEN 1 ELSE 0 END) AS service_null,
+            SUM(CASE WHEN ListingAgreement = 'ExclusiveAgency' THEN 1 ELSE 0 END) AS exclusive_agency,
+            SUM(CASE WHEN ListingAgreement = 'Open'            THEN 1 ELSE 0 END) AS open_agreement,
+            SUM(CASE WHEN ListingAgreement IS NULL             THEN 1 ELSE 0 END) AS agreement_null,
+            SUM(CASE WHEN LeaseConsideredYN = TRUE             THEN 1 ELSE 0 END) AS dual_sale_with_lease,
+            SUM(CASE WHEN ListingKey LIKE '%\\_LEASE' ESCAPE '\\' THEN 1 ELSE 0 END) AS lease_siblings,
+            COUNT(*) AS total
+        FROM reso_gold.property
+        GROUP BY OriginatingSystemOfficeKey, X_DataSource
+        ORDER BY total DESC
+    """).show(truncate=False)
+except Exception as e:
+    engagement_issues.append(f"Listing-engagement distribution breakdown failed: {e}")
+
+if engagement_issues:
+    print(f"\n   ❌ Listing-engagement checks found {len(engagement_issues)} issue(s):")
+    for i, issue in enumerate(engagement_issues, 1):
+        print(f"      {i}. {issue}")
+else:
+    print("\n   ✅ All listing-engagement field checks passed")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Step 12 - Final Comprehensive Summary
 
 # COMMAND ----------
@@ -1018,6 +1221,10 @@ print(f"\n🏗️  Construction & Development: {len(construction_issues)} issues
 for issue in construction_issues:
     print(f"   ⚠️ {issue}")
 
+print(f"\n🏷️  Listing Engagement (RESO ListingService/Agreement): {len(engagement_issues)} issues")
+for issue in engagement_issues:
+    print(f"   ⚠️ {issue}")
+
 print(f"\n✅ Property RESO Compliance: {'PASSED' if reso_passed else 'FAILED'}")
 print(f"✅ Property Coverage: {'PASSED' if coverage_passed else 'FAILED'}")
 print(f"{'✅' if integrity_passed else '⚠️'} Property Data Integrity: {'PASSED' if integrity_passed else f'{field_mismatch_count} mismatches'}")
@@ -1029,7 +1236,8 @@ all_resources_passed = all(r["passed"] for r in resource_checks)
 fk_passed = len(fk_issues) == 0
 
 construction_passed = len(construction_issues) == 0
-comprehensive_passed = all_passed and all_resources_passed and field_coverage_passed and construction_passed
+engagement_passed = len(engagement_issues) == 0
+comprehensive_passed = all_passed and all_resources_passed and field_coverage_passed and construction_passed and engagement_passed
 
 if comprehensive_passed and fk_passed:
     print("✅ COMPREHENSIVE DATA INTEGRITY TEST PASSED")

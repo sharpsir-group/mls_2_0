@@ -91,6 +91,13 @@ SELECT
     {col_or_null('property_subtype', 'property_subtype_id')},
     {col_or_null('construction_stage')},
 
+    -- Cyprus tenant signals for the RESO ListingService / ListingAgreement adapter ladder
+    -- (see 03_gold_reso_property_etl.py and docs/mapping.md). These three Qobrix custom
+    -- fields are the ONLY place Cyprus-specific listing-engagement rules live; Gold
+    -- translates them into canonical RESO values, and downstream consumers see only RESO.
+    {col_or_null('custom_listing_property')},
+    ({"TRY_CAST(p.custom_exclusive_listing AS BOOLEAN)" if 'custom_exclusive_listing' in bronze_cols else "CAST(NULL AS BOOLEAN)"}) AS custom_exclusive_listing,
+
     -- Bedrooms / bathrooms (cast via DOUBLE since bronze stores as "2.0" string)
     TRY_CAST(TRY_CAST(p.bedrooms AS DOUBLE) AS INT)   AS bedrooms,
     TRY_CAST(TRY_CAST(p.bathrooms AS DOUBLE) AS INT)  AS bathrooms,

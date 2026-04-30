@@ -45,8 +45,20 @@ The API aggregates data from multiple sources, identified by:
 |-------|------|-------------|
 | `ListPrice` | DECIMAL | Listing price |
 | `OriginalListPrice` | DECIMAL | Original listing price |
-| `LeasePrice` | DECIMAL | Rental price (if applicable) |
-| `LeaseAmountFrequency` | ENUM | `Monthly`, `Weekly`, `Yearly` |
+| `LeasePrice` | DECIMAL | Rental price (legacy alias; non-canonical, kept for compatibility) |
+| `LeaseAmount` | DECIMAL | RESO DD 2.0 canonical periodic lease amount; populated on lease records and on dual sale-and-rent siblings |
+| `LeaseAmountFrequency` | ENUM | RESO DD 2.0: `Annually`, `Monthly`, `SeeRemarks`, `Weekly` |
+
+### Listing Engagement (RESO DD 2.0)
+
+These canonical RESO fields drive the operational 3-bucket classification (Listing / Marketing / Rent) used by Atlas. Cyprus-specific source columns (`custom_listing_property`, `key_holder_details`, `custom_exclusive_listing`) are translated by the mls_2_0 RESO DD adapter and never leak downstream.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ListingService` | ENUM | RESO DD 2.0: `EntryOnly`, `FullService`, `LimitedService`. Atlas uses `FullService` to identify properties where a Cyprus broker is actively engaged (`custom_listing_property = 'Yes'` OR non-empty `key_holder_details`). |
+| `ListingAgreement` | ENUM | RESO DD 2.0: `ExclusiveAgency`, `ExclusiveRightToLease`, `ExclusiveRightToSell`, `ExclusiveRightWithException`, `Net`, `Open`, `Probate`. Contractual exclusivity, never inferred. mls_2_0 emits `ExclusiveAgency` only when Qobrix `custom_exclusive_listing = true`; otherwise `Open` (engaged but exclusivity unproven) or NULL (no contract). |
+| `LeaseConsideredYN` | BOOLEAN | TRUE on the sale primary record of a Cyprus dual sale-and-rent listing, signalling that a sibling lease record exists with `ListingKey = <primary>_LEASE`. |
+| `SaleConsideredYN` | BOOLEAN | TRUE on the lease sibling, back-referencing the primary sale record. |
 
 ### Location
 
@@ -350,3 +362,75 @@ For Atlas Lovable FE / Dash syndication consumers — single-field expressions:
 | Resale | `NewConstructionYN = FALSE` OR `DevelopmentStatus = 'Existing'` |
 | Renovated | `PropertyCondition` contains `Updated/Remodeled` |
 
+## Cyprus listing-engagement adapter (RESO DD 2.0)
+
+mls_2_0 is the **native RESO DD adapter** for Cyprus inventory. The Qobrix custom signals (`custom_listing_property`, `key_holder_details`, `custom_exclusive_listing`, `sale_rent`) are translated **here and only here** into canonical RESO `ListingService`, `ListingAgreement`, `PropertyType`, `LeaseConsideredYN`, `SaleConsideredYN`, and `LeaseAmount`. Atlas (CDL + FE) consumes only RESO DD values.
+
+### Source -> RESO ladder (first match wins)
+
+`ListingService` — primary "is a broker actively engaged?" signal:
+
+| Predicate | `ListingService` |
+|---|---|
+| `custom_listing_property = 'Yes'` OR `key_holder_details NOT NULL` | `FullService` |
+| else | `NULL` |
+
+`ListingAgreement` — contractual exclusivity (never inferred):
+
+| Predicate | `ListingAgreement` |
+|---|---|
+| `custom_exclusive_listing = true` | `ExclusiveAgency` |
+| `ListingService = 'FullService'` (engaged, exclusivity unproven) | `Open` |
+| else (no listing contract; developer-direct) | `NULL` |
+
+Why `Open` and not `ExclusiveRightToSell` for engaged-but-not-proven cases: RESO defines `ListingAgreement` as the *contract type* between listing agent and seller. Major MLSes (CRMLS, BrightMLS, NorthstarMLS, Stellar) only emit Exclusive variants when the signed contract proves it. Cyprus has no reliable exclusivity signal beyond `custom_exclusive_listing`, so we map to RESO `Open` (the canonical value for non-exclusive engagements) and let `ListingService` carry the engagement signal.
+
+### 3-bucket helper (Listing / Marketing / Rent)
+
+Two canonical RESO inputs only — no Cyprus columns at the consumer:
+
+```sql
+CASE
+    WHEN ListingService = 'FullService'
+         AND PropertyType IN ('ResidentialLease','CommercialLease')
+        THEN 'Rent'
+    WHEN ListingService = 'FullService'
+        THEN 'Listing'
+    ELSE 'Marketing'   -- ListingService IS NULL: developer-direct / no broker engagement
+END
+```
+
+### Dual-listing fan-out for `sale_rent = 'for_sale_and_rent'`
+
+Cyprus properties listed for both sale and rent fan out into TWO RESO Property records inside the Gold ETL (industry-leader pattern, BrightMLS / Stellar). Each canonical RESO bucket gets a clean record with the correct `PropertyType` and pricing, so consumers don't need Cyprus-specific knowledge.
+
+| Record | `ListingKey` | `PropertyType` | `ListPrice` | `LeaseAmount` | Cross-reference |
+|---|---|---|---|---|---|
+| Sale primary | `QOBRIX_<id>` | `Residential` / `CommercialSale` | populated | populated (when rental price provided) | `LeaseConsideredYN = true` |
+| Lease sibling | `QOBRIX_<id>_LEASE` | `ResidentialLease` / `CommercialLease` | NULL | populated | `SaleConsideredYN = true` |
+
+Both records share the same `ListingService` and `ListingAgreement`, so Atlas's 3-bucket helper places the property in both Listing AND Rent buckets natively.
+
+### `sale_rent` decision matrix (every Qobrix value)
+
+| `sale_rent` | broker engaged | RESO Gold output | 3-bucket result |
+|---|---|---|---|
+| `for_rent` | yes | 1 row, `PropertyType = ResidentialLease`, `ListingService = FullService` | Rent |
+| `for_rent` | no | 1 row, `PropertyType = ResidentialLease`, `ListingService = NULL` | Marketing |
+| `for_sale` | yes | 1 row, `PropertyType = Residential`, `ListingService = FullService` | Listing |
+| `for_sale` | no | 1 row, `PropertyType = Residential`, `ListingService = NULL` | Marketing |
+| `for_auction` | yes | 1 row, `PropertyType = Residential`, `ListingService = FullService` | Listing (auction sale) |
+| `for_management` | any | 1 row, `PropertyType = Residential` | Listing or Marketing per broker |
+| `for_sale_and_rent` | yes | **2 rows** — sale primary + `_LEASE` sibling | **Listing AND Rent** |
+| `for_sale_and_rent` | no | 2 rows, both `ListingService = NULL` | Marketing in both buckets |
+
+### Dash filter chip ↔ RESO ListingService / 3-bucket reference
+
+For Atlas Lovable FE and Dash syndication consumers — single-field expressions for the engagement chip:
+
+| Operational chip | RESO expression |
+|---|---|
+| Listing | `ListingService = 'FullService'` AND `PropertyType NOT IN ('ResidentialLease','CommercialLease')` |
+| Rent | `ListingService = 'FullService'` AND `PropertyType IN ('ResidentialLease','CommercialLease')` |
+| Marketing | `ListingService IS NULL` OR `ListingService <> 'FullService'` |
+| Exclusive only | `ListingAgreement = 'ExclusiveAgency'` (Listing/Rent power filter) |

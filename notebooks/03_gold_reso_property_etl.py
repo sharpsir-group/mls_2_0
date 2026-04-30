@@ -150,18 +150,128 @@ else:
 
 # COMMAND ----------
 
-# Build the UNION query combining Qobrix and Dash data
+# Cyprus listing-engagement adapter (RESO DD 2.0 ListingService / ListingAgreement).
+# These two Qobrix custom signals were added to Silver by 02_silver_qobrix_property_etl.py.
+# Resolve dynamically so the Gold notebook never crashes on a stale silver schema.
+if qobrix_available:
+    custom_listing_property_expr = (
+        "s.custom_listing_property" if "custom_listing_property" in silver_cols else "CAST(NULL AS STRING)"
+    )
+    custom_exclusive_listing_expr = (
+        "s.custom_exclusive_listing" if "custom_exclusive_listing" in silver_cols else "CAST(NULL AS BOOLEAN)"
+    )
+else:
+    custom_listing_property_expr = "CAST(NULL AS STRING)"
+    custom_exclusive_listing_expr = "CAST(NULL AS BOOLEAN)"
 
-# Qobrix transform SQL (with all extension fields)
-qobrix_select_sql = f"""
+# RESO ListingService: 'FullService' when a Cyprus broker is actively engaged
+# (custom_listing_property='Yes' OR non-empty key_holder_details); NULL otherwise.
+# This is the PRIMARY signal Atlas uses to compute the operational 3-bucket chip
+# (Listing / Marketing / Rent) together with PropertyType.
+qobrix_listing_service_expr = f"""CASE
+        WHEN LOWER(COALESCE({custom_listing_property_expr}, '')) = 'yes'
+          OR (b.key_holder_details IS NOT NULL AND TRIM(b.key_holder_details) <> '')
+            THEN 'FullService'
+        ELSE NULL
+    END"""
+
+# RESO ListingAgreement: contract type, never inferred. 'ExclusiveAgency' only
+# when the Qobrix custom_exclusive_listing flag is true (signed proof). 'Open'
+# when there is an engagement but exclusivity is unproven. NULL when there is
+# no listing contract at all (developer-direct). Industry practice: do not emit
+# ExclusiveRightToSell/ExclusiveRightToLease without a signed contract.
+qobrix_listing_agreement_expr = f"""CASE
+        WHEN COALESCE({custom_exclusive_listing_expr}, FALSE) = TRUE THEN 'ExclusiveAgency'
+        WHEN LOWER(COALESCE({custom_listing_property_expr}, '')) = 'yes'
+          OR (b.key_holder_details IS NOT NULL AND TRIM(b.key_holder_details) <> '')
+            THEN 'Open'
+        ELSE NULL
+    END"""
+
+# COMMAND ----------
+
+# Build the UNION query combining Qobrix and Dash data
+#
+# Dual-listing fan-out: a Qobrix property with sale_rent='for_sale_and_rent' produces
+# TWO RESO Property records (industry-leader pattern, BrightMLS / Stellar):
+#   primary: ListingKey=QOBRIX_<id>,        PropertyType=Residential|CommercialSale,
+#            ListPrice populated, LeaseConsideredYN=true.
+#   lease  : ListingKey=QOBRIX_<id>_LEASE,  PropertyType=ResidentialLease|CommercialLease,
+#            LeaseAmount populated, ListPrice cleared, SaleConsideredYN=true.
+# This way each canonical RESO bucket gets a clean record without consumers needing
+# Cyprus-specific knowledge.
+
+def _build_qobrix_select(branch: str) -> str:
+    """Return the Qobrix SELECT SQL for either the primary record or the lease sibling.
+
+    branch='primary': all qobrix_silver rows, normal PropertyType, ListPrice populated.
+                       LeaseConsideredYN=TRUE for sale_rent='for_sale_and_rent' rows.
+    branch='lease':   only sale_rent='for_sale_and_rent' rows, ListingKey/Id suffixed
+                       with _LEASE, PropertyType forced to ResidentialLease/CommercialLease,
+                       ListPrice cleared, SaleConsideredYN=TRUE.
+    """
+    assert branch in ("primary", "lease")
+    is_primary = branch == "primary"
+
+    if is_primary:
+        listing_key_expr = "CONCAT('QOBRIX_', s.qobrix_id)"
+        listing_id_expr  = "CAST(s.qobrix_ref AS STRING)"
+        # Existing PropertyType ladder: derive from property_type + sale_rent.
+        property_type_case = (
+            "CASE\n"
+            "        WHEN LOWER(s.property_type) = 'land' THEN 'Land'\n"
+            "        WHEN LOWER(s.property_type) IN ('apartment','house') THEN\n"
+            "            CASE LOWER(COALESCE(s.sale_rent,'for_sale'))\n"
+            "                WHEN 'for_rent' THEN 'ResidentialLease'\n"
+            "                ELSE 'Residential'\n"
+            "            END\n"
+            "        WHEN LOWER(s.property_type) IN ('office','retail','building','hotel','industrial','investment') THEN\n"
+            "            CASE LOWER(COALESCE(s.sale_rent,'for_sale'))\n"
+            "                WHEN 'for_rent' THEN 'CommercialLease'\n"
+            "                ELSE 'CommercialSale'\n"
+            "            END\n"
+            "        WHEN LOWER(s.property_type) = 'parking_lot' THEN 'CommercialSale'\n"
+            "        ELSE 'Residential'\n"
+            "    END"
+        )
+        list_price_expr = "TRY_CAST(s.list_selling_price_amount AS DECIMAL(18,2))"
+        lease_amount_expr = "TRY_CAST(b.list_rental_price_amount AS DECIMAL(18,2))"
+        # Sale primary: TRUE iff this is the sale side of a for_sale_and_rent dual listing.
+        lease_considered_expr = (
+            "CASE WHEN LOWER(COALESCE(s.sale_rent,'')) = 'for_sale_and_rent' THEN TRUE ELSE NULL END"
+        )
+        sale_considered_expr = "CAST(NULL AS BOOLEAN)"
+        where_extra = ""
+    else:
+        # Lease sibling - emitted only for for_sale_and_rent rows.
+        listing_key_expr = "CONCAT('QOBRIX_', s.qobrix_id, '_LEASE')"
+        listing_id_expr  = "CAST(CONCAT(s.qobrix_ref, '_LEASE') AS STRING)"
+        # Force lease PropertyType. Commercial subtypes route to CommercialLease;
+        # everything else (residential, land, parking_lot) routes to ResidentialLease.
+        property_type_case = (
+            "CASE\n"
+            "        WHEN LOWER(s.property_type) IN ('office','retail','building','hotel','industrial','investment')\n"
+            "             THEN 'CommercialLease'\n"
+            "        ELSE 'ResidentialLease'\n"
+            "    END"
+        )
+        list_price_expr = "CAST(NULL AS DECIMAL(18,2))"
+        lease_amount_expr = "TRY_CAST(b.list_rental_price_amount AS DECIMAL(18,2))"
+        lease_considered_expr = "CAST(NULL AS BOOLEAN)"
+        sale_considered_expr = "TRUE"
+        # WHERE filter restricting to dual sale-and-rent rows.
+        where_extra = "WHERE LOWER(COALESCE(s.sale_rent,'')) = 'for_sale_and_rent'"
+
+    return f"""
 SELECT
     -- ═══════════════════════════════════════════════════════════════════════════
     -- RESO STANDARD FIELDS
     -- ═══════════════════════════════════════════════════════════════════════════
     
-    -- Core identifiers
-    CONCAT('QOBRIX_', s.qobrix_id)               AS ListingKey,
-    CAST(s.qobrix_ref AS STRING)                 AS ListingId,
+    -- Core identifiers (branch-aware: lease sibling appends _LEASE so each
+    -- canonical RESO record has its own unique ListingKey/ListingId)
+    {listing_key_expr}                           AS ListingKey,
+    {listing_id_expr}                            AS ListingId,
 
     -- Status mapping (Qobrix -> RESO StandardStatus)
     CASE LOWER(s.status)
@@ -288,21 +398,9 @@ SELECT
     -- Residential | ResidentialLease | CommercialSale | CommercialLease |
     -- Land | Farm | BusinessOpportunity | ManufacturedInPark.
     -- The detailed type (Apartment/Villa/Office/...) lives in PropertySubType.
-    CASE
-        WHEN LOWER(s.property_type) = 'land' THEN 'Land'
-        WHEN LOWER(s.property_type) IN ('apartment','house') THEN
-            CASE LOWER(COALESCE(s.sale_rent,'for_sale'))
-                WHEN 'for_rent' THEN 'ResidentialLease'
-                ELSE 'Residential'
-            END
-        WHEN LOWER(s.property_type) IN ('office','retail','building','hotel','industrial','investment') THEN
-            CASE LOWER(COALESCE(s.sale_rent,'for_sale'))
-                WHEN 'for_rent' THEN 'CommercialLease'
-                ELSE 'CommercialSale'
-            END
-        WHEN LOWER(s.property_type) = 'parking_lot' THEN 'CommercialSale'
-        ELSE 'Residential'
-    END                                           AS PropertyType,
+    -- Branch-aware: primary uses the property_type+sale_rent ladder; lease
+    -- sibling forces ResidentialLease/CommercialLease.
+    {property_type_case}                          AS PropertyType,
 
     -- RESO PropertySubType (open list). Prefer Qobrix subtype label/code; fall
     -- back to the legacy property_type-driven mapping so older rows still get a
@@ -326,6 +424,33 @@ SELECT
         END
     )                                             AS PropertySubType,
 
+    -- ═══════════════════════════════════════════════════════════════════════════
+    -- LISTING ENGAGEMENT (RESO DD 2.0)
+    -- ═══════════════════════════════════════════════════════════════════════════
+    -- ListingService and ListingAgreement form the canonical RESO signal Atlas
+    -- uses to compute the operational 3-bucket chip (Listing / Marketing / Rent).
+    -- Cyprus-specific source columns (custom_listing_property, key_holder_details,
+    -- custom_exclusive_listing) are translated here and nowhere else.
+
+    -- RESO ListingService (Lookup: EntryOnly | FullService | LimitedService).
+    -- Atlas drives the 3-bucket chip from ListingService + PropertyType.
+    {qobrix_listing_service_expr}                 AS ListingService,
+
+    -- RESO ListingAgreement (Lookup: ExclusiveAgency | ExclusiveRightToLease |
+    -- ExclusiveRightToSell | ExclusiveRightWithException | Net | Open | Probate).
+    -- Contractual exclusivity - never inferred. We emit ExclusiveAgency only when
+    -- the Qobrix custom_exclusive_listing flag proves it; otherwise 'Open' or NULL.
+    {qobrix_listing_agreement_expr}               AS ListingAgreement,
+
+    -- RESO LeaseConsideredYN (Boolean). TRUE on the sale primary record of a
+    -- Cyprus dual sale-and-rent listing, signalling that a sibling lease record
+    -- exists with ListingKey = <primary>_LEASE.
+    {lease_considered_expr}                       AS LeaseConsideredYN,
+
+    -- RESO SaleConsideredYN (Boolean). TRUE on the lease sibling of a Cyprus
+    -- dual sale-and-rent listing, back-referencing the primary sale record.
+    {sale_considered_expr}                        AS SaleConsideredYN,
+
     -- Beds / baths
     TRY_CAST(s.bedrooms AS INT)                   AS BedroomsTotal,
     TRY_CAST(s.bathrooms AS INT)                  AS BathroomsTotalInteger,
@@ -339,8 +464,18 @@ SELECT
     ROUND(TRY_CAST(s.plot_area_amount AS DECIMAL(18,6)) * 0.000247105, 4) AS LotSizeAcres,
 
     -- Pricing
-    TRY_CAST(s.list_selling_price_amount AS DECIMAL(18,2)) AS ListPrice,
+    -- Branch-aware: primary populates ListPrice from list_selling_price_amount
+    -- and clears nothing; lease sibling clears ListPrice (sale price doesn't
+    -- belong on the lease record) and populates LeaseAmount from
+    -- list_rental_price_amount.
+    {list_price_expr}                             AS ListPrice,
+    -- Legacy alias retained for backward compatibility with existing consumers.
     TRY_CAST(b.list_rental_price_amount AS DECIMAL(18,2))  AS LeasePrice,
+    -- RESO DD 2.0 canonical: LeaseAmount is the periodic lease amount paired with
+    -- LeaseAmountFrequency. Populated on both branches so the lease sibling has
+    -- a non-null LeaseAmount and the sale primary still exposes the rental price
+    -- when one is provided.
+    {lease_amount_expr}                           AS LeaseAmount,
     CASE LOWER(COALESCE(b.rent_frequency, ''))
         WHEN 'monthly' THEN 'Monthly'
         WHEN 'weekly' THEN 'Weekly'
@@ -614,7 +749,15 @@ LEFT JOIN qobrix_bronze.properties b
     ON CAST(s.qobrix_id AS STRING) = CAST(b.id AS STRING)
 LEFT JOIN qobrix_bronze.property_subtypes ps 
     ON CAST(s.property_subtype_id AS STRING) = CAST(ps.id AS STRING)
+{where_extra}
 """
+
+
+# Generate the two Qobrix SELECT variants. The lease sibling is unioned in only
+# when at least one Cyprus property is flagged sale_rent='for_sale_and_rent'.
+qobrix_select_sql = _build_qobrix_select("primary") if qobrix_available else ""
+qobrix_lease_select_sql = _build_qobrix_select("lease") if qobrix_available else ""
+
 
 # Dash transform SQL - Full RESO DD 2.0 mapping with features join
 dash_select_sql = f"""
@@ -701,6 +844,18 @@ SELECT
     )                                             AS PropertySubType,
 
     -- ═══════════════════════════════════════════════════════════════════════════
+    -- LISTING ENGAGEMENT (RESO DD 2.0) - Dash branch parity with Qobrix
+    -- ═══════════════════════════════════════════════════════════════════════════
+    -- Dash silver does not currently expose Cyprus-style engagement signals;
+    -- approximate ListingService from agent linkage so the column is populated
+    -- when a Sotheby's broker is on record. ListingAgreement stays NULL until
+    -- Dash provides a contract-type signal.
+    CASE WHEN d.agent_id IS NOT NULL THEN 'FullService' ELSE NULL END AS ListingService,
+    CAST(NULL AS STRING)                          AS ListingAgreement,
+    CAST(NULL AS BOOLEAN)                         AS LeaseConsideredYN,
+    CAST(NULL AS BOOLEAN)                         AS SaleConsideredYN,
+
+    -- ═══════════════════════════════════════════════════════════════════════════
     -- RESO STANDARD - Beds / Baths
     -- ═══════════════════════════════════════════════════════════════════════════
     TRY_CAST(d.bedrooms AS INT)                   AS BedroomsTotal,
@@ -721,6 +876,9 @@ SELECT
     -- ═══════════════════════════════════════════════════════════════════════════
     TRY_CAST(d.list_price AS DECIMAL(18,2))       AS ListPrice,
     NULL                                          AS LeasePrice,
+    -- RESO DD 2.0 canonical lease amount (Dash silver doesn't expose a rental
+    -- price column today; emit NULL so the UNION schema lines up with Qobrix).
+    CAST(NULL AS DECIMAL(18,2))                   AS LeaseAmount,
     NULL                                          AS LeaseAmountFrequency,
 
     -- ═══════════════════════════════════════════════════════════════════════════
@@ -938,14 +1096,40 @@ LEFT JOIN dash_silver.property_features f ON d.dash_id = f.property_id
 
 # COMMAND ----------
 
-# Build the UNION query based on available sources
+# Build the UNION query based on available sources.
+#
+# Qobrix branch fans out into TWO RESO records when sale_rent='for_sale_and_rent':
+#   * primary (sale)   - normal ListingKey, PropertyType=Residential|CommercialSale,
+#                        ListPrice populated, LeaseConsideredYN=true
+#   * lease sibling    - ListingKey suffixed with _LEASE, PropertyType=ResidentialLease|
+#                        CommercialLease, LeaseAmount populated, ListPrice cleared,
+#                        SaleConsideredYN=true
+# Both records share the same ListingService / ListingAgreement so the consumer's
+# 3-bucket helper places the property in both Listing and Rent buckets natively.
 print("📊 Building unified gold table...")
+
+# Count dual sale-and-rent rows so we can log how many lease siblings will be emitted.
+dual_count = 0
+if qobrix_available:
+    try:
+        dual_count = spark.sql(
+            "SELECT COUNT(*) AS c FROM qobrix_silver.property "
+            "WHERE LOWER(COALESCE(sale_rent,'')) = 'for_sale_and_rent'"
+        ).collect()[0]["c"]
+    except Exception as e:
+        print(f"⚠️  Could not count dual sale_rent rows: {e}")
+
+qobrix_full_sql = qobrix_select_sql
+if qobrix_available and dual_count > 0:
+    qobrix_full_sql = f"{qobrix_select_sql}\nUNION ALL\n{qobrix_lease_select_sql}"
+    print(f"🔀 Dual-listing fan-out: emitting {dual_count} lease sibling record(s) for "
+          f"sale_rent='for_sale_and_rent' Qobrix properties")
 
 if qobrix_available and dash_available:
     # Both sources available - UNION ALL
     full_sql = f"""
     CREATE OR REPLACE TABLE reso_gold.property AS
-    {qobrix_select_sql}
+    {qobrix_full_sql}
     UNION ALL
     {dash_select_sql}
     """
@@ -954,7 +1138,7 @@ elif qobrix_available:
     # Only Qobrix
     full_sql = f"""
     CREATE OR REPLACE TABLE reso_gold.property AS
-    {qobrix_select_sql}
+    {qobrix_full_sql}
     """
     print("📦 Using Qobrix only")
 else:
