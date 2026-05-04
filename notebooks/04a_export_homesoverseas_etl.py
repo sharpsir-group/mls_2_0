@@ -463,7 +463,7 @@ SELECT
     SUBSTR(COALESCE(
         NULLIF(p.X_PropertyName, ''),
         NULLIF(p.PublicRemarks, ''),
-        CONCAT(COALESCE(p.PropertyType, 'Property'), ' in ', COALESCE(p.City, 'Cyprus'))
+        CONCAT(COALESCE(NULLIF(p.PropertySubType, 'Other'), p.PropertyType, 'Property'), ' in ', COALESCE(p.City, 'Cyprus'))
     ), 1, 60) AS title_en,
 
     -- title_ru from Qobrix translations
@@ -520,22 +520,36 @@ SELECT
     COALESCE(cm.ho_id, dm.ho_id, {cyprus_region_id}) AS region,
 
     -- realty_type mapping
+    -- NOTE: PropertyType now holds RESO DD 2.0 high-level class (Residential,
+    -- ResidentialLease, CommercialSale, CommercialLease, Land). The detailed
+    -- sub-type (Apartment, SingleFamilyDetached, Townhouse, Office, ...) is in
+    -- PropertySubType. Match on PropertySubType first (most specific), then fall
+    -- back on PropertyType for rows where PropertySubType is NULL or 'Other'.
     CASE
-        WHEN p.PropertyType = 'Apartment' AND LOWER(COALESCE(p.X_ApartmentType, '')) LIKE '%penthouse%' THEN 28
-        WHEN p.PropertyType = 'Apartment' AND LOWER(COALESCE(p.X_ApartmentType, '')) LIKE '%loft%' THEN 29
-        WHEN p.PropertyType = 'Apartment' AND LOWER(COALESCE(p.X_ApartmentType, '')) LIKE '%studio%' THEN 35
-        WHEN p.PropertyType = 'Apartment' THEN 16
-        WHEN p.PropertyType = 'SingleFamilyDetached' AND LOWER(COALESCE(p.X_HouseType, '')) LIKE '%chalet%' THEN 31
-        WHEN p.PropertyType = 'SingleFamilyDetached' AND LOWER(COALESCE(p.X_HouseType, '')) LIKE '%bungalow%' THEN 32
-        WHEN p.PropertyType = 'SingleFamilyDetached' THEN 17
-        WHEN p.PropertyType = 'Land' THEN 15
-        WHEN p.PropertyType = 'Office' THEN 23
-        WHEN p.PropertyType = 'Parking' THEN 26
-        WHEN p.PropertyType = 'Commercial' AND p.X_HotelType IS NOT NULL AND p.X_HotelType != '' THEN 20
-        WHEN p.PropertyType = 'Commercial' AND p.X_RetailType IS NOT NULL AND p.X_RetailType != '' THEN 22
-        WHEN p.PropertyType = 'Commercial' AND p.X_IndustrialType IS NOT NULL AND p.X_IndustrialType != '' THEN 25
-        WHEN p.PropertyType = 'Commercial' THEN 14
+        -- Apartment sub-types (most specific first via X_ApartmentType)
+        WHEN p.PropertySubType = 'Apartment' AND LOWER(COALESCE(p.X_ApartmentType, '')) LIKE '%penthouse%' THEN 28
+        WHEN p.PropertySubType = 'Apartment' AND LOWER(COALESCE(p.X_ApartmentType, '')) LIKE '%loft%' THEN 29
+        WHEN p.PropertySubType = 'Apartment' AND LOWER(COALESCE(p.X_ApartmentType, '')) LIKE '%studio%' THEN 35
+        WHEN p.PropertySubType = 'Apartment' THEN 16
+        -- House / villa sub-types
+        WHEN p.PropertySubType = 'SingleFamilyDetached' AND LOWER(COALESCE(p.X_HouseType, '')) LIKE '%chalet%' THEN 31
+        WHEN p.PropertySubType = 'SingleFamilyDetached' AND LOWER(COALESCE(p.X_HouseType, '')) LIKE '%bungalow%' THEN 32
+        WHEN p.PropertySubType = 'SingleFamilyDetached' THEN 17
+        -- Townhouse
         WHEN p.PropertySubType = 'Townhouse' THEN 18
+        -- Land (by sub-type or high-level type)
+        WHEN p.PropertySubType = 'Land' THEN 15
+        WHEN p.PropertyType = 'Land' THEN 15
+        -- Commercial sub-types
+        WHEN p.PropertySubType = 'Office' THEN 23
+        WHEN p.PropertySubType = 'Parking' THEN 26
+        WHEN p.PropertySubType = 'Commercial' AND p.X_HotelType IS NOT NULL AND p.X_HotelType != '' THEN 20
+        WHEN p.PropertySubType = 'Commercial' AND p.X_RetailType IS NOT NULL AND p.X_RetailType != '' THEN 22
+        WHEN p.PropertySubType = 'Commercial' AND p.X_IndustrialType IS NOT NULL AND p.X_IndustrialType != '' THEN 25
+        WHEN p.PropertySubType = 'Commercial' THEN 14
+        -- High-level RESO PropertyType fallbacks (when PropertySubType is NULL/Other/unknown)
+        WHEN p.PropertyType IN ('Residential', 'ResidentialLease') THEN 16
+        WHEN p.PropertyType IN ('CommercialSale', 'CommercialLease') THEN 14
         ELSE 26
     END AS realty_type,
 
