@@ -502,8 +502,17 @@ SELECT
     TRY_CAST(GET(SPLIT(s.coordinates, ','), 0) AS DOUBLE) AS Latitude,
     TRY_CAST(GET(SPLIT(s.coordinates, ','), 1) AS DOUBLE) AS Longitude,
 
-    -- Remarks
-    s.description                                 AS PublicRemarks,
+    -- Remarks (RESO PublicRemarks = marketing copy + headline for CDL/Atlas).
+    -- Qobrix long-form body lives in `description`; many listings also have
+    -- `short_description` or only `name` as the vendor headline. Mirror the
+    -- Dash gold branch (COALESCE(public_remarks, name)) so OData always carries
+    -- a non-empty PublicRemarks when any of those fields exist — otherwise CDL
+    -- mls-sync synthesizes "${PropertyType} in ${City} (ListingId)" only.
+    COALESCE(
+        NULLIF(TRIM(s.description), ''),
+        NULLIF(TRIM(b.short_description), ''),
+        NULLIF(TRIM(s.name), '')
+    )                                             AS PublicRemarks,
 
     -- Agent/Office linkage
     CASE WHEN b.agent IS NOT NULL AND b.agent != '' 

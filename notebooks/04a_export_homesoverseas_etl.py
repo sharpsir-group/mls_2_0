@@ -459,15 +459,22 @@ SELECT
     idm.objectid,
     SUBSTR(COALESCE(p.ListingId, ''), 1, 60) AS ref,
 
-    -- title (max 60 chars)
-    SUBSTR(COALESCE(
+    -- title (max 60 chars). Single-line — strip any newlines.
+    SUBSTR(REGEXP_REPLACE(COALESCE(
         NULLIF(p.X_PropertyName, ''),
         NULLIF(p.PublicRemarks, ''),
         CONCAT(COALESCE(NULLIF(p.PropertySubType, 'Other'), p.PropertyType, 'Property'), ' in ', COALESCE(p.City, 'Cyprus'))
-    ), 1, 60) AS title_en,
+    ), '[\\r\\n]+', ' '), 1, 60) AS title_en,
 
-    -- title_ru from Qobrix translations
-    SUBSTR(COALESCE(NULLIF(tr.name_ru, ''), ''), 1, 60) AS title_ru,
+    -- title_ru: prefer Qobrix RU translation; fall back to the English title so
+    -- the <ru> tag is never empty (HomeOverseas moderator rejects feeds that
+    -- omit Russian content). max 60 chars, single-line.
+    SUBSTR(REGEXP_REPLACE(COALESCE(
+        NULLIF(tr.name_ru, ''),
+        NULLIF(p.X_PropertyName, ''),
+        NULLIF(p.PublicRemarks, ''),
+        CONCAT(COALESCE(NULLIF(p.PropertySubType, 'Other'), p.PropertyType, 'Property'), ' in ', COALESCE(p.City, 'Cyprus'))
+    ), '[\\r\\n]+', ' '), 1, 60) AS title_ru,
 
     -- type: sale or rent
     CASE
@@ -489,6 +496,16 @@ SELECT
     END AS market,
 
     -- price
+    --
+    -- Rent period selection: emit LeasePrice into the bucket (day/week/month/
+    -- year) that matches LeaseAmountFrequency. When the frequency is missing
+    -- or unrecognised we still emit the price in `rent_month` — Monthly is
+    -- the universal default for Cyprus residential rentals and matches what
+    -- the HomeOverseas moderator expects for indefinite leases. This keeps
+    -- the price visible on the portal even when Qobrix data-entry forgot to
+    -- set `rent_frequency` on the listing (very common in CY inventory).
+    -- Recognised non-monthly periods (daily/weekly/yearly/quarterly) are
+    -- excluded from the monthly fallback so they don't double-count.
     CASE
         WHEN p.PropertyClass IN ('RLSE', 'COML') THEN NULL
         ELSE COALESCE(TRY_CAST(p.ListPrice AS BIGINT), 0)
@@ -504,12 +521,20 @@ SELECT
         ELSE NULL
     END AS rent_week,
     CASE
-        WHEN p.PropertyClass IN ('RLSE', 'COML') AND LOWER(COALESCE(p.LeaseAmountFrequency, '')) = 'monthly'
+        WHEN p.PropertyClass IN ('RLSE', 'COML')
+             AND TRY_CAST(p.LeasePrice AS BIGINT) IS NOT NULL
+             AND TRY_CAST(p.LeasePrice AS BIGINT) > 0
+             AND (
+                 LOWER(COALESCE(p.LeaseAmountFrequency, '')) = 'monthly'
+                 OR LOWER(COALESCE(p.LeaseAmountFrequency, ''))
+                    NOT IN ('daily','weekly','annually','yearly','quarterly')
+             )
         THEN TRY_CAST(p.LeasePrice AS BIGINT)
         ELSE NULL
     END AS rent_month,
     CASE
-        WHEN p.PropertyClass IN ('RLSE', 'COML') AND LOWER(COALESCE(p.LeaseAmountFrequency, '')) = 'annually'
+        WHEN p.PropertyClass IN ('RLSE', 'COML')
+             AND LOWER(COALESCE(p.LeaseAmountFrequency, '')) IN ('annually','yearly')
         THEN TRY_CAST(p.LeasePrice AS BIGINT)
         ELSE NULL
     END AS rent_year,
@@ -520,34 +545,65 @@ SELECT
     COALESCE(cm.ho_id, dm.ho_id, {cyprus_region_id}) AS region,
 
     -- realty_type mapping
-    -- NOTE: PropertyType now holds RESO DD 2.0 high-level class (Residential,
-    -- ResidentialLease, CommercialSale, CommercialLease, Land). The detailed
-    -- sub-type (Apartment, SingleFamilyDetached, Townhouse, Office, ...) is in
-    -- PropertySubType. Match on PropertySubType first (most specific), then fall
-    -- back on PropertyType for rows where PropertySubType is NULL or 'Other'.
+    --
+    -- Qobrix exposes the detailed sub-type as a snake_case label (e.g.
+    -- standard_apartment, detached_house, terraced_house, penthouse,
+    -- mansion_villa, plot, ...). The gold ETL stores it verbatim in
+    -- PropertySubType — so this CASE matches on those Qobrix labels as the
+    -- primary path. RESO DD 2.0 PascalCase labels (Apartment, Townhouse, ...)
+    -- are kept as a secondary path for any future RESO-aligned rows. Final
+    -- fallback uses high-level PropertyType (Residential/CommercialSale/Land)
+    -- so nothing silently drops to ELSE 26 (Parking/Other).
+    --
+    -- HomeOverseas realty_type IDs:
+    --   14 Commercial | 15 Land | 16 Apartment | 17 House/Villa | 18 Townhouse
+    --   20 Hotel | 22 Retail | 23 Office | 25 Industrial | 26 Parking
+    --   28 Penthouse | 29 Loft | 31 Chalet | 32 Bungalow | 35 Studio
     CASE
-        -- Apartment sub-types (most specific first via X_ApartmentType)
+        -- ── Qobrix snake_case sub-types (primary path) ──
+        -- Apartments: ground_apartment / standard_apartment / whole_floor_apartment / penthouse / studio / loft
+        WHEN LOWER(COALESCE(p.PropertySubType, '')) = 'penthouse' THEN 28
+        WHEN LOWER(COALESCE(p.PropertySubType, '')) = 'loft' THEN 29
+        WHEN LOWER(COALESCE(p.PropertySubType, '')) = 'studio' THEN 35
+        WHEN LOWER(COALESCE(p.PropertySubType, '')) IN ('standard_apartment','ground_apartment','whole_floor_apartment') THEN 16
+        -- Houses/villas: detached_house / mansion_villa
+        WHEN LOWER(COALESCE(p.PropertySubType, '')) = 'bungalow' THEN 32
+        WHEN LOWER(COALESCE(p.PropertySubType, '')) IN ('detached_house','mansion_villa') THEN 17
+        -- Townhouses: semi_detached_house / terraced_house / maisonette_house / duplex
+        WHEN LOWER(COALESCE(p.PropertySubType, '')) IN ('semi_detached_house','terraced_house','maisonette_house','duplex') THEN 18
+        -- Land: plot / field
+        WHEN LOWER(COALESCE(p.PropertySubType, '')) IN ('plot','field') THEN 15
+        -- Commercial offices: standard_office / whole_floor_office / ground_office / top_floor_office /
+        --                     entire_building_office / office_building
+        WHEN LOWER(COALESCE(p.PropertySubType, '')) IN (
+            'standard_office','whole_floor_office','ground_office','top_floor_office',
+            'entire_building_office','office_building'
+        ) THEN 23
+        -- Retail
+        WHEN LOWER(COALESCE(p.PropertySubType, '')) = 'shop' THEN 22
+        -- Industrial / hotel hints from X_ extension fields
+        WHEN p.X_HotelType IS NOT NULL AND p.X_HotelType != '' THEN 20
+        WHEN p.X_IndustrialType IS NOT NULL AND p.X_IndustrialType != '' THEN 25
+        WHEN p.X_RetailType IS NOT NULL AND p.X_RetailType != '' THEN 22
+        -- Other commercial
+        WHEN LOWER(COALESCE(p.PropertySubType, '')) IN ('restaurant','commercial_building','warehouse','industrial_building') THEN 14
+
+        -- ── RESO PascalCase sub-types (compatibility path) ──
         WHEN p.PropertySubType = 'Apartment' AND LOWER(COALESCE(p.X_ApartmentType, '')) LIKE '%penthouse%' THEN 28
         WHEN p.PropertySubType = 'Apartment' AND LOWER(COALESCE(p.X_ApartmentType, '')) LIKE '%loft%' THEN 29
         WHEN p.PropertySubType = 'Apartment' AND LOWER(COALESCE(p.X_ApartmentType, '')) LIKE '%studio%' THEN 35
         WHEN p.PropertySubType = 'Apartment' THEN 16
-        -- House / villa sub-types
         WHEN p.PropertySubType = 'SingleFamilyDetached' AND LOWER(COALESCE(p.X_HouseType, '')) LIKE '%chalet%' THEN 31
         WHEN p.PropertySubType = 'SingleFamilyDetached' AND LOWER(COALESCE(p.X_HouseType, '')) LIKE '%bungalow%' THEN 32
         WHEN p.PropertySubType = 'SingleFamilyDetached' THEN 17
-        -- Townhouse
         WHEN p.PropertySubType = 'Townhouse' THEN 18
-        -- Land (by sub-type or high-level type)
         WHEN p.PropertySubType = 'Land' THEN 15
-        WHEN p.PropertyType = 'Land' THEN 15
-        -- Commercial sub-types
         WHEN p.PropertySubType = 'Office' THEN 23
         WHEN p.PropertySubType = 'Parking' THEN 26
-        WHEN p.PropertySubType = 'Commercial' AND p.X_HotelType IS NOT NULL AND p.X_HotelType != '' THEN 20
-        WHEN p.PropertySubType = 'Commercial' AND p.X_RetailType IS NOT NULL AND p.X_RetailType != '' THEN 22
-        WHEN p.PropertySubType = 'Commercial' AND p.X_IndustrialType IS NOT NULL AND p.X_IndustrialType != '' THEN 25
         WHEN p.PropertySubType = 'Commercial' THEN 14
-        -- High-level RESO PropertyType fallbacks (when PropertySubType is NULL/Other/unknown)
+
+        -- ── High-level PropertyType fallbacks ──
+        WHEN p.PropertyType = 'Land' THEN 15
         WHEN p.PropertyType IN ('Residential', 'ResidentialLease') THEN 16
         WHEN p.PropertyType IN ('CommercialSale', 'CommercialLease') THEN 14
         ELSE 26
@@ -569,21 +625,32 @@ SELECT
     p.Latitude AS lat,
     p.Longitude AS lng,
 
-    -- annotation_en (max 150 chars)
-    SUBSTR(COALESCE(
+    -- annotation_en (max 150 chars). Single-line — strip newlines.
+    SUBSTR(REGEXP_REPLACE(COALESCE(
         NULLIF(p.X_ShortDescription, ''),
         NULLIF(p.PublicRemarks, ''),
         ''
-    ), 1, 150) AS annotation_en,
+    ), '[\\r\\n]+', ' '), 1, 150) AS annotation_en,
 
-    -- annotation_ru from Qobrix translations (max 150 chars)
-    SUBSTR(COALESCE(NULLIF(tr.shortdescription_ru, ''), ''), 1, 150) AS annotation_ru,
+    -- annotation_ru: prefer Qobrix RU; fall back to EN so <ru> tag is filled.
+    SUBSTR(REGEXP_REPLACE(COALESCE(
+        NULLIF(tr.shortdescription_ru, ''),
+        NULLIF(p.X_ShortDescription, ''),
+        NULLIF(p.PublicRemarks, ''),
+        ''
+    ), '[\\r\\n]+', ' '), 1, 150) AS annotation_ru,
 
-    -- description_en (max 65536 chars)
-    SUBSTR(COALESCE(p.PublicRemarks, ''), 1, 65536) AS description_en,
+    -- description_en (max 65536 chars). Multi-paragraph — replace newlines with
+    -- <br/> so HomeOverseas renderer shows paragraph breaks instead of a wall
+    -- of text.
+    SUBSTR(REGEXP_REPLACE(COALESCE(p.PublicRemarks, ''), '[\\r\\n]+', '<br/>'), 1, 65536) AS description_en,
 
-    -- description_ru from Qobrix translations (max 65536 chars)
-    SUBSTR(COALESCE(NULLIF(tr.description_ru, ''), ''), 1, 65536) AS description_ru,
+    -- description_ru: prefer Qobrix RU; fall back to EN so <ru> tag is filled.
+    SUBSTR(REGEXP_REPLACE(COALESCE(
+        NULLIF(tr.description_ru, ''),
+        p.PublicRemarks,
+        ''
+    ), '[\\r\\n]+', '<br/>'), 1, 65536) AS description_ru,
 
     -- =====================================================================
     -- OPTIONS (computed as array of integer IDs)
@@ -693,6 +760,28 @@ spark.sql("""
     SELECT listing_type, COUNT(*) as count
     FROM exports.homesoverseas
     GROUP BY listing_type
+""").show()
+
+# Rent price coverage — surface how many rentals have a real period vs. fall
+# back to monthly (because Qobrix rent_frequency was missing) vs. still have
+# no price at all. Helps the Cyprus ops team prioritise data-entry clean-up.
+print("\nRent Price Coverage (where listing_type='rent'):")
+spark.sql("""
+    SELECT
+        COUNT(*) AS rentals_total,
+        SUM(CASE WHEN COALESCE(rent_day,   0) > 0 THEN 1 ELSE 0 END) AS with_rent_day,
+        SUM(CASE WHEN COALESCE(rent_week,  0) > 0 THEN 1 ELSE 0 END) AS with_rent_week,
+        SUM(CASE WHEN COALESCE(rent_month, 0) > 0 THEN 1 ELSE 0 END) AS with_rent_month,
+        SUM(CASE WHEN COALESCE(rent_year,  0) > 0 THEN 1 ELSE 0 END) AS with_rent_year,
+        SUM(CASE
+            WHEN COALESCE(rent_day,0)   = 0
+             AND COALESCE(rent_week,0)  = 0
+             AND COALESCE(rent_month,0) = 0
+             AND COALESCE(rent_year,0)  = 0
+            THEN 1 ELSE 0
+        END) AS price_on_request
+    FROM exports.homesoverseas
+    WHERE listing_type = 'rent'
 """).show()
 
 # Photos coverage
