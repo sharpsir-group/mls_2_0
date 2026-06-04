@@ -45,7 +45,7 @@ KZ_UPDATES="0"
 HO_STATUS="SKIPPED"
 HO_TOTAL="--"
 HO_WITH_RU="--"
-HO_FEED_URL="https://humaticai.com/reso/export/homesoverseas.xml"
+HO_FEED_URL="${RESO_API_URL:-https://mls.sharpsir.group/reso}/export/homesoverseas.xml"
 
 # API Test results
 API_TEST_STATUS="SKIPPED"
