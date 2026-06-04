@@ -105,6 +105,7 @@ cdc_changes = {
     "viewings": 0,
     "opportunities": 0,
     "media": 0,
+    "project_media": 0,
     "users": 0,
     "projects": 0,
     "project_features": 0,
@@ -350,6 +351,55 @@ def fetch_media_for_properties(property_ids: list, categories: list = ["photos",
         if (i + 1) % 10 == 0:
             print(f"   Processed {i + 1}/{len(property_ids)} properties, {len(all_media)} media items")
     
+    return all_media
+
+
+def fetch_media_for_projects(project_ids: list, categories: list = ["photos", "documents", "floorplans"]) -> list:
+    """Fetch media for specific projects via /media/by-category/{category}/Projects/{id}.
+
+    Mirrors fetch_media_for_projects() in 00_full_refresh_qobrix_bronze.py but accepts
+    a list of project IDs (CDC already has the modified project/property records).
+
+    Each item is tagged related_model='Projects' and related_id=<project_id> so the
+    silver ETL (02c) can link it to every property whose `project` matches related_id.
+    Relative file.href values are expanded to absolute URLs to match the full-refresh
+    output for the same records.
+    """
+    all_media = []
+    base_url = api_base_url.replace("/api/v2", "")  # Extract base URL for full media URLs
+
+    for i, project_id in enumerate(project_ids):
+        if not project_id:
+            continue
+
+        for category in categories:
+            try:
+                url = f"{api_base_url}/media/by-category/{category}/Projects/{project_id}"
+                response = requests.get(url, headers=headers, timeout=timeout_seconds)
+
+                if response.status_code == 200:
+                    media_data = response.json().get("data", [])
+                    for m in media_data:
+                        # Link project media to all properties in the project via
+                        # related_id (property_id stays NULL — these are not direct
+                        # property media). related_model='Projects' routes them to
+                        # Part 2 of the silver media ETL.
+                        m["related_model"] = "Projects"
+                        m["related_id"] = project_id
+                        m["media_category"] = category
+                        # Build full URL from file.href if it's relative
+                        if m.get("file", {}).get("href"):
+                            href = m["file"]["href"]
+                            if href.startswith("/"):
+                                m["file"]["href"] = f"{base_url}{href}"
+                    all_media.extend(media_data)
+
+            except Exception as e:
+                pass  # Skip errors silently for media
+
+        if (i + 1) % 10 == 0:
+            print(f"   Processed {i + 1}/{len(project_ids)} projects, {len(all_media)} media items")
+
     return all_media
 
 
@@ -765,6 +815,98 @@ if modified_projects:
     update_sync_metadata("projects", merged_count, max_modified, "SUCCESS", started_at)
 else:
     update_sync_metadata("projects", 0, last_sync, "SUCCESS", started_at)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## CDC: Project Media
+# MAGIC
+# MAGIC Project-scoped media (photos / floor plans attached to a development **Project**
+# MAGIC rather than to an individual unit) is fetched here and stored in `property_media`
+# MAGIC tagged `related_model='Projects'` / `related_id=<project_id>`. The silver media ETL
+# MAGIC (`02c`, Part 2) links these rows to every property whose `project` matches
+# MAGIC `related_id`.
+# MAGIC
+# MAGIC Without this step the daily CDC only captures direct property media, so units that
+# MAGIC rely on their project's gallery (the common Cyprus new-build case, e.g. ref 14791)
+# MAGIC would show no photos. Mirrors the project-media handling in
+# MAGIC `00_full_refresh_qobrix_bronze.py`.
+
+# COMMAND ----------
+
+print("\n" + "=" * 80)
+print("📥 CDC: PROJECT MEDIA")
+print("=" * 80)
+
+# Refresh project media for every project touched this cycle:
+#   • the `project` of each modified property (new/changed units, incl. units that
+#     point at a project whose media was never captured), and
+#   • each modified project itself (covers project photo edits).
+project_ids_to_refresh = set()
+for p in modified_properties:
+    pid = p.get("project")
+    if pid:
+        project_ids_to_refresh.add(pid)
+for pr in modified_projects:
+    pid = pr.get("id")
+    if pid:
+        project_ids_to_refresh.add(pid)
+
+project_ids_to_refresh = [pid for pid in project_ids_to_refresh if pid]
+print(f"\n1️⃣  Projects needing media refresh: {len(project_ids_to_refresh)}")
+
+if project_ids_to_refresh:
+    print("\n2️⃣  Fetching project media...")
+    project_media = fetch_media_for_projects(project_ids_to_refresh)
+
+    if project_media:
+        # ─── DUPLICATE-PROOF MERGE (same pattern as property media above) ────
+        # The API returns the same media id under multiple categories, so dedupe
+        # by id before merging to avoid the historical row-duplication blowup.
+        unique_proj_by_id: dict = {}
+        for m in project_media:
+            mid = m.get("id")
+            if mid:
+                # property_id is intentionally empty for project media — these link
+                # to properties via related_id, not property_id. Setting it keeps the
+                # source schema aligned with the property_media table on append.
+                m["property_id"] = ""
+                unique_proj_by_id[mid] = m
+        deduped_project_media = list(unique_proj_by_id.values())
+        print(
+            f"   Found: {len(project_media)} media items "
+            f"(raw, with category duplicates)"
+        )
+        print(
+            f"   After de-dup by id: {len(deduped_project_media)} unique media items"
+        )
+        cdc_changes["project_media"] = len(deduped_project_media)
+
+        existing_tables = [t.name for t in spark.catalog.listTables()]
+        if "property_media" in existing_tables:
+            # Clear stale project media for these projects. Delete by related_id
+            # (project media rows have empty property_id, so the property_id DELETE
+            # used for direct media does not touch them), then by id to catch any
+            # media re-attached across projects.
+            related_ids_str = "', '".join(project_ids_to_refresh)
+            if related_ids_str:
+                spark.sql(
+                    f"DELETE FROM property_media "
+                    f"WHERE related_model = 'Projects' "
+                    f"AND related_id IN ('{related_ids_str}')"
+                )
+            proj_media_ids_str = "', '".join(unique_proj_by_id.keys())
+            if proj_media_ids_str:
+                spark.sql(
+                    f"DELETE FROM property_media "
+                    f"WHERE id IN ('{proj_media_ids_str}')"
+                )
+        merge_to_bronze(deduped_project_media, "property_media", "id")
+        print(f"\n✅ Project media CDC complete: {len(deduped_project_media)} items")
+    else:
+        print("\n✅ No project media returned for refreshed projects")
+else:
+    print("\n✅ No projects to refresh media for")
 
 # COMMAND ----------
 

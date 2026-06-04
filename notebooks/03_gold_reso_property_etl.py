@@ -507,7 +507,7 @@ SELECT
     -- `short_description` or only `name` as the vendor headline. Mirror the
     -- Dash gold branch (COALESCE(public_remarks, name)) so OData always carries
     -- a non-empty PublicRemarks when any of those fields exist — otherwise CDL
-    -- mls-sync synthesizes "${PropertyType} in ${City} (ListingId)" only.
+    -- mls-sync synthesizes "${{PropertyType}} in ${{City}} (ListingId)" only.
     COALESCE(
         NULLIF(TRIM(s.description), ''),
         NULLIF(TRIM(b.short_description), ''),
