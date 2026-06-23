@@ -66,6 +66,7 @@ prop_count = spark.sql(f"""
     SELECT COUNT(*) AS c FROM reso_gold.property
     WHERE OriginatingSystemOfficeKey = '{office_key}'
       AND StandardStatus = 'Active'
+      AND (X_ExcludedProperty IS NULL OR X_ExcludedProperty != TRUE)
 """).collect()[0]["c"]
 print(f"Active Cyprus properties in gold: {prop_count}")
 
@@ -107,6 +108,7 @@ new_keys_df = spark.sql(f"""
     LEFT JOIN exports.homesoverseas_id_map m ON p.ListingKey = m.listing_key
     WHERE p.OriginatingSystemOfficeKey = '{office_key}'
       AND p.StandardStatus = 'Active'
+      AND (p.X_ExcludedProperty IS NULL OR p.X_ExcludedProperty != TRUE)
       AND m.listing_key IS NULL
     ORDER BY p.ListingKey
 """)
@@ -555,20 +557,27 @@ SELECT
     -- fallback uses high-level PropertyType (Residential/CommercialSale/Land)
     -- so nothing silently drops to ELSE 26 (Parking/Other).
     --
-    -- HomeOverseas realty_type IDs:
-    --   14 Commercial | 15 Land | 16 Apartment | 17 House/Villa | 18 Townhouse
-    --   20 Hotel | 22 Retail | 23 Office | 25 Industrial | 26 Parking
-    --   28 Penthouse | 29 Loft | 31 Chalet | 32 Bungalow | 35 Studio
+    -- HomeOverseas realty_type IDs — the XML feed accepts ONLY this closed
+    -- enumeration (HomeOverseas XML Technical Requirements; realty_type is a
+    -- compulsory element):
+    --   14 Commercial | 15 Plots | 16 Flats/Apartments | 17 Houses/Villas
+    --   18 Townhouses | 20 Hotel | 21 Restaurant | 22 Store | 23 Office
+    --   24 Warehouse | 25 Manufacturing | 26 Other
+    -- IMPORTANT: There are NO XML IDs for Penthouse/Studio/Loft/Chalet/Bungalow.
+    -- Those exist only in the portal's manual data-entry dropdown — in the XML
+    -- feed every apartment subtype (penthouse/studio/loft) MUST be 16 and every
+    -- detached-house subtype (bungalow/chalet) MUST be 17. Emitting 28/29/31/32/35
+    -- makes HomeOverseas reject the object (it never becomes an active listing),
+    -- which is what caused the "861 of 1000 active" shortfall.
     CASE
         -- ── Qobrix snake_case sub-types (primary path) ──
-        -- Apartments: ground_apartment / standard_apartment / whole_floor_apartment / penthouse / studio / loft
-        WHEN LOWER(COALESCE(p.PropertySubType, '')) = 'penthouse' THEN 28
-        WHEN LOWER(COALESCE(p.PropertySubType, '')) = 'loft' THEN 29
-        WHEN LOWER(COALESCE(p.PropertySubType, '')) = 'studio' THEN 35
-        WHEN LOWER(COALESCE(p.PropertySubType, '')) IN ('standard_apartment','ground_apartment','whole_floor_apartment') THEN 16
-        -- Houses/villas: detached_house / mansion_villa
-        WHEN LOWER(COALESCE(p.PropertySubType, '')) = 'bungalow' THEN 32
-        WHEN LOWER(COALESCE(p.PropertySubType, '')) IN ('detached_house','mansion_villa') THEN 17
+        -- Apartments (incl. penthouse / studio / loft) all map to 16 (Flats).
+        WHEN LOWER(COALESCE(p.PropertySubType, '')) IN (
+            'penthouse','loft','studio',
+            'standard_apartment','ground_apartment','whole_floor_apartment'
+        ) THEN 16
+        -- Houses/villas (incl. bungalow) map to 17.
+        WHEN LOWER(COALESCE(p.PropertySubType, '')) IN ('bungalow','detached_house','mansion_villa') THEN 17
         -- Townhouses: semi_detached_house / terraced_house / maisonette_house / duplex
         WHEN LOWER(COALESCE(p.PropertySubType, '')) IN ('semi_detached_house','terraced_house','maisonette_house','duplex') THEN 18
         -- Land: plot / field
@@ -585,16 +594,16 @@ SELECT
         WHEN p.X_HotelType IS NOT NULL AND p.X_HotelType != '' THEN 20
         WHEN p.X_IndustrialType IS NOT NULL AND p.X_IndustrialType != '' THEN 25
         WHEN p.X_RetailType IS NOT NULL AND p.X_RetailType != '' THEN 22
-        -- Other commercial
-        WHEN LOWER(COALESCE(p.PropertySubType, '')) IN ('restaurant','commercial_building','warehouse','industrial_building') THEN 14
+        -- Other commercial — use the dedicated spec IDs where they exist.
+        WHEN LOWER(COALESCE(p.PropertySubType, '')) = 'restaurant' THEN 21
+        WHEN LOWER(COALESCE(p.PropertySubType, '')) = 'warehouse' THEN 24
+        WHEN LOWER(COALESCE(p.PropertySubType, '')) = 'industrial_building' THEN 25
+        WHEN LOWER(COALESCE(p.PropertySubType, '')) = 'commercial_building' THEN 14
 
         -- ── RESO PascalCase sub-types (compatibility path) ──
-        WHEN p.PropertySubType = 'Apartment' AND LOWER(COALESCE(p.X_ApartmentType, '')) LIKE '%penthouse%' THEN 28
-        WHEN p.PropertySubType = 'Apartment' AND LOWER(COALESCE(p.X_ApartmentType, '')) LIKE '%loft%' THEN 29
-        WHEN p.PropertySubType = 'Apartment' AND LOWER(COALESCE(p.X_ApartmentType, '')) LIKE '%studio%' THEN 35
+        -- All apartment variants collapse to 16, all detached houses to 17
+        -- (no XML IDs exist for penthouse/loft/studio/chalet/bungalow).
         WHEN p.PropertySubType = 'Apartment' THEN 16
-        WHEN p.PropertySubType = 'SingleFamilyDetached' AND LOWER(COALESCE(p.X_HouseType, '')) LIKE '%chalet%' THEN 31
-        WHEN p.PropertySubType = 'SingleFamilyDetached' AND LOWER(COALESCE(p.X_HouseType, '')) LIKE '%bungalow%' THEN 32
         WHEN p.PropertySubType = 'SingleFamilyDetached' THEN 17
         WHEN p.PropertySubType = 'Townhouse' THEN 18
         WHEN p.PropertySubType = 'Land' THEN 15
@@ -727,6 +736,7 @@ LEFT JOIN _ho_district_map dm
     ON LOWER(TRIM(p.StateOrProvince)) = dm.name_lower
 WHERE p.OriginatingSystemOfficeKey = '{office_key}'
   AND p.StandardStatus = 'Active'
+  AND (p.X_ExcludedProperty IS NULL OR p.X_ExcludedProperty != TRUE)
 """
 
 print("Building HomeOverseas export table...")
@@ -753,6 +763,25 @@ spark.sql("""
     GROUP BY realty_type
     ORDER BY count DESC
 """).show()
+
+# Guard: HomeOverseas accepts ONLY these realty_type IDs in the XML feed.
+# Anything else is silently rejected by the portal (object never goes active),
+# so surface a non-zero count loudly — it means the mapping drifted again.
+print("\nInvalid realty_type check (must be 0 — else HomeOverseas rejects those objects):")
+invalid_rt = spark.sql("""
+    SELECT COUNT(*) AS invalid_realty_type_rows
+    FROM exports.homesoverseas
+    WHERE realty_type NOT IN (14,15,16,17,18,20,21,22,23,24,25,26)
+""").collect()[0]["invalid_realty_type_rows"]
+print(f"   invalid_realty_type_rows = {invalid_rt}")
+if invalid_rt > 0:
+    spark.sql("""
+        SELECT realty_type, COUNT(*) AS count
+        FROM exports.homesoverseas
+        WHERE realty_type NOT IN (14,15,16,17,18,20,21,22,23,24,25,26)
+        GROUP BY realty_type
+        ORDER BY count DESC
+    """).show()
 
 # By listing type
 print("\nBy Listing Type:")

@@ -160,9 +160,13 @@ if qobrix_available:
     custom_exclusive_listing_expr = (
         "s.custom_exclusive_listing" if "custom_exclusive_listing" in silver_cols else "CAST(NULL AS BOOLEAN)"
     )
+    custom_excluded_property_expr = (
+        "s.custom_excluded_property" if "custom_excluded_property" in silver_cols else "CAST(NULL AS BOOLEAN)"
+    )
 else:
     custom_listing_property_expr = "CAST(NULL AS STRING)"
     custom_exclusive_listing_expr = "CAST(NULL AS BOOLEAN)"
+    custom_excluded_property_expr = "CAST(NULL AS BOOLEAN)"
 
 # RESO ListingService: 'FullService' when a Cyprus broker is actively engaged
 # (custom_listing_property='Yes' OR non-empty key_holder_details); NULL otherwise.
@@ -705,6 +709,7 @@ SELECT
     b.virtual_tour_link                           AS X_VirtualTourLink,
     b.website_url                                 AS X_WebsiteUrl,
     b.website_status                              AS X_WebsiteStatus,
+    {custom_excluded_property_expr}               AS X_ExcludedProperty,
     b.short_description                           AS X_ShortDescription,
     b.name                                        AS X_PropertyName,
     b.apartment_type                              AS X_ApartmentType,
@@ -1054,6 +1059,7 @@ SELECT
     NULL AS X_VirtualTourLink,
     d.listing_url                                 AS X_WebsiteUrl,
     NULL AS X_WebsiteStatus,
+    CAST(NULL AS BOOLEAN)                         AS X_ExcludedProperty,
     NULL AS X_ShortDescription,
     d.name                                        AS X_PropertyName,
     NULL AS X_ApartmentType,
